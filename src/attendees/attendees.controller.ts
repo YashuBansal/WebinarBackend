@@ -15,11 +15,9 @@ import {
 import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { AttendeesService } from './attendees.service';
 import {
-  AttendeesFilterDto,
   CreateAttendeeDto,
   FetchGroupedAttendeesDTO,
   GetAttendeesDTO,
-  GroupedAttendeesFilterDto,
   SwapAttendeeFieldsDTO,
   UpdateAttendeeDto,
 } from './dto/attendees.dto';

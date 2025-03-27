@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  NotAcceptableException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -283,7 +284,7 @@ export class AssignmentService {
   }
 
   async handleTags(
-    attendeeId: Types.ObjectId,
+    attendee: Attendee,
     attendeeEmail: string,
     webinarId: string,
     adminId: Types.ObjectId,
@@ -291,6 +292,8 @@ export class AssignmentService {
     assignedProducts: any[] = [],
     assignedEmployees: any[] = [],
   ): Promise<boolean> {
+    const attendeeId = attendee?._id;
+
     const existingTags = await this.tagsService.getTags(adminId);
     const tagsUsecaseMap = existingTags.reduce((acc, tag) => {
       acc[tag.name] = tag.usecase;
@@ -341,63 +344,17 @@ export class AssignmentService {
         });
         if (existingAssignment) {
         } else {
-          const newAssignment = await this.assignmentsModel.create({
-            adminId: adminId,
-            webinar: new Types.ObjectId(webinarId),
-            attendee: attendeeId,
-            user: taggedEmployee._id,
-            recordType: 'preWebinar',
-            isTemporary: true,
-          });
-
-          if (!newAssignment) {
-            throw new InternalServerErrorException(
-              'Failed to create assignment.',
-            );
-          }
-
-          // Increment the employee's daily contact count
-          const isIncremented = await this.userService.incrementCount(
-            taggedEmployee._id.toString(),
+          await this.createNewAssignmentForPreWebinar(
+            adminId,
+            new Types.ObjectId(`${webinarId}`),
+            attendee,
+            taggedEmployee._id,
+            'preWebinar',
           );
-
-          if (!isIncremented) {
-            throw new InternalServerErrorException(
-              'Failed to update employee contact count.',
-            );
-          }
-
-          const updatedAttendee =
-            await this.attendeeService.updateAttendeeAssign(
-              attendeeId.toString(),
-              taggedEmployee._id.toString(),
-              true,
-            );
-          if (!updatedAttendee) {
-            throw new InternalServerErrorException(
-              'Failed to update employee contact count.',
-            );
-          }
-
-          const notification = {
-            recipient: taggedEmployee._id.toString(),
-            title: 'New Task Assigned',
-            message: `You have been assigned a new task. Please check your task list for details.`,
-            type: notificationType.INFO,
-            actionType: notificationActionType.ASSIGNMENT,
-            metadata: {
-              webinarId,
-              attendeeId: attendeeId.toString(),
-              assignmentId: newAssignment._id.toString(),
-            },
-          };
-
-          await this.notificationService.createNotification(notification);
         }
         executeFurther = false;
       }
     }
-
     return executeFurther;
   }
 
@@ -407,6 +364,18 @@ export class AssignmentService {
     attendee: CreateAttendeeDto,
   ) {
     const recordType = 'preWebinar';
+
+    const postWebinarExists = await this.attendeeService.getPostWebinarAttendee(
+      webinarId,
+      adminId,
+    );
+
+    if (postWebinarExists) {
+      throw new NotAcceptableException(
+        'Cannot add Pre-Webinar data as it already exists in Post-Webinar.',
+      );
+    }
+
     // Fetch the webinar details for the given webinar ID and admin ID
     const webinar = await this.webinarService.getWebinar(webinarId, adminId);
 
@@ -450,7 +419,7 @@ export class AssignmentService {
         existingAttendee.tags = [...existingAttendee.tags, ...newTags];
       }
       await this.handleTags(
-        existingAttendee._id as Types.ObjectId,
+        existingAttendee,
         attendee.email,
         webinarId,
         new Types.ObjectId(adminId),
@@ -460,7 +429,11 @@ export class AssignmentService {
       );
 
       await existingAttendee.save();
-      return { success: true, message: 'Attendee updated successfully' };
+      return {
+        success: true,
+        message: 'Attendee Updated Successfully.',
+        data: { existingAttendee },
+      };
     }
 
     const attendeeCount = await this.attendeeService.getNonUniqueAttendeesCount(
@@ -525,7 +498,7 @@ export class AssignmentService {
     const newAttendee = newAttendees[0];
 
     const executeFurther: boolean = await this.handleTags(
-      newAttendee._id as Types.ObjectId,
+      newAttendee,
       newAttendee.email,
       webinarId,
       new Types.ObjectId(adminId),
@@ -535,14 +508,21 @@ export class AssignmentService {
     );
 
     if (!executeFurther) {
-      return { success: true, message: 'Attendee updated successfully' };
+      return {
+        success: true,
+        message: 'Attendee updated successfully',
+        data: {},
+      };
     }
 
     // Validate webinar assigned employees
     if (!Array.isArray(webinar.assignedEmployees)) {
-      throw new InternalServerErrorException(
-        'Assigned employees for the webinar are missing or invalid.',
-      );
+      return {
+        success: true,
+        message:
+          'Attendee has been created, Assigned employees for the webinar are missing or invalid.',
+        data: { newAttendee },
+      };
     }
 
     // Check if the attendee was previously assigned to an employee
@@ -574,57 +554,13 @@ export class AssignmentService {
           employee.dailyContactLimit > employee.dailyContactCount
         ) {
           // Create a new assignment
-          const newAssignment = await this.assignmentsModel.create({
-            adminId: new Types.ObjectId(adminId),
-            webinar: new Types.ObjectId(webinarId),
-            attendee: newAttendee._id,
-            user: employee._id,
-            recordType: recordType,
-          });
-          if (!newAssignment) {
-            throw new InternalServerErrorException(
-              'Failed to create assignment.',
-            );
-          }
-
-          // Increment the employee's daily contact count
-          const isIncremented = await this.userService.incrementCount(
-            employee._id.toString(),
+          return this.createNewAssignmentForPreWebinar(
+            new Types.ObjectId(`${adminId}`),
+            new Types.ObjectId(`${webinarId}`),
+            newAttendee,
+            employee._id as Types.ObjectId,
+            recordType,
           );
-
-          if (!isIncremented) {
-            throw new InternalServerErrorException(
-              'Failed to update employee contact count.',
-            );
-          }
-
-          const updatedAttendee =
-            await this.attendeeService.updateAttendeeAssign(
-              newAttendee._id.toString(),
-              employee._id.toString(),
-            );
-          if (!updatedAttendee) {
-            throw new InternalServerErrorException(
-              'Failed to update employee contact count.',
-            );
-          }
-
-          const notification = {
-            recipient: employee._id.toString(),
-            title: 'New Task Assigned',
-            message: `You have been assigned a new task. Please check your task list for details.`,
-            type: notificationType.INFO,
-            actionType: notificationActionType.ASSIGNMENT,
-            metadata: {
-              webinarId,
-              attendeeId: newAttendee._id.toString(),
-              assignmentId: newAssignment._id.toString(),
-            },
-          };
-
-          await this.notificationService.createNotification(notification);
-
-          return { newAssignment, updatedAttendee };
         }
       }
     } else {
@@ -650,63 +586,92 @@ export class AssignmentService {
         const employee = employees[0]; // Pick the employee with the smallest remaining capacity
 
         // Create a new assignment
-        const newAssignment = await this.assignmentsModel.create({
-          adminId: new Types.ObjectId(adminId),
-          webinar: new Types.ObjectId(webinarId),
-          attendee: new Types.ObjectId(`${newAttendee._id}`),
-          user: new Types.ObjectId(`${employee._id}`),
-          recordType: recordType,
-        });
 
-        if (!newAssignment) {
-          throw new InternalServerErrorException(
-            'Failed to create assignment.',
-          );
-        }
-
-        // Increment the employee's daily contact count
-        const isIncremented = await this.userService.incrementCount(
-          employee._id.toString(),
+        return this.createNewAssignmentForPreWebinar(
+          new Types.ObjectId(`${adminId}`),
+          new Types.ObjectId(`${webinarId}`),
+          newAttendee,
+          employee._id,
+          recordType,
         );
-
-        if (!isIncremented) {
-          throw new InternalServerErrorException(
-            'Failed to update employee contact count.',
-          );
-        }
-
-        const updatedAttendee = await this.attendeeService.updateAttendeeAssign(
-          newAttendee._id.toString(),
-          employee._id.toString(),
-        );
-        if (!updatedAttendee) {
-          throw new InternalServerErrorException(
-            'Failed to update employee contact count.',
-          );
-        }
-
-        const notification = {
-          recipient: employee._id.toString(),
-          title: 'New Task Assigned',
-          message: `You have been assigned a new task. Please check your task list for details.`,
-          type: notificationType.INFO,
-          actionType: notificationActionType.ASSIGNMENT,
-          metadata: {
-            webinarId,
-            attendeeId: newAttendee._id.toString(),
-            assignmentId: newAssignment._id.toString(),
-          },
-        };
-
-        await this.notificationService.createNotification(notification);
-
-        return { newAssignment, updatedAttendee };
       } else {
-        throw new NotFoundException(
-          'No eligible employees available for assignment.',
-        );
+        return {
+          success: true,
+          message:
+            'Attendee has been created, No eligible employees available for assignment.',
+          data: { newAttendee },
+        };
       }
     }
+  }
+
+  async createNewAssignmentForPreWebinar(
+    adminId: Types.ObjectId,
+    webinarId: Types.ObjectId,
+    newAttendee: Attendee,
+    employeeId: Types.ObjectId,
+    recordType: string,
+  ) {
+    const newAssignment = await this.assignmentsModel.create({
+      adminId,
+      webinar: webinarId,
+      attendee: newAttendee._id,
+      user: employeeId,
+      recordType,
+    });
+    if (!newAssignment) {
+      return {
+        success: true,
+        message: 'Failed to create assignment.',
+        data: { newAttendee },
+      };
+    }
+
+    // Increment the employee's daily contact count
+    const isIncremented = await this.userService.incrementCount(
+      employeeId.toString(),
+    );
+
+    if (!isIncremented) {
+      return {
+        success: true,
+        message: 'Failed to update employee contact count.',
+        data: { newAttendee, newAssignment },
+      };
+    }
+
+    const updatedAttendee = await this.attendeeService.updateAttendeeAssign(
+      newAttendee._id.toString(),
+      employeeId.toString(),
+    );
+    if (!updatedAttendee) {
+      return {
+        success: true,
+        message: 'Failded to Update Employee Id in attendee Document.',
+        data: { newAttendee, newAssignment },
+      };
+    }
+
+    const notification = {
+      recipient: employeeId.toString(),
+      title: 'New Task Assigned',
+      message: `You have been assigned a new task. Please check your task list for details.`,
+      type: notificationType.INFO,
+      actionType: notificationActionType.ASSIGNMENT,
+      metadata: {
+        webinarId,
+        attendeeId: newAttendee._id.toString(),
+        assignmentId: newAssignment._id.toString(),
+      },
+    };
+
+    await this.notificationService.createNotification(notification);
+
+    return {
+      success: true,
+      message: 'Assignment created and attendee updated successfully.',
+      data: { newAttendee, newAssignment },
+    };
   }
 
   async getActiveInactiveAssignments(id: string): Promise<any> {
@@ -1536,7 +1501,7 @@ export class AssignmentService {
           user: userId,
         },
       },
-      ...(this.getPipelineStage(startDate, endDate)),
+      ...this.getPipelineStage(startDate, endDate),
       {
         $lookup: {
           from: 'attendees',
@@ -1599,10 +1564,9 @@ export class AssignmentService {
         $match: {
           adminId: new Types.ObjectId(adminId),
           ...(webinarId ? { webinar: new Types.ObjectId(webinarId) } : {}),
-          
         },
       },
-      ...(this.getPipelineStage(startDate, endDate)),
+      ...this.getPipelineStage(startDate, endDate),
       {
         $lookup: {
           from: 'attendees',

@@ -6,7 +6,7 @@ import {
   Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { lastValueFrom, map } from 'rxjs';
+import { lastValueFrom, map, NotFoundError } from 'rxjs';
 import { AlarmMsgDto, ReminderMsgDto } from './dto/msg.dto';
 import { UsersService } from 'src/users/users.service';
 
@@ -20,15 +20,14 @@ export class WhatsappService {
   ) {}
 
   url = this.configService.get('AISENSY_URL');
-  superAdmin: null | {
-    companyName: string;
-    email: string;
-    address: string;
-  } = null;
+  apiKey: string | null = null;
+
   onModuleInit() {
     this.usersService.getSuperAdminDetails(true).then((superAdmin) => {
       console.log('superAdmin -------- >', superAdmin);
-      this.superAdmin = superAdmin;
+      if (superAdmin?.whatsappToken) {
+        this.apiKey = superAdmin.whatsappToken;
+      }
     });
   }
 
@@ -42,6 +41,12 @@ export class WhatsappService {
 
   async sendAlarmMsg(alarmMsgDto: AlarmMsgDto) {
     if (!this.isValidPhoneNumber(alarmMsgDto.phone)) return;
+
+    
+    if (!this.apiKey) {
+      console.error('AISENSY API KEY NOT FOUND.');
+      return { error: 'AISENSY API KEY NOT FOUND.' };
+    }
 
     try {
       const bodyData = {
@@ -69,6 +74,11 @@ export class WhatsappService {
 
   async sendReminderMsg(reminderMsgDto: ReminderMsgDto) {
     if (!this.isValidPhoneNumber(reminderMsgDto.phone)) return;
+
+    if (!this.apiKey) {
+      console.error('AISENSY API KEY NOT FOUND.');
+      return { error: 'AISENSY API KEY NOT FOUND.' };
+    }
 
     try {
       const bodyData = {
