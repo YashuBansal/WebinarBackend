@@ -19,9 +19,8 @@ export class Attendee extends Document {
     maxlength: 100,
     trim: true,
     default: null,
-    // get: (val: string) => val?.charAt(0).toUpperCase() + val?.slice(1), 
-    // set: (val: string) => val?.charAt(0).toUpperCase() + val?.slice(1), 
-
+    // get: (val: string) => val?.charAt(0).toUpperCase() + val?.slice(1),
+    // set: (val: string) => val?.charAt(0).toUpperCase() + val?.slice(1),
   })
   firstName: string | null; // First Name
 
@@ -119,13 +118,18 @@ export class Attendee extends Document {
     type: String,
     default: 'Import',
   })
-  source: string; 
+  source: string;
 
   @Prop({
     type: [String],
     default: [],
   })
   tags: string[];
+
+  @Prop({
+    type: Boolean,
+  })
+  isDeleted: boolean;
 }
 
 export const AttendeeSchema = SchemaFactory.createForClass(Attendee);

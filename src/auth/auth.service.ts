@@ -158,7 +158,7 @@ export class AuthService {
     });
 
     if (isUserExists) {
-      throw new BadRequestException('User already exists');
+      throw new BadRequestException('User with Email already exists');
     }
 
     const employeeCount = await this.userModel.countDocuments({

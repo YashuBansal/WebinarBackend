@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEmail,
@@ -54,6 +54,7 @@ export class CreateAttendeeDto {
 
 
   @IsOptional()
+  @Transform(({ value }) => value?.toLowerCase())
   @IsEnum(['male', 'female', 'others'], {
     message: 'Gender must be one of male, female, or others',
   })
@@ -114,6 +115,7 @@ export class UpdateAttendeeDto {
   isAttended?: boolean;
 
   @IsOptional()
+  @Transform(({ value }) => value?.toLowerCase())
   @IsEnum(['male', 'female', 'others'], {
     message: 'Gender must be one of male, female, or others',
   })

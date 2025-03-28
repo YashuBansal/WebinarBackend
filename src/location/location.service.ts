@@ -29,10 +29,26 @@ export class LocationService {
     return result;
   }
 
-  async getLocations(): Promise<any> {
-    const result = await this.locationModel.aggregate([
+  async getLocations(page: number, limit: number): Promise<any> {
+
+    if(limit === 0) {
+      const result = await this.locationModel.find({ isVerified: true, deactivated: false }).select('name');
+      return {
+        data: result,
+      };
+    }
+
+    const skip = (page - 1) * limit;
+
+    const pipeline = [
       {
         $match: { isVerified: true, deactivated: false },
+      },
+      {
+        $skip: skip,
+      },
+      {
+        $limit: limit,
       },
       {
         $lookup: {
@@ -45,7 +61,7 @@ export class LocationService {
       {
         $unwind: {
           path: '$adminData',
-          preserveNullAndEmptyArrays: true
+          preserveNullAndEmptyArrays: true,
         },
       },
       {
@@ -65,7 +81,7 @@ export class LocationService {
       {
         $unwind: {
           path: '$employeeData',
-          preserveNullAndEmptyArrays: true
+          preserveNullAndEmptyArrays: true,
         },
       },
       {
@@ -80,12 +96,28 @@ export class LocationService {
           employeeData: 0,
         },
       },
+    ];
+
+
+    const [result, total] = await Promise.all([
+      this.locationModel.aggregate(pipeline),
+      this.locationModel.countDocuments({ isVerified: true, deactivated: false }),
     ]);
 
-    return result;
+    return {
+      data: result,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async getLocationRequests(
+    page: number,
+    limit: number,
     isVerified: boolean,
     admin?: string,
     isAdminVerified?: boolean,
@@ -98,9 +130,17 @@ export class LocationService {
       query['isAdminVerified'] = isAdminVerified;
     }
 
-    const result = await this.locationModel.aggregate([
+    const skip = (page - 1) * limit;
+
+    const pipeline = [
       {
         $match: query,
+      },
+      {
+        $skip: skip,
+      },
+      {
+        $limit: limit,
       },
       {
         $lookup: {
@@ -113,7 +153,7 @@ export class LocationService {
       {
         $unwind: {
           path: '$adminData',
-          preserveNullAndEmptyArrays: true
+          preserveNullAndEmptyArrays: true,
         },
       },
       {
@@ -133,7 +173,7 @@ export class LocationService {
       {
         $unwind: {
           path: '$employeeData',
-          preserveNullAndEmptyArrays: true
+          preserveNullAndEmptyArrays: true,
         },
       },
       {
@@ -148,9 +188,22 @@ export class LocationService {
           employeeData: 0,
         },
       },
+    ];
+
+    const [result, total] = await Promise.all([
+      this.locationModel.aggregate(pipeline),
+      this.locationModel.countDocuments(query),
     ]);
 
-    return result;
+    return {
+      data: result,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async approveRequest(

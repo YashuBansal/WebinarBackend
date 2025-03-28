@@ -338,6 +338,10 @@ export class AttendeesService {
     }
   }
 
+  async hideAttendees(adminId: Types.ObjectId, ){
+    
+  }
+
   async getAttendee(adminId: string, email: string): Promise<any> {
     const pipeline: PipelineStage[] = [
       {
@@ -385,6 +389,7 @@ export class AttendeesService {
             createdAt: '$createdAt', // Include createdAt for sorting
             updatedAt: '$updatedAt', // Include updatedAt for reference
             tags: '$tags',
+            location: '$location',
           },
         },
       },

@@ -18,6 +18,10 @@ export class AuthActiveUserMiddleware implements NestMiddleware {
 
     try {
       const user = await this.usersService.getUserById(req?.id);
+      if(!user){
+        throw new UnauthorizedException('User not found / Invalid Token.');
+      }
+
       if (user.isActive) {
        
         next();

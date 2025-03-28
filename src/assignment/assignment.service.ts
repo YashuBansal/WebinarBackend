@@ -113,6 +113,7 @@ export class AssignmentService {
           webinar: '$attendee.webinar',
           createdAt: '$createdAt',
           tags: '$attendee.tags',
+          source: '$attendee.source',
         },
       },
       {

@@ -6,6 +6,8 @@ import {
   IsOptional,
   IsString,
   Min,
+  Length,
+  Matches,
 } from 'class-validator';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
 import { PlanDuration } from 'src/schemas/Plans.schema';
@@ -29,9 +31,12 @@ export class CreateClientDto {
   @IsNotEmpty()
   email: string;
 
-  @IsOptional()
   @IsString()
-  phone?: string;
+  @Length(13, 13, { message: 'Phone number must be 13 characters long' })
+  @Matches(/^\+91\d{10}$/, {
+    message: 'Phone number must start with +91 followed by 10 digits'
+  })
+  phone: string;
 
   @IsOptional()
   @IsString()

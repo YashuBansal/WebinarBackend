@@ -6,15 +6,13 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UnauthorizedException,
-  UseInterceptors,
 } from '@nestjs/common';
 import { CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
 import { LocationService } from './location.service';
 import { AdminId, Id, Role } from 'src/decorators/custom.decorator';
 import { ConfigService } from '@nestjs/config';
-import { FileInterceptor } from '@nestjs/platform-express';
-// import { create } from 'domain';
 
 @Controller('location')
 export class LocationController {
@@ -65,25 +63,38 @@ export class LocationController {
   }
 
   @Get()
-  async getLocations(): Promise<any> {
-    const result = await this.locationService.getLocations();
+  async getLocations(
+    @Query('page') qpage: string,
+    @Query('limit') qlimit: string,
+  ): Promise<any> {
+    const page = parseInt(qpage) || 1;
+    const limit = parseInt(qlimit) || 0;
+
+    const result = await this.locationService.getLocations(page, limit);
     return result;
   }
 
   @Get('requests')
   async getLocationRequests(
+    @Query('page') qpage: string,
+    @Query('limit') qlimit: string,
     @Id() id: string,
     @Role() role: string,
   ): Promise<any> {
+    const page = parseInt(qpage) || 1;
+    const limit = parseInt(qlimit) || 10;
+
     if (role === this.configService.get('appRoles').SUPER_ADMIN) {
       const result = await this.locationService.getLocationRequests(
+        page,
+        limit,
         false,
         null,
         true,
       );
       return result;
     } else if (this.configService.get('appRoles').ADMIN === role) {
-      const result = await this.locationService.getLocationRequests(false, id);
+      const result = await this.locationService.getLocationRequests(page, limit, false, id);
       return result;
     } else {
       throw new UnauthorizedException(
