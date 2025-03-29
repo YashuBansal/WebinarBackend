@@ -338,8 +338,23 @@ export class AttendeesService {
     }
   }
 
-  async hideAttendees(adminId: Types.ObjectId, ){
-    
+  async hideAttendees(
+    adminId: Types.ObjectId,
+    webinarId: Types.ObjectId,
+    attendees: string[],
+  ) {
+    const attendeeIds = attendees.map((a) => new Types.ObjectId(a));
+    return this.attendeeModel.updateMany(
+      {
+        adminId,
+        webinar: webinarId,
+        _id: { $in: attendeeIds },
+        isDeleted: { $ne: true}
+      },
+      {
+        $set: { isDeleted: true },
+      },
+    );
   }
 
   async getAttendee(adminId: string, email: string): Promise<any> {
@@ -437,6 +452,7 @@ export class AttendeesService {
           adminId: new Types.ObjectId(AdminId),
           webinar: new Types.ObjectId(webinarId),
           isAttended: isAttended,
+          isDeleted: { $ne: true},
           ...(filters.isAssigned &&
             (filters.isAssigned === 'true'
               ? { assignedTo: { $ne: null } }

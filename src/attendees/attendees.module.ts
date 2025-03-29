@@ -46,6 +46,7 @@ export class AttendeesModule {
       .forRoutes(
         { path: 'attendees', method: RequestMethod.POST },
         { path: 'attendees/swap', method: RequestMethod.PUT },
+        { path: 'attendees/webinar', method: RequestMethod.DELETE },
       );
 
     consumer.apply(CompressionMiddleware).forRoutes(

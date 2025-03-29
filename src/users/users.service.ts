@@ -34,6 +34,7 @@ import {
   notificationType,
 } from 'src/schemas/notification.schema';
 import { BillingType } from 'src/schemas/BillingHistory.schema';
+import { ProductsService } from 'src/products/products.service';
 
 @Injectable()
 export class UsersService {
@@ -47,8 +48,11 @@ export class UsersService {
     @Inject(forwardRef(() => SubscriptionService))
     private readonly subscriptionService: SubscriptionService,
     private readonly jwtService: JwtService,
+    @Inject(forwardRef(() => CustomLeadTypeService))
     private readonly customLeadTypeService: CustomLeadTypeService,
+    private readonly productsService: ProductsService,
     private readonly notificationService: NotificationService,
+
   ) {}
 
   getUsers() {
@@ -945,7 +949,7 @@ export class UsersService {
       await this.subscriptionService.addSubscription(subscriptionPayload);
 
     const { totalWithGST, itemAmount, discountAmount, gst } =
-      await this.subscriptionService.generatePriceForPlan(
+       this.subscriptionService.generatePriceForPlan(
         plan.amount,
         createClientDto.durationType,
         durationConfig,
@@ -966,6 +970,7 @@ export class UsersService {
     );
 
     await this.customLeadTypeService.createDefaultLeadTypes(`${user._id}`);
+    await this.productsService.createDefaultProductLevels(user._id as Types.ObjectId);
 
     return { user, subscription, billingHistory };
   }

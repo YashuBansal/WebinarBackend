@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
 import { CustomLeadTypeController } from './custom-lead-type.controller';
 import { CustomLeadTypeService } from './custom-lead-type.service';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -12,7 +12,7 @@ import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
-    UsersModule,
+    forwardRef(() => UsersModule),
     MongooseModule.forFeature([
       {
         name: CustomLeadType.name,

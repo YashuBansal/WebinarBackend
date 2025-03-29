@@ -27,7 +27,8 @@ export class ProductsService {
   ) {}
 
   private generateShortId(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const chars =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let id = '';
     for (let i = 0; i < 9; i++) {
       id += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -45,16 +46,18 @@ export class ProductsService {
       uniqueId = this.generateShortId();
       existingProduct = await this.productsModel.findOne({ uniqueId });
       attempts++;
-      
+
       if (attempts > 5) {
-        throw new NotAcceptableException('Could not generate unique ID after 5 attempts');
+        throw new NotAcceptableException(
+          'Could not generate unique ID after 5 attempts',
+        );
       }
     } while (existingProduct);
 
     const productData = {
       ...createProductsDto,
       uniqueId,
-      adminId: new Types.ObjectId(`${createProductsDto.adminId}`)
+      adminId: new Types.ObjectId(`${createProductsDto.adminId}`),
     };
 
     const result = await this.productsModel.create(productData);
@@ -82,7 +85,7 @@ export class ProductsService {
     return { page, totalPages, result };
   }
 
-  async getProduct(productId: Types.ObjectId){
+  async getProduct(productId: Types.ObjectId) {
     return this.productsModel.findById(productId);
   }
 
@@ -150,7 +153,6 @@ export class ProductsService {
     updateProductLevelDto: UpdateProductLevelDto,
     adminId: string,
   ): Promise<any> {
-
     const isExisting = await this.productLevelModel.findOne({
       label: updateProductLevelDto.label,
       adminId: new Types.ObjectId(`${adminId}`),
@@ -159,13 +161,12 @@ export class ProductsService {
     if (isExisting)
       throw new NotAcceptableException('Product label already exists.');
 
-
     const result = await this.productLevelModel.findOneAndUpdate(
       {
         _id: new Types.ObjectId(`${id}`),
         adminId: new Types.ObjectId(`${adminId}`),
       },
-      { label: updateProductLevelDto.label},
+      { label: updateProductLevelDto.label },
       { new: true },
     );
     if (!result) {
@@ -173,7 +174,6 @@ export class ProductsService {
     }
     return result;
   }
-
 
   async deleteProductLevel(id: string, adminId: string): Promise<any> {
     const result = await this.productLevelModel.findOneAndDelete({
@@ -186,11 +186,27 @@ export class ProductsService {
     return result;
   }
 
-
   async getProductLevels(adminId: string): Promise<any> {
-    const result = await this.productLevelModel.find({
-      adminId: new Types.ObjectId(`${adminId}`),
-    }).sort({ level: 1 });
+    const result = await this.productLevelModel
+      .find({
+        adminId: new Types.ObjectId(`${adminId}`),
+      })
+      .sort({ level: 1 });
     return result;
+  }
+
+  async createDefaultProductLevels(adminId: Types.ObjectId) {
+    const ProductLevels = [
+      { label: 'L0', level: 0 },
+      { label: 'L1', level: 1 },
+      { label: 'L2', level: 2 },
+    ];
+
+    const newProductLevels = ProductLevels.map((ProductLevel) => ({
+      ...ProductLevel,
+      adminId
+    }));
+
+    return this.productLevelModel.insertMany(newProductLevels);
   }
 }

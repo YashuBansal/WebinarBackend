@@ -131,6 +131,7 @@ export class WebinarService {
                   $and: [
                     { $eq: ['$$attendee.isAttended', true] },
                     { $gt: ['$$attendee.timeInSession', 0] },
+                    { $ne: ['$$attendee.isDeleted', true] },
                   ],
                 },
               },
@@ -141,7 +142,12 @@ export class WebinarService {
               $filter: {
                 input: '$attendees',
                 as: 'attendee',
-                cond: { $eq: ['$$attendee.isAttended', false] },
+                cond: {
+                  $and: [
+                    { $eq: ['$$attendee.isAttended', false] },
+                    { $ne: ['$$attendee.isDeleted', true] },
+                  ],
+                },
               },
             },
           },
@@ -151,7 +157,12 @@ export class WebinarService {
               $filter: {
                 input: '$attendees',
                 as: 'attendee',
-                cond: { $eq: ['$$attendee.isAttended', true] },
+                cond: {
+                  $and: [
+                    { $eq: ['$$attendee.isAttended', true]},
+                    { $ne: ['$$attendee.isDeleted', true] },
+                  ],
+                },
               },
             },
           },

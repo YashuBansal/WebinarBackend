@@ -28,6 +28,7 @@ import {
 } from 'src/schemas/custom-lead-type.schema';
 import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.module';
 import { NotificationModule } from 'src/notification/notification.module';
+import { ProductsModule } from 'src/products/products.module';
 
 @Module({
   imports: [
@@ -54,16 +55,15 @@ import { NotificationModule } from 'src/notification/notification.module';
         name: Roles.name,
         schema: RolesSchema,
       },
-      {
-        name: CustomLeadType.name,
-        schema: CustomLeadTypeSchema,
-      },
     ]),
     BillingHistoryModule,
     NotificationModule,
+    forwardRef(() => CustomLeadTypeModule),
+    forwardRef(() => ProductsModule),
+    
   ],
   controllers: [UsersController],
-  providers: [UsersService, CustomLeadTypeService],
+  providers: [UsersService],
   exports: [UsersService],
 })
 export class UsersModule {

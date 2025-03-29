@@ -381,3 +381,14 @@ export class ExportGroupedAttendeesDTO {
   @Type(() => GroupedAttendeesSortObject)
   sort?: GroupedAttendeesSortObject;  
 }
+
+export class DeleteWebinarAttendeesDTO{
+
+  @IsArray()
+  @IsNotEmpty()
+  @IsMongoId({ each: true })
+  attendees: string[];
+
+  @IsMongoId()
+  webinarId: string
+}

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   forwardRef,
   Get,
   Inject,
@@ -16,6 +17,7 @@ import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { AttendeesService } from './attendees.service';
 import {
   CreateAttendeeDto,
+  DeleteWebinarAttendeesDTO,
   FetchGroupedAttendeesDTO,
   GetAttendeesDTO,
   SwapAttendeeFieldsDTO,
@@ -88,7 +90,7 @@ export class AttendeesController {
     );
     const processingTime = Date.now() - start;
     console.log(`Processing time: ${processingTime} milliseconds`);
-    return {...result, processingTime};
+    return { ...result, processingTime };
   }
 
   @Post()
@@ -123,8 +125,8 @@ export class AttendeesController {
       data[i].webinar = new Types.ObjectId(`${body.webinarId}`);
       data[i].isAttended = body.isAttended;
       data[i].adminId = new Types.ObjectId(`${adminId}`);
-      data[i].email = (data[i].email || "").toLowerCase();
-      data[i].phone = this.assignService.formatPhoneNumber(data[i].phone) || "";
+      data[i].email = (data[i].email || '').toLowerCase();
+      data[i].phone = this.assignService.formatPhoneNumber(data[i].phone) || '';
     }
 
     const result = await this.attendeesService.addPostAttendees(
@@ -158,8 +160,26 @@ export class AttendeesController {
     @Body() body: SwapAttendeeFieldsDTO,
     @Id() adminId: string,
   ) {
-    return await this.attendeesService.swapFields(
-      body, adminId
+    return await this.attendeesService.swapFields(body, adminId);
+  }
+
+  @Delete('/webinar')
+  async deleteWebinarAttendees(
+    @Id() adminId: string,
+    @Body() body: DeleteWebinarAttendeesDTO,
+  ) {
+    if(!adminId){
+      throw new NotFoundException("Admin Id is Required");
+    }
+     const result = await this.attendeesService.hideAttendees(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(body.webinarId),
+      body.attendees,
     );
+    return {
+      success: true,
+      message: "Webinar Attendees has been deleted Successfully.",
+      data: result
+    }
   }
 }
