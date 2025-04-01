@@ -751,11 +751,7 @@ export class AttendeesService {
         },
       },
     ];
-    // const totalResult = await this.attendeeModel
-    //   .aggregate([...basePipeline, { $count: 'total' }])
-    //   .exec();
 
-    // const result = await this.attendeeModel.aggregate(pipeline).exec();
 
     if (usePagination) {
       const [result, totalResult] = await Promise.all([

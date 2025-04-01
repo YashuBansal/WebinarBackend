@@ -15,6 +15,7 @@ import { Types } from 'mongoose';
 import {
   AttendeesFilterDto,
   CreateAttendeeDto,
+  WebinarAttendeesSortObject,
 } from 'src/attendees/dto/attendees.dto';
 import { AssignmentStatus, RecordType } from 'src/schemas/Assignments.schema';
 
@@ -69,6 +70,11 @@ export class GetAssignmentDTO {
     message: 'assignmentStatus must be a valid value',
   })
   assignmentStatus: AssignmentStatus;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WebinarAttendeesSortObject)
+  sort?: WebinarAttendeesSortObject;
 }
 
 export class RequestReAssignmentsDTO {

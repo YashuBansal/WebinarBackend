@@ -77,6 +77,7 @@ export class AssignmentController {
       query.webinarId,
       body.validCall,
       body.assignmentStatus,
+      body.sort
     );
     return result;
   }

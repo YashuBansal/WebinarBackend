@@ -26,6 +26,9 @@ import { ConfigService } from '@nestjs/config';
 import {
   AttendeesFilterDto,
   CreateAttendeeDto,
+  SortOrder,
+  WebinarAttendeesSortBy,
+  WebinarAttendeesSortObject,
 } from 'src/attendees/dto/attendees.dto';
 import { Attendee } from 'src/schemas/Attendee.schema';
 import { WebinarService } from 'src/webinar/webinar.service';
@@ -70,8 +73,14 @@ export class AssignmentService {
     webinarId: string = '',
     validCall: string = '',
     assignmentStatus: AssignmentStatus,
-    usePagination: boolean = true, // Flag to enable/disable pagination
+    sort: WebinarAttendeesSortObject = {
+      sortBy: WebinarAttendeesSortBy.EMAIL,
+      sortOrder: SortOrder.ASC,
+    },
   ): Promise<any> {
+
+
+    console.log('filters -> .', filters, sort);
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -105,7 +114,6 @@ export class AssignmentService {
           isAttended: '$attendee.isAttended',
           validCall: '$attendee.validCall',
           gender: '$attendee.gender',
-          leadType: '$attendee.leadType',
           location: '$attendee.location',
           phone: '$attendee.phone',
           status: '$attendee.status',
@@ -144,56 +152,120 @@ export class AssignmentService {
               ? { status: { $ne: null } }
               : { status: null }),
           }),
+          ...(filters.status && {
+            status: filters.status,
+          }),
+          ...(filters.tags && {
+            tags: { $in: filters.tags },
+          }),
         },
       },
-      {
-        $sort: { createdAt: -1 },
-      },
+      ...(filters.leadType
+        ? [
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$email' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                          },
+                          { $eq: ['$email', '$$tempMail'] },
+                          {
+                            $eq: [
+                              '$leadType',
+                              new Types.ObjectId(filters.leadType),
+                            ],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                ],
+
+                as: 'attendeeAssociations',
+              },
+            },
+            {
+              $unwind: {
+                path: '$attendeeAssociations',
+                preserveNullAndEmptyArrays: false,
+              },
+            },
+          ]
+        : []),
     ];
 
-    if (usePagination) {
-      // Add $facet stage for pagination
-      basePipeline.push(
-        {
-          $facet: {
-            metadata: [{ $count: 'total' }],
-            data: [{ $skip: skip }, { $limit: limit }],
-          },
-        },
-        {
-          $unwind: {
-            path: '$metadata',
-            preserveNullAndEmptyArrays: true,
-          },
-        },
-        {
-          $project: {
-            totalPages: { $ceil: { $divide: ['$metadata.total', limit] } },
-            page: { $literal: page },
-            result: '$data',
-          },
-        },
-      );
+    const mainPipeline: PipelineStage[] = [
+      ...basePipeline,
+      { $sort: { [sort.sortBy]: sort.sortOrder === SortOrder.ASC ? 1 : -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      ...(filters.leadType
+        ? []
+        : [
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$email' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                          },
+                          { $eq: ['$email', '$$tempMail'] },
+                        ],
+                      },
+                    },
+                  },
+                ],
 
-      const result = await this.assignmentsModel.aggregate(basePipeline);
-      return result.length > 0
-        ? result[0]
-        : { result: [], page, totalPages: 0 };
-    } else {
-      // Add skip and limit stages directly for non-paginated results
-      basePipeline.push(
-        { $skip: skip },
-        { $limit: limit },
-        { $sort: { createdAt: -1 } },
-      );
+                as: 'attendeeAssociations',
+              },
+            },
+            {
+              $unwind: {
+                path: '$attendeeAssociations',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+          ]),
+          {
+            $addFields: {
+              leadType: '$attendeeAssociations.leadType',
+            },
+          },
+          {
+            $project: {
+              attendeeAssociations: 0
+            },
+          },
+    ];
 
-      const result = await this.assignmentsModel.aggregate(basePipeline).exec();
-      return {
-        result,
-        page: 1, // Fixed page for non-paginated
-        totalPages: 1, // No pagination
-      };
-    }
+    const [result, totalResult] = await Promise.all([
+      this.assignmentsModel.aggregate(mainPipeline).exec(),
+      this.assignmentsModel
+        .aggregate([...basePipeline, { $count: 'total' }])
+        .exec(),
+    ]);
+    const total = totalResult[0]?.total || 0;
+
+    const pagination = {
+      total,
+      totalPages: Math.ceil(total / limit),
+      page,
+      limit,
+    };
+
+    return { pagination, result };
+
   }
 
   async addAssignment(data: AssignmentDto, adminId: string) {
