@@ -1116,6 +1116,6 @@ export class UsersService {
   }
 
   async getEmployeesForNotes(adminId: Types.ObjectId) {
-    return this.userModel.find({ adminId }, '_id email userName');
+    return this.userModel.find({ adminId }, '_id email userName isActive');
   }
 }

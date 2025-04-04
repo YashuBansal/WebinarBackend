@@ -20,6 +20,9 @@ import { NotificationModule } from 'src/notification/notification.module';
 import { CompressionMiddleware } from '@nest-middlewares/compression';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { AssignmentModule } from 'src/assignment/assignment.module';
+import { AlarmModule } from 'src/alarm/alarm.module';
+import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
+import { NotesModule } from 'src/notes/notes.module';
 
 @Module({
   imports: [
@@ -34,6 +37,9 @@ import { AssignmentModule } from 'src/assignment/assignment.module';
     forwardRef(() => WebinarModule),
     forwardRef(() => AssignmentModule),
     NotificationModule,
+    AlarmModule,
+    EnrollmentsModule,
+    NotesModule
   ],
   controllers: [AttendeesController],
   providers: [AttendeesService,WebsocketGateway],

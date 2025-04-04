@@ -39,8 +39,9 @@ export class GetAdminIdMiddleware implements NestMiddleware {
         req.id = decodedToken.id;
         next();
       } else {
-        const user = await this.usersService.getUserById(decodedToken.id);
-        req.adminId = user.adminId;
+        
+        
+        req.adminId = new Types.ObjectId(`${decodedToken.adminId}`);
         req.id = decodedToken.id;
         next();
       }

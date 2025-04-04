@@ -18,6 +18,7 @@ export enum notificationActionType {
   EXPIRY_REMINDER = 'expiry_reminder', 
   LOCATION_REQUEST = 'location_request',
   ATTENDEE_REGISTRATION = 'attendee_registration',
+  NOTICE_BOARD_UPDATE = 'notice_board_update'
 }
 
 @Schema({ timestamps: true })

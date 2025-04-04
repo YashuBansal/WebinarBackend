@@ -266,7 +266,7 @@ export class AlarmService {
     return alarms;
   }
 
-  async deleteAlarmsByAttendeeIds(attendeeIds: Types.ObjectId[],session: ClientSession) {
+  async deleteAlarmsByAttendeeIds(session: ClientSession, attendeeIds: Types.ObjectId[]) {
     return this.alarmsModel.deleteMany({ attendeeId: { $in: attendeeIds } },{session}).exec();
   }
 }

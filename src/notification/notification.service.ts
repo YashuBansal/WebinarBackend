@@ -135,8 +135,8 @@ export class NotificationService {
   }
 
   async deleteNotificationsByWebinar(
-    webinarId: Types.ObjectId,
     session: ClientSession,
+    webinarId: Types.ObjectId,
   ) {
     return this.notificationModel
       .deleteMany({

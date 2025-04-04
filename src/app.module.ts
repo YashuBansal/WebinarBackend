@@ -4,7 +4,7 @@ import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
 import { AttendeesModule } from './attendees/attendees.module';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import configurations from './config/configurations';
 import { GetAdminIdMiddleware } from './middlewares/get-admin-id.middleware';
@@ -48,6 +48,7 @@ import { RevenueModule } from './revenue/revenue.module';
 import { TagsModule } from './tags/tags.module';
 import { ProductRevenueModule } from './product-revenue/product-revenue.module';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { JwtModule } from '@nestjs/jwt';
 
 @Module({
   imports: [

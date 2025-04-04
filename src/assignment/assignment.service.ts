@@ -62,7 +62,7 @@ export class AssignmentService {
     private readonly userService: UsersService,
     private readonly tagsService: TagsService,
     private readonly enrollmentService: EnrollmentsService,
-  ) {}
+  ) { }
 
   async getAssignments(
     adminId: string,
@@ -80,7 +80,6 @@ export class AssignmentService {
   ): Promise<any> {
 
 
-    console.log('filters -> .', filters, sort);
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -162,41 +161,41 @@ export class AssignmentService {
       },
       ...(filters.leadType
         ? [
-            {
-              $lookup: {
-                from: 'attendeeassociations',
-                let: { tempMail: '$email' },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          {
-                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                          },
-                          { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $eq: [
-                              '$leadType',
-                              new Types.ObjectId(filters.leadType),
-                            ],
-                          },
-                        ],
-                      },
+          {
+            $lookup: {
+              from: 'attendeeassociations',
+              let: { tempMail: '$email' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        {
+                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                        },
+                        { $eq: ['$email', '$$tempMail'] },
+                        {
+                          $eq: [
+                            '$leadType',
+                            new Types.ObjectId(filters.leadType),
+                          ],
+                        },
+                      ],
                     },
                   },
-                ],
+                },
+              ],
 
-                as: 'attendeeAssociations',
-              },
+              as: 'attendeeAssociations',
             },
-            {
-              $unwind: {
-                path: '$attendeeAssociations',
-                preserveNullAndEmptyArrays: false,
-              },
+          },
+          {
+            $unwind: {
+              path: '$attendeeAssociations',
+              preserveNullAndEmptyArrays: false,
             },
-          ]
+          },
+        ]
         : []),
     ];
 
@@ -208,45 +207,45 @@ export class AssignmentService {
       ...(filters.leadType
         ? []
         : [
-            {
-              $lookup: {
-                from: 'attendeeassociations',
-                let: { tempMail: '$email' },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          {
-                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                          },
-                          { $eq: ['$email', '$$tempMail'] },
-                        ],
-                      },
+          {
+            $lookup: {
+              from: 'attendeeassociations',
+              let: { tempMail: '$email' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        {
+                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                        },
+                        { $eq: ['$email', '$$tempMail'] },
+                      ],
                     },
                   },
-                ],
+                },
+              ],
 
-                as: 'attendeeAssociations',
-              },
-            },
-            {
-              $unwind: {
-                path: '$attendeeAssociations',
-                preserveNullAndEmptyArrays: true,
-              },
-            },
-          ]),
-          {
-            $addFields: {
-              leadType: '$attendeeAssociations.leadType',
+              as: 'attendeeAssociations',
             },
           },
           {
-            $project: {
-              attendeeAssociations: 0
+            $unwind: {
+              path: '$attendeeAssociations',
+              preserveNullAndEmptyArrays: true,
             },
           },
+        ]),
+      {
+        $addFields: {
+          leadType: '$attendeeAssociations.leadType',
+        },
+      },
+      {
+        $project: {
+          attendeeAssociations: 0
+        },
+      },
     ];
 
     const [result, totalResult] = await Promise.all([
@@ -375,7 +374,7 @@ export class AssignmentService {
     let executeFurther = true;
 
     for (const tag of tags) {
-      if (tagsUsecaseMap[tag] === Usecase.PRODUCT) {
+      if (tagsUsecaseMap[tag] === Usecase.PRODUCT && Array.isArray(assignedProducts)) {
         assignedProducts
           .filter((product) => product.tag === tag)
           .forEach(async (product) => {
@@ -406,7 +405,7 @@ export class AssignmentService {
         executeFurther &&
         taggedEmployee &&
         taggedEmployee.role.toString() ===
-          this.configService.get('appRoles').EMPLOYEE_REMINDER &&
+        this.configService.get('appRoles').EMPLOYEE_REMINDER &&
         taggedEmployee.dailyContactLimit > taggedEmployee.dailyContactCount
       ) {
         const existingAssignment = await this.assignmentsModel.findOne({
@@ -474,34 +473,41 @@ export class AssignmentService {
       );
     }
 
+    console.log('existingAttendee before', attendee.email, webinarId);
     // Check if an attendee with the same email is already added to this webinar
     const existingAttendee: Attendee | null =
       await this.attendeeService.fetchAttendeeByWebinar(
         attendee.email,
         webinarId,
       );
+    console.log('existingAttendee', existingAttendee?.email, existingAttendee?.webinar);
 
     if (existingAttendee) {
-      const newTags = attendee.tags.filter(
-        (tag) => !existingAttendee.tags.includes(tag),
-      );
 
-      if (existingAttendee.tags.length === 0) {
-        existingAttendee.tags = newTags;
-      } else {
-        existingAttendee.tags = [...existingAttendee.tags, ...newTags];
+      if (Array.isArray(existingAttendee.tags) && Array.isArray(attendee.tags)) {
+        const newTags = attendee.tags.filter(
+          (tag) => !existingAttendee.tags.includes(tag),
+        );
+
+        if (existingAttendee.tags.length === 0) {
+          existingAttendee.tags = newTags;
+        } else {
+          existingAttendee.tags = [...existingAttendee.tags, ...newTags];
+        }
+        await this.handleTags(
+          existingAttendee,
+          attendee.email,
+          webinarId,
+          new Types.ObjectId(adminId),
+          newTags,
+          webinar.productIds,
+          webinar.assignedEmployees,
+        );
+
+        await existingAttendee.save();
+
       }
-      await this.handleTags(
-        existingAttendee,
-        attendee.email,
-        webinarId,
-        new Types.ObjectId(adminId),
-        newTags,
-        webinar.productIds,
-        webinar.assignedEmployees,
-      );
 
-      await existingAttendee.save();
       return {
         success: true,
         message: 'Attendee Updated Successfully.',
@@ -610,7 +616,7 @@ export class AssignmentService {
           return (
             employee._id.toString() === lastAssigned.assignedTo.toString() &&
             employee.role.toString() ===
-              this.configService.get('appRoles')['EMPLOYEE_REMINDER']
+            this.configService.get('appRoles')['EMPLOYEE_REMINDER']
           );
         },
       );
@@ -648,7 +654,7 @@ export class AssignmentService {
         (emp) =>
           emp.difference > 0 &&
           emp.role.toString() ===
-            this.configService.get('appRoles').EMPLOYEE_REMINDER, // Only employees with the correct role and capacity
+          this.configService.get('appRoles').EMPLOYEE_REMINDER, // Only employees with the correct role and capacity
       );
 
       const employees = filteredEmployee.sort(
@@ -1462,15 +1468,17 @@ export class AssignmentService {
   }
 
   async deleteAssignmentsByWebinar(
+    session: ClientSession,
     adminId: Types.ObjectId,
     webinarId: Types.ObjectId,
-    session: ClientSession,
+    attendeeIds?: Types.ObjectId[],
   ) {
     return this.assignmentsModel
       .deleteMany(
         {
           adminId: adminId,
           webinar: webinarId,
+          ...(attendeeIds && { attendee: { $in: attendeeIds } }),
         },
         { session },
       )

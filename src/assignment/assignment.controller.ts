@@ -166,7 +166,10 @@ export class AssignmentController {
     return await this.assignmentService.addPreWebinarAssignments(
       adminId,
       body.webinar,
-      body.attendee,
+      {
+        ...body.attendee,
+        email: body.attendee.email.trim().toLowerCase(),
+      },
     );
   }
 

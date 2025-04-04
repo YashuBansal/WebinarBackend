@@ -340,8 +340,8 @@ export class WebinarService {
       // Execute deletions
       for (const dependency of DELETION_DEPENDENCIES) {
         await dependency.service[dependency.method](
-          ...dependency.args,
           session,
+          ...dependency.args,
         );
       }
       const contactCount =

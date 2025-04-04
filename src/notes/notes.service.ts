@@ -387,7 +387,7 @@ export class NotesService {
     return results;
   }
 
-  async deleteNotesByAttendees(attendees: Types.ObjectId[],session: ClientSession){
+  async deleteNotesByAttendees(session: ClientSession, attendees: Types.ObjectId[]){
     return this.notesModel.deleteMany({attendee: {$in: attendees}}).session(session).exec();
     // TODO: Delete images from cloudinary
   }

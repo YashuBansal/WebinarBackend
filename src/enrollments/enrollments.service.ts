@@ -22,7 +22,7 @@ export class EnrollmentsService {
     private readonly enrollmentModel: Model<Enrollment>,
     @Inject(forwardRef(() => ProductsService))
     private readonly productsService: ProductsService,
-  ) {}
+  ) { }
 
   async createEnrollment(
     createEnrollmentDto: CreateEnrollmentDto,
@@ -334,7 +334,7 @@ export class EnrollmentsService {
     const limit = parseInt(productData.limit) || 10;
     const level = parseInt(productData.productLevel) || undefined;
 
-    console.log(page,limit, level, productData.productId)
+    console.log(page, limit, level, productData.productId)
     const skip = (page - 1) * limit;
 
     const basePipeline: PipelineStage[] = [
@@ -361,8 +361,8 @@ export class EnrollmentsService {
             }),
           ...(productData?.productId
             ? {
-                'productData._id': new Types.ObjectId(productData?.productId),
-              }
+              'productData._id': new Types.ObjectId(productData?.productId),
+            }
             : {}),
         },
       },
@@ -418,10 +418,23 @@ export class EnrollmentsService {
 
 
   async deleteAssignmentsByWebinar(
+    session: ClientSession,
     adminId: Types.ObjectId,
     webinarId: Types.ObjectId,
-    session: ClientSession
+    attendees?: Types.ObjectId[],
   ) {
-    return this.enrollmentModel.deleteMany({ adminId: adminId, webinar: webinarId }).session(session).exec();
+    console.log(attendees, await this.enrollmentModel.find({
+      adminId: adminId,
+      webinar: webinarId,
+      ...(attendees && { attendee: { $in: attendees } })
+    }));
+    return this.enrollmentModel
+      .deleteMany(
+        {
+          adminId: adminId,
+          webinar: webinarId,
+          ...(attendees && { attendee: { $in: attendees } })
+        }
+      ).session(session).exec();
   }
 }
