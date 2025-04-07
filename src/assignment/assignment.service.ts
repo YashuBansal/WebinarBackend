@@ -658,7 +658,7 @@ export class AssignmentService {
       );
 
       const employees = filteredEmployee.sort(
-        (a, b) => b.difference - a.difference,
+        (a, b) =>a.dailyContactCount - b.dailyContactCount,
       ); // Sort by the largest remaining capacity first
 
       if (employees.length > 0) {
