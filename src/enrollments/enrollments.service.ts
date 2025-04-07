@@ -421,19 +421,28 @@ export class EnrollmentsService {
     session: ClientSession,
     adminId: Types.ObjectId,
     webinarId: Types.ObjectId,
-    attendees?: Types.ObjectId[],
+    attendees?: string[],
   ) {
-    console.log(attendees, await this.enrollmentModel.find({
-      adminId: adminId,
-      webinar: webinarId,
-      ...(attendees && { attendee: { $in: attendees } })
-    }));
     return this.enrollmentModel
       .deleteMany(
         {
           adminId: adminId,
           webinar: webinarId,
           ...(attendees && { attendee: { $in: attendees } })
+        }
+      ).session(session).exec();
+  }
+
+  async deleteAssignmentsByAttendeeIds(
+    session: ClientSession,
+    adminId: Types.ObjectId,
+    attendees: string[],
+  ) {
+    return this.enrollmentModel
+      .deleteMany(
+        {
+          adminId: adminId,
+          attendee: { $in: attendees }
         }
       ).session(session).exec();
   }

@@ -39,6 +39,7 @@ import async from 'async';
 import { AlarmService } from 'src/alarm/alarm.service';
 import { EnrollmentsService } from 'src/enrollments/enrollments.service';
 import { NotesService } from 'src/notes/notes.service';
+import { AttendeeAssociationService } from 'src/attendee-association/attendee-association.service';
 
 @Injectable()
 export class AttendeesService {
@@ -57,7 +58,8 @@ export class AttendeesService {
     private readonly websocketGateway: WebsocketGateway,
     private readonly alarmService: AlarmService,
     private readonly enrollService: EnrollmentsService,
-    private readonly notesService: NotesService
+    private readonly notesService: NotesService,
+    private readonly attendeeAssociationService: AttendeeAssociationService
   ) { }
 
   async addAttendees(attendees: [CreateAttendeeDto]): Promise<any> {
@@ -391,10 +393,88 @@ export class AttendeesService {
             method: 'deleteNotesByAttendees',
             args: [attendeeIds],
           },
+        ];
+
+        // Execute deletions
+        for (const dependency of DELETION_DEPENDENCIES) {
+          await dependency.service[dependency.method](
+            currentSession,
+            ...dependency.args,
+          );
+        }
+        const contactCount =
+          await this.getNonUniqueAttendeesCount(
+            [],
+            adminId,
+            currentSession,
+          );
+
+        await this.subscriptionService.updateContactCount(
+          adminId,
+          contactCount,
+          currentSession,
+        );
+
+      }); 
+
+    } catch (error) {
+      console.error('Transaction failed during hideAttendees:', error);
+      throw new Error(error.message); 
+    } finally {
+      await session.endSession();
+      console.log('Session ended.');
+      return DeletedAttendees;
+    }
+  }
+
+
+  async deleteAllAttendeeData(
+    adminId: Types.ObjectId,
+    attendees: string[]
+  ){
+    const session = await this.attendeeModel.startSession();
+    let DeletedAttendees = {};
+    try {
+      await session.withTransaction(async (currentSession) => {
+        const attendeeData = await this.attendeeModel.find({
+          adminId,
+          email: { $in: attendees },
+        }, {session: currentSession});
+
+        const attendeeIds = attendeeData.map((a) => a._id);
+        DeletedAttendees = await this.attendeeModel.deleteMany(
           {
-            service: this.notificationService,
-            method: 'deleteNotificationsByWebinar',
-            args: [webinarId],
+            adminId,
+            email: { $in: attendees },
+          },
+          {session: currentSession}
+        );
+
+        const DELETION_DEPENDENCIES = [
+          {
+            service: this.alarmService,
+            method: 'deleteAlarmsByAttendeeIds',
+            args: [attendeeIds],
+          },
+          {
+            service: this.assignService,
+            method: 'deleteAssignmentsByAttendeeIds',
+            args: [adminId, attendeeIds],
+          },
+          {
+            service: this.enrollService,
+            method: 'deleteAssignmentsByAttendeeIds',
+            args: [adminId, attendees],
+          },
+          {
+            service: this.attendeeAssociationService,
+            method: 'deleteAttendeeAssociationsByAttendeeEmails',
+            args: [adminId, attendees],
+          },
+          {
+            service: this.notesService,
+            method: 'deleteNotesByAttendees',
+            args: [attendeeIds],
           },
         ];
 

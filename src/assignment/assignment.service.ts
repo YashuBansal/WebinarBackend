@@ -1485,6 +1485,22 @@ export class AssignmentService {
       .exec();
   }
 
+  async deleteAssignmentsByAttendeeIds(
+    session: ClientSession,
+    adminId: Types.ObjectId,
+    attendeeIds: Types.ObjectId[],
+  ) {
+    return this.assignmentsModel
+      .deleteMany(
+        {
+          adminId: adminId,
+          attendee: { $in: attendeeIds }
+        },
+        { session },
+      )
+      .exec();
+  }
+
   validateDate(start: string, end: string): { startDate: Date; endDate: Date } {
     const startDate = new Date(start);
     const endDate = new Date(end);

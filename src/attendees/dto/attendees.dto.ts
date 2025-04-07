@@ -392,3 +392,13 @@ export class DeleteWebinarAttendeesDTO{
   @IsMongoId()
   webinarId: string
 }
+
+
+export class DeleteAllAttendeesDTO{
+
+  @IsArray()
+  @IsNotEmpty()
+  @IsEmail({}, { each: true })
+  attendees: string[];
+
+}

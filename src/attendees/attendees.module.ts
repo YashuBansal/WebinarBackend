@@ -23,6 +23,7 @@ import { AssignmentModule } from 'src/assignment/assignment.module';
 import { AlarmModule } from 'src/alarm/alarm.module';
 import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
 import { NotesModule } from 'src/notes/notes.module';
+import { AttendeeAssociationModule } from 'src/attendee-association/attendee-association.module';
 
 @Module({
   imports: [
@@ -39,7 +40,8 @@ import { NotesModule } from 'src/notes/notes.module';
     NotificationModule,
     AlarmModule,
     EnrollmentsModule,
-    NotesModule
+    NotesModule,
+    AttendeeAssociationModule
   ],
   controllers: [AttendeesController],
   providers: [AttendeesService,WebsocketGateway],

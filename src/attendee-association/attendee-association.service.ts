@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { AttendeeAssociation } from 'src/schemas/attendee-association.schema';
 
 @Injectable()
@@ -40,5 +40,20 @@ export class AttendeeAssociationService {
       .findOne({ adminId: new Types.ObjectId(`${adminId}`), email: email })
       .exec();
     return association ? association : null;
+  }
+
+
+  async deleteAttendeeAssociationsByAttendeeEmails(
+    session: ClientSession,
+    adminId: Types.ObjectId,
+    attendees: string[],
+  ) {
+    return this.attendeeAssociationModel
+      .deleteMany(
+        {
+          adminId: adminId,
+          attendee: { $in: attendees }
+        }
+      ).session(session).exec();
   }
 }

@@ -17,6 +17,7 @@ import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { AttendeesService } from './attendees.service';
 import {
   CreateAttendeeDto,
+  DeleteAllAttendeesDTO,
   DeleteWebinarAttendeesDTO,
   FetchGroupedAttendeesDTO,
   GetAttendeesDTO,
@@ -176,6 +177,26 @@ export class AttendeesController {
       new Types.ObjectId(body.webinarId),
       body.attendees,
     );
+    return {
+      success: true,
+      message: "Webinar Attendees has been deleted Successfully.",
+      data: result
+    }
+  }
+
+
+  @Delete('/all')
+  async deleteAllAttendeeData(
+    @Id() adminId: string,
+    @Body() body: DeleteAllAttendeesDTO,
+  ) {
+    if(!adminId){
+      throw new NotFoundException("Admin Id is Required");
+    }
+     const result = await this.attendeesService.deleteAllAttendeeData(
+      new Types.ObjectId(`${adminId}`),
+      body.attendees
+     );
     return {
       success: true,
       message: "Webinar Attendees has been deleted Successfully.",
