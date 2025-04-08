@@ -25,7 +25,6 @@ export class AlarmService {
     @Inject(forwardRef(() => WhatsappService))
     private readonly whatsappService: WhatsappService,
     @Inject(forwardRef(() => SubscriptionService))
-
     private readonly subscriptionService: SubscriptionService,
     private readonly configService: ConfigService,
   ) {}
@@ -266,7 +265,13 @@ export class AlarmService {
     return alarms;
   }
 
-  async deleteAlarmsByAttendeeIds(session: ClientSession, attendeeIds: Types.ObjectId[]) {
-    return this.alarmsModel.deleteMany({ attendeeId: { $in: attendeeIds } },{session}).exec();
+  async deleteAlarmsByAttendeeIds(
+    session: ClientSession,
+    attendeeIds: Types.ObjectId[],
+  ) {
+    console.log('alarm -> deleted');
+    return this.alarmsModel
+      .deleteMany({ attendeeId: { $in: attendeeIds } }, { session })
+      .exec();
   }
 }

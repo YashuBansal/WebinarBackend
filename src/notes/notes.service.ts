@@ -19,7 +19,7 @@ export class NotesService {
   ) {}
 
   async createNote(
-    body: CreateNoteDto, 
+    body: CreateNoteDto,
     createdBy: string,
     adminId: string,
   ): Promise<Notes | null> {
@@ -227,9 +227,7 @@ export class NotesService {
   ): Promise<any> {
     const adminId = new Types.ObjectId(`${id}`);
     // Step 1: Retrieve employees under the given adminId
-    const employees = await this.usersService.getEmployeesForNotes(
-      adminId
-    )// Retrieve _id and name for employees
+    const employees = await this.usersService.getEmployeesForNotes(adminId); // Retrieve _id and name for employees
     // Step 2: Aggregate notes for each employee
     const results = await Promise.all(
       employees.map(async (employee) => {
@@ -387,8 +385,15 @@ export class NotesService {
     return results;
   }
 
-  async deleteNotesByAttendees(session: ClientSession, attendees: Types.ObjectId[]){
-    return this.notesModel.deleteMany({attendee: {$in: attendees}}).session(session).exec();
+  async deleteNotesByAttendees(
+    session: ClientSession,
+    attendees: Types.ObjectId[],
+  ) {
+    console.log('notes -> deleted');
+    return this.notesModel
+      .deleteMany({ attendee: { $in: attendees } })
+      .session(session)
+      .exec();
     // TODO: Delete images from cloudinary
   }
 }

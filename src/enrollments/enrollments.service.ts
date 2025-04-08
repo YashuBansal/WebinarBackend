@@ -417,7 +417,7 @@ export class EnrollmentsService {
   }
 
 
-  async deleteAssignmentsByWebinar(
+  async deleteEnrollmentsByWebinar(
     session: ClientSession,
     adminId: Types.ObjectId,
     webinarId: Types.ObjectId,
@@ -433,11 +433,12 @@ export class EnrollmentsService {
       ).session(session).exec();
   }
 
-  async deleteAssignmentsByAttendeeIds(
+  async deleteEnrollmentsByAttendeeIds(
     session: ClientSession,
     adminId: Types.ObjectId,
     attendees: string[],
   ) {
+    console.log('enrollments -> deleted');
     return this.enrollmentModel
       .deleteMany(
         {

@@ -193,14 +193,10 @@ export class AttendeesController {
     if(!adminId){
       throw new NotFoundException("Admin Id is Required");
     }
-     const result = await this.attendeesService.deleteAllAttendeeData(
+     return await this.attendeesService.deleteAllAttendeeData(
       new Types.ObjectId(`${adminId}`),
       body.attendees
      );
-    return {
-      success: true,
-      message: "Webinar Attendees has been deleted Successfully.",
-      data: result
-    }
+  
   }
 }

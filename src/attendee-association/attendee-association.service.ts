@@ -42,18 +42,18 @@ export class AttendeeAssociationService {
     return association ? association : null;
   }
 
-
   async deleteAttendeeAssociationsByAttendeeEmails(
     session: ClientSession,
     adminId: Types.ObjectId,
     attendees: string[],
   ) {
+    console.log('attendee-association -> deleted');
     return this.attendeeAssociationModel
-      .deleteMany(
-        {
-          adminId: adminId,
-          attendee: { $in: attendees }
-        }
-      ).session(session).exec();
+      .deleteMany({
+        adminId: adminId,
+        attendee: { $in: attendees },
+      })
+      .session(session)
+      .exec();
   }
 }

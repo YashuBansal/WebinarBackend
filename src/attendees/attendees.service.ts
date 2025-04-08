@@ -59,8 +59,8 @@ export class AttendeesService {
     private readonly alarmService: AlarmService,
     private readonly enrollService: EnrollmentsService,
     private readonly notesService: NotesService,
-    private readonly attendeeAssociationService: AttendeeAssociationService
-  ) { }
+    private readonly attendeeAssociationService: AttendeeAssociationService,
+  ) {}
 
   async addAttendees(attendees: [CreateAttendeeDto]): Promise<any> {
     const result = await this.attendeeModel.create(attendees);
@@ -359,9 +359,9 @@ export class AttendeesService {
           adminId,
           webinar: webinarId,
           _id: { $in: attendees.map((a) => new Types.ObjectId(a)) },
-        }, {session: currentSession});
+        });
 
-        const attendeeIds = attendeeData.map((a) => a._id);
+        const attendeeIds = attendeeData.map((a) => a._id as Types.ObjectId);
         const attendeeEmails = attendeeData.map((a) => a.email);
         DeletedAttendees = await this.attendeeModel.deleteMany(
           {
@@ -369,69 +369,52 @@ export class AttendeesService {
             webinar: webinarId,
             _id: { $in: attendees.map((a) => new Types.ObjectId(a)) },
           },
-          {session: currentSession}
+          { session: currentSession },
         );
 
-        const DELETION_DEPENDENCIES = [
-          {
-            service: this.alarmService,
-            method: 'deleteAlarmsByAttendeeIds',
-            args: [attendeeIds],
-          },
-          {
-            service: this.assignService,
-            method: 'deleteAssignmentsByWebinar',
-            args: [adminId, webinarId, attendeeIds],
-          },
-          {
-            service: this.enrollService,
-            method: 'deleteAssignmentsByWebinar',
-            args: [adminId, webinarId, attendeeEmails],
-          },
-          {
-            service: this.notesService,
-            method: 'deleteNotesByAttendees',
-            args: [attendeeIds],
-          },
-        ];
+        await this.alarmService.deleteAlarmsByAttendeeIds(
+          currentSession,
+          attendeeIds,
+        );
+        await this.assignService.deleteAssignmentsByWebinar(
+          currentSession,
+          adminId,
+          webinarId,
+          attendeeIds,
+        );
+        await this.enrollService.deleteEnrollmentsByWebinar(
+          currentSession,
+          adminId,
+          webinarId,
+          attendeeEmails,
+        );
+        await this.notesService.deleteNotesByAttendees(
+          currentSession,
+          attendeeIds,
+        );
 
-        // Execute deletions
-        for (const dependency of DELETION_DEPENDENCIES) {
-          await dependency.service[dependency.method](
-            currentSession,
-            ...dependency.args,
-          );
-        }
-        const contactCount =
-          await this.getNonUniqueAttendeesCount(
-            [],
-            adminId,
-            currentSession,
-          );
+        const contactCount = await this.getNonUniqueAttendeesCount(
+          [],
+          adminId,
+          currentSession,
+        );
 
         await this.subscriptionService.updateContactCount(
           adminId,
           contactCount,
           currentSession,
         );
-
-      }); 
-
+      });
     } catch (error) {
       console.error('Transaction failed during hideAttendees:', error);
-      throw new Error(error.message); 
+      throw new BadRequestException(error.message);
     } finally {
       await session.endSession();
       console.log('Session ended.');
-      return DeletedAttendees;
     }
   }
 
-
-  async deleteAllAttendeeData(
-    adminId: Types.ObjectId,
-    attendees: string[]
-  ){
+  async deleteAllAttendeeData(adminId: Types.ObjectId, attendees: string[]) {
     const session = await this.attendeeModel.startSession();
     let DeletedAttendees = {};
     try {
@@ -439,58 +422,53 @@ export class AttendeesService {
         const attendeeData = await this.attendeeModel.find({
           adminId,
           email: { $in: attendees },
-        }, {session: currentSession});
+        });
 
-        const attendeeIds = attendeeData.map((a) => a._id);
+        if (attendeeData.length === 0) {
+          throw new BadRequestException('No attendees found');
+        }
+
+        const attendeeIds: Types.ObjectId[] = attendeeData.map(
+          (a) => a._id as Types.ObjectId,
+        );
+
         DeletedAttendees = await this.attendeeModel.deleteMany(
           {
             adminId,
             email: { $in: attendees },
           },
-          {session: currentSession}
+          { session: currentSession },
         );
 
-        const DELETION_DEPENDENCIES = [
-          {
-            service: this.alarmService,
-            method: 'deleteAlarmsByAttendeeIds',
-            args: [attendeeIds],
-          },
-          {
-            service: this.assignService,
-            method: 'deleteAssignmentsByAttendeeIds',
-            args: [adminId, attendeeIds],
-          },
-          {
-            service: this.enrollService,
-            method: 'deleteAssignmentsByAttendeeIds',
-            args: [adminId, attendees],
-          },
-          {
-            service: this.attendeeAssociationService,
-            method: 'deleteAttendeeAssociationsByAttendeeEmails',
-            args: [adminId, attendees],
-          },
-          {
-            service: this.notesService,
-            method: 'deleteNotesByAttendees',
-            args: [attendeeIds],
-          },
-        ];
+        await this.alarmService.deleteAlarmsByAttendeeIds(
+          currentSession,
+          attendeeIds,
+        );
+        await this.assignService.deleteAssignmentsByAttendeeIds(
+          currentSession,
+          adminId,
+          attendeeIds,
+        );
+        await this.enrollService.deleteEnrollmentsByAttendeeIds(
+          currentSession,
+          adminId,
+          attendees,
+        );
+        await this.attendeeAssociationService.deleteAttendeeAssociationsByAttendeeEmails(
+          currentSession,
+          adminId,
+          attendees,
+        );
+        await this.notesService.deleteNotesByAttendees(
+          currentSession,
+          attendeeIds,
+        );
 
-        // Execute deletions
-        for (const dependency of DELETION_DEPENDENCIES) {
-          await dependency.service[dependency.method](
-            currentSession,
-            ...dependency.args,
-          );
-        }
-        const contactCount =
-          await this.getNonUniqueAttendeesCount(
-            [],
-            adminId,
-            currentSession,
-          );
+        const contactCount = await this.getNonUniqueAttendeesCount(
+          [],
+          adminId,
+          currentSession,
+        );
 
         await this.subscriptionService.updateContactCount(
           adminId,
@@ -498,15 +476,17 @@ export class AttendeesService {
           currentSession,
         );
 
-      }); 
-
+        return DeletedAttendees;
+      });
     } catch (error) {
-      console.error('Transaction failed during hideAttendees:', error);
-      throw new Error(error.message); 
+      console.error(
+        'Transaction failed during Delete All Attendees:',
+        error.message,
+      );
+      throw new BadRequestException(error.message);
     } finally {
       await session.endSession();
       console.log('Session ended.');
-      return DeletedAttendees;
     }
   }
 
@@ -610,11 +590,11 @@ export class AttendeesService {
             (filters.isAssigned === 'true'
               ? { assignedTo: { $ne: null } }
               : {
-                $or: [
-                  { assignedTo: null },
-                  { assignedTo: { $exists: false } },
-                ],
-              })),
+                  $or: [
+                    { assignedTo: null },
+                    { assignedTo: { $exists: false } },
+                  ],
+                })),
           ...(validCall && {
             ...(validCall === 'Worked'
               ? { status: { $ne: null } }
@@ -623,11 +603,11 @@ export class AttendeesService {
           ...(assignmentType && {
             ...(assignmentType === 'Assigned'
               ? {
-                $and: [
-                  { assignedTo: { $ne: null } },
-                  { isPulledback: { $ne: true } },
-                ],
-              }
+                  $and: [
+                    { assignedTo: { $ne: null } },
+                    { isPulledback: { $ne: true } },
+                  ],
+                }
               : { assignedTo: null }),
           }),
         },
@@ -635,137 +615,137 @@ export class AttendeesService {
 
       ...(hasFilters
         ? [
-          {
-            $match: {
-              ...(filters.email && {
-                email: { $regex: filters.email, $options: 'i' },
-              }),
-              ...(filters.firstName && {
-                firstName: { $regex: filters.firstName, $options: 'i' },
-              }),
-              ...(filters.lastName && {
-                lastName: { $regex: filters.lastName, $options: 'i' },
-              }),
-              ...(filters.gender && {
-                gender: { $regex: filters.gender, $options: 'i' },
-              }),
-              ...(filters.phone && {
-                phone: { $regex: filters.phone, $options: 'i' },
-              }),
-              ...(filters.location && {
-                location: { $regex: filters.location, $options: 'i' },
-              }),
-              ...(filters.timeInSession && {
-                timeInSession: filters.timeInSession,
-              }),
-              ...(filters.status && {
-                status: filters.status,
-              }),
-              ...(filters.tags && {
-                tags: { $in: filters.tags },
-              }),
+            {
+              $match: {
+                ...(filters.email && {
+                  email: { $regex: filters.email, $options: 'i' },
+                }),
+                ...(filters.firstName && {
+                  firstName: { $regex: filters.firstName, $options: 'i' },
+                }),
+                ...(filters.lastName && {
+                  lastName: { $regex: filters.lastName, $options: 'i' },
+                }),
+                ...(filters.gender && {
+                  gender: { $regex: filters.gender, $options: 'i' },
+                }),
+                ...(filters.phone && {
+                  phone: { $regex: filters.phone, $options: 'i' },
+                }),
+                ...(filters.location && {
+                  location: { $regex: filters.location, $options: 'i' },
+                }),
+                ...(filters.timeInSession && {
+                  timeInSession: filters.timeInSession,
+                }),
+                ...(filters.status && {
+                  status: filters.status,
+                }),
+                ...(filters.tags && {
+                  tags: { $in: filters.tags },
+                }),
+              },
             },
-          },
-        ]
+          ]
         : []),
 
       ...(filters.leadType
         ? [
-          {
-            $lookup: {
-              from: 'attendeeassociations',
-              let: { tempMail: '$email' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
-                        },
-                        { $eq: ['$email', '$$tempMail'] },
-                        {
-                          $eq: [
-                            '$leadType',
-                            new Types.ObjectId(filters.leadType),
-                          ],
-                        },
-                      ],
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$email' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
+                          },
+                          { $eq: ['$email', '$$tempMail'] },
+                          {
+                            $eq: [
+                              '$leadType',
+                              new Types.ObjectId(filters.leadType),
+                            ],
+                          },
+                        ],
+                      },
                     },
                   },
-                },
-              ],
+                ],
 
-              as: 'attendeeAssociations',
+                as: 'attendeeAssociations',
+              },
             },
-          },
-          {
-            $unwind: {
-              path: '$attendeeAssociations',
-              preserveNullAndEmptyArrays: false,
+            {
+              $unwind: {
+                path: '$attendeeAssociations',
+                preserveNullAndEmptyArrays: false,
+              },
             },
-          },
-        ]
+          ]
         : []),
 
       ...(filters?.enrollments?.length
         ? [
-          {
-            $lookup: {
-              from: 'enrollments',
-              let: { tempMail: '$email' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$attendee', '$$tempMail'],
-                        },
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
-                        },
-                      ],
+            {
+              $lookup: {
+                from: 'enrollments',
+                let: { tempMail: '$email' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$attendee', '$$tempMail'],
+                          },
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
+                          },
+                        ],
+                      },
                     },
                   },
-                },
-                {
-                  $group: {
-                    _id: '$product',
-                    count: {
-                      $sum: 1,
+                  {
+                    $group: {
+                      _id: '$product',
+                      count: {
+                        $sum: 1,
+                      },
                     },
                   },
-                },
-                {
-                  $lookup: {
-                    from: 'products',
-                    localField: '_id',
-                    foreignField: '_id',
-                    as: 'product',
-                  },
-                },
-                {
-                  $project: {
-                    _id: 1,
-                    count: 1,
-                    productName: {
-                      $arrayElemAt: ['$product.name', 0],
+                  {
+                    $lookup: {
+                      from: 'products',
+                      localField: '_id',
+                      foreignField: '_id',
+                      as: 'product',
                     },
                   },
-                },
-              ],
-              as: 'enrollments',
-            },
-          },
-          {
-            $match: {
-              'enrollments._id': {
-                $in: filters.enrollments.map((id) => new Types.ObjectId(id)),
+                  {
+                    $project: {
+                      _id: 1,
+                      count: 1,
+                      productName: {
+                        $arrayElemAt: ['$product.name', 0],
+                      },
+                    },
+                  },
+                ],
+                as: 'enrollments',
               },
             },
-          },
-        ]
+            {
+              $match: {
+                'enrollments._id': {
+                  $in: filters.enrollments.map((id) => new Types.ObjectId(id)),
+                },
+              },
+            },
+          ]
         : []),
     ];
 
@@ -795,35 +775,35 @@ export class AttendeesService {
       ...(filters.leadType
         ? []
         : [
-          {
-            $lookup: {
-              from: 'attendeeassociations',
-              let: { tempMail: '$email' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
-                        },
-                        { $eq: ['$email', '$$tempMail'] },
-                      ],
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$email' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
+                          },
+                          { $eq: ['$email', '$$tempMail'] },
+                        ],
+                      },
                     },
                   },
-                },
-              ],
+                ],
 
-              as: 'attendeeAssociations',
+                as: 'attendeeAssociations',
+              },
             },
-          },
-          {
-            $unwind: {
-              path: '$attendeeAssociations',
-              preserveNullAndEmptyArrays: true,
+            {
+              $unwind: {
+                path: '$attendeeAssociations',
+                preserveNullAndEmptyArrays: true,
+              },
             },
-          },
-        ]),
+          ]),
       {
         $addFields: {
           isAssigned: {
@@ -835,55 +815,55 @@ export class AttendeesService {
       ...(filters?.enrollments?.length
         ? []
         : [
-          {
-            $lookup: {
-              from: 'enrollments',
-              let: { tempMail: '$email' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
-                        },
-                        {
-                          $eq: ['$attendee', '$$tempMail'],
-                        },
-                      ],
+            {
+              $lookup: {
+                from: 'enrollments',
+                let: { tempMail: '$email' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
+                          },
+                          {
+                            $eq: ['$attendee', '$$tempMail'],
+                          },
+                        ],
+                      },
                     },
                   },
-                },
-                {
-                  $group: {
-                    _id: '$product',
-                    count: {
-                      $sum: 1,
+                  {
+                    $group: {
+                      _id: '$product',
+                      count: {
+                        $sum: 1,
+                      },
                     },
                   },
-                },
-                {
-                  $lookup: {
-                    from: 'products',
-                    localField: '_id',
-                    foreignField: '_id',
-                    as: 'product',
-                  },
-                },
-                {
-                  $project: {
-                    _id: 1,
-                    count: 1,
-                    productName: {
-                      $arrayElemAt: ['$product.name', 0],
+                  {
+                    $lookup: {
+                      from: 'products',
+                      localField: '_id',
+                      foreignField: '_id',
+                      as: 'product',
                     },
                   },
-                },
-              ],
-              as: 'enrollments',
+                  {
+                    $project: {
+                      _id: 1,
+                      count: 1,
+                      productName: {
+                        $arrayElemAt: ['$product.name', 0],
+                      },
+                    },
+                  },
+                ],
+                as: 'enrollments',
+              },
             },
-          },
-        ]),
+          ]),
       {
         $project: {
           email: 1,
@@ -904,7 +884,6 @@ export class AttendeesService {
         },
       },
     ];
-
 
     if (usePagination) {
       const [result, totalResult] = await Promise.all([
@@ -1083,15 +1062,15 @@ export class AttendeesService {
         $set: {
           ...(isTemporary
             ? {
-              tempAssignedTo: Types.ObjectId.isValid(assignedTo)
-                ? new Types.ObjectId(assignedTo)
-                : null,
-            }
+                tempAssignedTo: Types.ObjectId.isValid(assignedTo)
+                  ? new Types.ObjectId(assignedTo)
+                  : null,
+              }
             : {
-              assignedTo: Types.ObjectId.isValid(assignedTo)
-                ? new Types.ObjectId(assignedTo)
-                : null,
-            }),
+                assignedTo: Types.ObjectId.isValid(assignedTo)
+                  ? new Types.ObjectId(assignedTo)
+                  : null,
+              }),
         },
       },
       { new: true },
@@ -1204,12 +1183,12 @@ export class AttendeesService {
       },
       ...(emails.length > 0
         ? [
-          {
-            $match: {
-              email: { $in: emails },
+            {
+              $match: {
+                email: { $in: emails },
+              },
             },
-          },
-        ]
+          ]
         : []),
       {
         $group: {
@@ -1362,162 +1341,162 @@ export class AttendeesService {
 
       ...(filters.leadType
         ? [
-          {
-            $lookup: {
-              from: 'attendeeassociations',
-              let: { tempMail: '$_id' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        { $eq: ['$adminId', adminId] },
-                        { $eq: ['$email', '$$tempMail'] },
-                        {
-                          $eq: [
-                            '$leadType',
-                            new Types.ObjectId(filters.leadType),
-                          ],
-                        },
-                      ],
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$adminId', adminId] },
+                          { $eq: ['$email', '$$tempMail'] },
+                          {
+                            $eq: [
+                              '$leadType',
+                              new Types.ObjectId(filters.leadType),
+                            ],
+                          },
+                        ],
+                      },
                     },
                   },
-                },
-              ],
+                ],
 
-              as: 'lead',
+                as: 'lead',
+              },
             },
-          },
-          {
-            $unwind: {
-              path: '$lead',
-              preserveNullAndEmptyArrays: false,
+            {
+              $unwind: {
+                path: '$lead',
+                preserveNullAndEmptyArrays: false,
+              },
             },
-          },
-        ]
+          ]
         : []),
 
       ...(filters.lastAssignedTo || filters.lastStatus
         ? [
-          {
-            $addFields: {
-              lastAssignedTo: {
-                $getField: {
-                  field: 'assignedTo',
-                  input: {
-                    $arrayElemAt: [
-                      {
-                        $filter: {
-                          input: '$records',
-                          as: 'rec',
-                          cond: {
-                            $and: [
-                              { $eq: ['$$rec.isAttended', true] },
-                              { $ne: ['$$rec.assignedTo', null] },
-                            ],
+            {
+              $addFields: {
+                lastAssignedTo: {
+                  $getField: {
+                    field: 'assignedTo',
+                    input: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$records',
+                            as: 'rec',
+                            cond: {
+                              $and: [
+                                { $eq: ['$$rec.isAttended', true] },
+                                { $ne: ['$$rec.assignedTo', null] },
+                              ],
+                            },
                           },
                         },
-                      },
-                      0,
-                    ],
-                  },
-                },
-              },
-              lastStatus: {
-                $getField: {
-                  field: 'status',
-                  input: {
-                    $arrayElemAt: [
-                      {
-                        $filter: {
-                          input: '$records',
-                          as: 'rec',
-                          cond: {
-                            $and: [
-                              { $eq: ['$$rec.isAttended', true] },
-                              { $ne: ['$$rec.status', null] },
-                            ],
-                          },
-                        },
-                      },
-                      0,
-                    ],
-                  },
-                },
-              },
-            },
-          },
-          {
-            $match: {
-              ...(filters.lastAssignedTo && {
-                lastAssignedTo: new Types.ObjectId(filters.lastAssignedTo),
-              }),
-              ...(filters.lastStatus && {
-                lastStatus: filters.lastStatus,
-              }),
-            },
-          },
-        ]
-        : []),
-
-      ...(filters?.enrollments?.length
-        ? [
-          {
-            $lookup: {
-              from: 'enrollments',
-              let: { tempMail: '$_id' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$attendee', '$$tempMail'],
-                        },
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                        },
+                        0,
                       ],
                     },
                   },
                 },
-                {
-                  $group: {
-                    _id: '$product',
-                    count: {
-                      $sum: 1,
+                lastStatus: {
+                  $getField: {
+                    field: 'status',
+                    input: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$records',
+                            as: 'rec',
+                            cond: {
+                              $and: [
+                                { $eq: ['$$rec.isAttended', true] },
+                                { $ne: ['$$rec.status', null] },
+                              ],
+                            },
+                          },
+                        },
+                        0,
+                      ],
                     },
                   },
                 },
-                {
-                  $lookup: {
-                    from: 'products',
-                    localField: '_id',
-                    foreignField: '_id',
-                    as: 'product',
-                  },
-                },
-                {
-                  $project: {
-                    _id: 1,
-                    count: 1,
-                    productName: {
-                      $arrayElemAt: ['$product.name', 0],
-                    },
-                  },
-                },
-              ],
-              as: 'enrollments',
-            },
-          },
-          {
-            $match: {
-              'enrollments._id': {
-                $in: filters.enrollments.map((id) => new Types.ObjectId(id)),
               },
             },
-          },
-        ]
+            {
+              $match: {
+                ...(filters.lastAssignedTo && {
+                  lastAssignedTo: new Types.ObjectId(filters.lastAssignedTo),
+                }),
+                ...(filters.lastStatus && {
+                  lastStatus: filters.lastStatus,
+                }),
+              },
+            },
+          ]
+        : []),
+
+      ...(filters?.enrollments?.length
+        ? [
+            {
+              $lookup: {
+                from: 'enrollments',
+                let: { tempMail: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$attendee', '$$tempMail'],
+                          },
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: '$product',
+                      count: {
+                        $sum: 1,
+                      },
+                    },
+                  },
+                  {
+                    $lookup: {
+                      from: 'products',
+                      localField: '_id',
+                      foreignField: '_id',
+                      as: 'product',
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 1,
+                      count: 1,
+                      productName: {
+                        $arrayElemAt: ['$product.name', 0],
+                      },
+                    },
+                  },
+                ],
+                as: 'enrollments',
+              },
+            },
+            {
+              $match: {
+                'enrollments._id': {
+                  $in: filters.enrollments.map((id) => new Types.ObjectId(id)),
+                },
+              },
+            },
+          ]
         : []),
     ];
 
@@ -1538,84 +1517,84 @@ export class AttendeesService {
       ...(filters.leadType
         ? []
         : [
-          {
-            $lookup: {
-              from: 'attendeeassociations',
-              let: { tempMail: '$_id' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        { $eq: ['$adminId', adminId] },
-                        { $eq: ['$email', '$$tempMail'] }, // Match email with attendee email
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$adminId', adminId] },
+                          { $eq: ['$email', '$$tempMail'] }, // Match email with attendee email
+                        ],
+                      },
+                    },
+                  },
+                ],
+
+                as: 'lead',
+              },
+            },
+            {
+              $unwind: {
+                path: '$lead',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+          ]),
+      ...(!(filters.lastAssignedTo || filters.lastStatus)
+        ? [
+            {
+              $addFields: {
+                lastAssignedTo: {
+                  $getField: {
+                    field: 'assignedTo',
+                    input: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$records',
+                            as: 'rec',
+                            cond: {
+                              $and: [
+                                { $eq: ['$$rec.isAttended', true] },
+                                { $ne: ['$$rec.assignedTo', null] },
+                              ],
+                            },
+                          },
+                        },
+                        0,
                       ],
                     },
                   },
                 },
-              ],
-
-              as: 'lead',
-            },
-          },
-          {
-            $unwind: {
-              path: '$lead',
-              preserveNullAndEmptyArrays: true,
-            },
-          },
-        ]),
-      ...(!(filters.lastAssignedTo || filters.lastStatus)
-        ? [
-          {
-            $addFields: {
-              lastAssignedTo: {
-                $getField: {
-                  field: 'assignedTo',
-                  input: {
-                    $arrayElemAt: [
-                      {
-                        $filter: {
-                          input: '$records',
-                          as: 'rec',
-                          cond: {
-                            $and: [
-                              { $eq: ['$$rec.isAttended', true] },
-                              { $ne: ['$$rec.assignedTo', null] },
-                            ],
+                lastStatus: {
+                  $getField: {
+                    field: 'status',
+                    input: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$records',
+                            as: 'rec',
+                            cond: {
+                              $and: [
+                                { $eq: ['$$rec.isAttended', true] },
+                                { $ne: ['$$rec.status', null] },
+                              ],
+                            },
                           },
                         },
-                      },
-                      0,
-                    ],
-                  },
-                },
-              },
-              lastStatus: {
-                $getField: {
-                  field: 'status',
-                  input: {
-                    $arrayElemAt: [
-                      {
-                        $filter: {
-                          input: '$records',
-                          as: 'rec',
-                          cond: {
-                            $and: [
-                              { $eq: ['$$rec.isAttended', true] },
-                              { $ne: ['$$rec.status', null] },
-                            ],
-                          },
-                        },
-                      },
-                      0,
-                    ],
+                        0,
+                      ],
+                    },
                   },
                 },
               },
             },
-          },
-        ]
+          ]
         : []),
 
       {
@@ -1629,55 +1608,55 @@ export class AttendeesService {
       ...(filters?.enrollments?.length
         ? []
         : [
-          {
-            $lookup: {
-              from: 'enrollments',
-              let: { tempMail: '$_id' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$attendee', '$$tempMail'],
-                        },
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                        },
-                      ],
+            {
+              $lookup: {
+                from: 'enrollments',
+                let: { tempMail: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$attendee', '$$tempMail'],
+                          },
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                          },
+                        ],
+                      },
                     },
                   },
-                },
-                {
-                  $group: {
-                    _id: '$product',
-                    count: {
-                      $sum: 1,
+                  {
+                    $group: {
+                      _id: '$product',
+                      count: {
+                        $sum: 1,
+                      },
                     },
                   },
-                },
-                {
-                  $lookup: {
-                    from: 'products',
-                    localField: '_id',
-                    foreignField: '_id',
-                    as: 'product',
-                  },
-                },
-                {
-                  $project: {
-                    _id: 1,
-                    count: 1,
-                    productName: {
-                      $arrayElemAt: ['$product.name', 0],
+                  {
+                    $lookup: {
+                      from: 'products',
+                      localField: '_id',
+                      foreignField: '_id',
+                      as: 'product',
                     },
                   },
-                },
-              ],
-              as: 'enrollments',
+                  {
+                    $project: {
+                      _id: 1,
+                      count: 1,
+                      productName: {
+                        $arrayElemAt: ['$product.name', 0],
+                      },
+                    },
+                  },
+                ],
+                as: 'enrollments',
+              },
             },
-          },
-        ]),
+          ]),
       {
         $project: {
           lastAssignedTo: {
@@ -1769,162 +1748,162 @@ export class AttendeesService {
 
       ...(filters.leadType
         ? [
-          {
-            $lookup: {
-              from: 'attendeeassociations',
-              let: { tempMail: '$_id' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        { $eq: ['$adminId', adminId] },
-                        { $eq: ['$email', '$$tempMail'] },
-                        {
-                          $eq: [
-                            '$leadType',
-                            new Types.ObjectId(filters.leadType),
-                          ],
-                        },
-                      ],
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$adminId', adminId] },
+                          { $eq: ['$email', '$$tempMail'] },
+                          {
+                            $eq: [
+                              '$leadType',
+                              new Types.ObjectId(filters.leadType),
+                            ],
+                          },
+                        ],
+                      },
                     },
                   },
-                },
-              ],
+                ],
 
-              as: 'lead',
+                as: 'lead',
+              },
             },
-          },
-          {
-            $unwind: {
-              path: '$lead',
-              preserveNullAndEmptyArrays: false,
+            {
+              $unwind: {
+                path: '$lead',
+                preserveNullAndEmptyArrays: false,
+              },
             },
-          },
-        ]
+          ]
         : []),
 
       ...(filters.lastAssignedTo || filters.lastStatus
         ? [
-          {
-            $addFields: {
-              lastAssignedTo: {
-                $getField: {
-                  field: 'assignedTo',
-                  input: {
-                    $arrayElemAt: [
-                      {
-                        $filter: {
-                          input: '$records',
-                          as: 'rec',
-                          cond: {
-                            $and: [
-                              { $eq: ['$$rec.isAttended', true] },
-                              { $ne: ['$$rec.assignedTo', null] },
-                            ],
+            {
+              $addFields: {
+                lastAssignedTo: {
+                  $getField: {
+                    field: 'assignedTo',
+                    input: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$records',
+                            as: 'rec',
+                            cond: {
+                              $and: [
+                                { $eq: ['$$rec.isAttended', true] },
+                                { $ne: ['$$rec.assignedTo', null] },
+                              ],
+                            },
                           },
                         },
-                      },
-                      0,
-                    ],
-                  },
-                },
-              },
-              lastStatus: {
-                $getField: {
-                  field: 'status',
-                  input: {
-                    $arrayElemAt: [
-                      {
-                        $filter: {
-                          input: '$records',
-                          as: 'rec',
-                          cond: {
-                            $and: [
-                              { $eq: ['$$rec.isAttended', true] },
-                              { $ne: ['$$rec.status', null] },
-                            ],
-                          },
-                        },
-                      },
-                      0,
-                    ],
-                  },
-                },
-              },
-            },
-          },
-          {
-            $match: {
-              ...(filters.lastAssignedTo && {
-                lastAssignedTo: new Types.ObjectId(filters.lastAssignedTo),
-              }),
-              ...(filters.lastStatus && {
-                lastStatus: filters.lastStatus,
-              }),
-            },
-          },
-        ]
-        : []),
-
-      ...(filters?.enrollments?.length
-        ? [
-          {
-            $lookup: {
-              from: 'enrollments',
-              let: { tempMail: '$_id' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$attendee', '$$tempMail'],
-                        },
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                        },
+                        0,
                       ],
                     },
                   },
                 },
-                {
-                  $group: {
-                    _id: '$product',
-                    count: {
-                      $sum: 1,
+                lastStatus: {
+                  $getField: {
+                    field: 'status',
+                    input: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$records',
+                            as: 'rec',
+                            cond: {
+                              $and: [
+                                { $eq: ['$$rec.isAttended', true] },
+                                { $ne: ['$$rec.status', null] },
+                              ],
+                            },
+                          },
+                        },
+                        0,
+                      ],
                     },
                   },
                 },
-                {
-                  $lookup: {
-                    from: 'products',
-                    localField: '_id',
-                    foreignField: '_id',
-                    as: 'product',
-                  },
-                },
-                {
-                  $project: {
-                    _id: 1,
-                    count: 1,
-                    productName: {
-                      $arrayElemAt: ['$product.name', 0],
-                    },
-                  },
-                },
-              ],
-              as: 'enrollments',
-            },
-          },
-          {
-            $match: {
-              'enrollments._id': {
-                $in: filters.enrollments.map((id) => new Types.ObjectId(id)),
               },
             },
-          },
-        ]
+            {
+              $match: {
+                ...(filters.lastAssignedTo && {
+                  lastAssignedTo: new Types.ObjectId(filters.lastAssignedTo),
+                }),
+                ...(filters.lastStatus && {
+                  lastStatus: filters.lastStatus,
+                }),
+              },
+            },
+          ]
+        : []),
+
+      ...(filters?.enrollments?.length
+        ? [
+            {
+              $lookup: {
+                from: 'enrollments',
+                let: { tempMail: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$attendee', '$$tempMail'],
+                          },
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: '$product',
+                      count: {
+                        $sum: 1,
+                      },
+                    },
+                  },
+                  {
+                    $lookup: {
+                      from: 'products',
+                      localField: '_id',
+                      foreignField: '_id',
+                      as: 'product',
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 1,
+                      count: 1,
+                      productName: {
+                        $arrayElemAt: ['$product.name', 0],
+                      },
+                    },
+                  },
+                ],
+                as: 'enrollments',
+              },
+            },
+            {
+              $match: {
+                'enrollments._id': {
+                  $in: filters.enrollments.map((id) => new Types.ObjectId(id)),
+                },
+              },
+            },
+          ]
         : []),
     ];
 
@@ -1945,84 +1924,84 @@ export class AttendeesService {
       ...(filters.leadType
         ? []
         : [
-          {
-            $lookup: {
-              from: 'attendeeassociations',
-              let: { tempMail: '$_id' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        { $eq: ['$adminId', adminId] },
-                        { $eq: ['$email', '$$tempMail'] }, // Match email with attendee email
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$adminId', adminId] },
+                          { $eq: ['$email', '$$tempMail'] }, // Match email with attendee email
+                        ],
+                      },
+                    },
+                  },
+                ],
+
+                as: 'lead',
+              },
+            },
+            {
+              $unwind: {
+                path: '$lead',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+          ]),
+      ...(!(filters.lastAssignedTo || filters.lastStatus)
+        ? [
+            {
+              $addFields: {
+                lastAssignedTo: {
+                  $getField: {
+                    field: 'assignedTo',
+                    input: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$records',
+                            as: 'rec',
+                            cond: {
+                              $and: [
+                                { $eq: ['$$rec.isAttended', true] },
+                                { $ne: ['$$rec.assignedTo', null] },
+                              ],
+                            },
+                          },
+                        },
+                        0,
                       ],
                     },
                   },
                 },
-              ],
-
-              as: 'lead',
-            },
-          },
-          {
-            $unwind: {
-              path: '$lead',
-              preserveNullAndEmptyArrays: true,
-            },
-          },
-        ]),
-      ...(!(filters.lastAssignedTo || filters.lastStatus)
-        ? [
-          {
-            $addFields: {
-              lastAssignedTo: {
-                $getField: {
-                  field: 'assignedTo',
-                  input: {
-                    $arrayElemAt: [
-                      {
-                        $filter: {
-                          input: '$records',
-                          as: 'rec',
-                          cond: {
-                            $and: [
-                              { $eq: ['$$rec.isAttended', true] },
-                              { $ne: ['$$rec.assignedTo', null] },
-                            ],
+                lastStatus: {
+                  $getField: {
+                    field: 'status',
+                    input: {
+                      $arrayElemAt: [
+                        {
+                          $filter: {
+                            input: '$records',
+                            as: 'rec',
+                            cond: {
+                              $and: [
+                                { $eq: ['$$rec.isAttended', true] },
+                                { $ne: ['$$rec.status', null] },
+                              ],
+                            },
                           },
                         },
-                      },
-                      0,
-                    ],
-                  },
-                },
-              },
-              lastStatus: {
-                $getField: {
-                  field: 'status',
-                  input: {
-                    $arrayElemAt: [
-                      {
-                        $filter: {
-                          input: '$records',
-                          as: 'rec',
-                          cond: {
-                            $and: [
-                              { $eq: ['$$rec.isAttended', true] },
-                              { $ne: ['$$rec.status', null] },
-                            ],
-                          },
-                        },
-                      },
-                      0,
-                    ],
+                        0,
+                      ],
+                    },
                   },
                 },
               },
             },
-          },
-        ]
+          ]
         : []),
 
       {
@@ -2036,55 +2015,55 @@ export class AttendeesService {
       ...(filters?.enrollments?.length
         ? []
         : [
-          {
-            $lookup: {
-              from: 'enrollments',
-              let: { tempMail: '$_id' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$attendee', '$$tempMail'],
-                        },
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                        },
-                      ],
+            {
+              $lookup: {
+                from: 'enrollments',
+                let: { tempMail: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$attendee', '$$tempMail'],
+                          },
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                          },
+                        ],
+                      },
                     },
                   },
-                },
-                {
-                  $group: {
-                    _id: '$product',
-                    count: {
-                      $sum: 1,
+                  {
+                    $group: {
+                      _id: '$product',
+                      count: {
+                        $sum: 1,
+                      },
                     },
                   },
-                },
-                {
-                  $lookup: {
-                    from: 'products',
-                    localField: '_id',
-                    foreignField: '_id',
-                    as: 'product',
-                  },
-                },
-                {
-                  $project: {
-                    _id: 1,
-                    count: 1,
-                    productName: {
-                      $arrayElemAt: ['$product.name', 0],
+                  {
+                    $lookup: {
+                      from: 'products',
+                      localField: '_id',
+                      foreignField: '_id',
+                      as: 'product',
                     },
                   },
-                },
-              ],
-              as: 'enrollments',
+                  {
+                    $project: {
+                      _id: 1,
+                      count: 1,
+                      productName: {
+                        $arrayElemAt: ['$product.name', 0],
+                      },
+                    },
+                  },
+                ],
+                as: 'enrollments',
+              },
             },
-          },
-        ]),
+          ]),
       {
         $project: {
           lastAssignedTo: {
@@ -2140,12 +2119,12 @@ export class AttendeesService {
       ...item,
       enrollments: Array.isArray(item.enrollments)
         ? item.enrollments
-          .map((enrollment) =>
-            enrollment?.productName
-              ? `${enrollment.productName}-${enrollment.count}`
-              : '-',
-          )
-          .join(',')
+            .map((enrollment) =>
+              enrollment?.productName
+                ? `${enrollment.productName}-${enrollment.count}`
+                : '-',
+            )
+            .join(',')
         : ' - ',
     }));
 
