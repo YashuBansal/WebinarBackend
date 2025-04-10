@@ -176,6 +176,10 @@ export class AttendeesFilterDto {
 
   @IsOptional()
   @IsString()
+  source?: string;
+
+  @IsOptional()
+  @IsString()
   isAssigned?: string;
 
   @IsOptional()

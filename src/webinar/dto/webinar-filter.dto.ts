@@ -1,4 +1,4 @@
-import { IsObject, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsMongoId, IsObject, IsOptional, IsString } from 'class-validator';
 import { RangeNumberDto, RangeStringDto } from 'src/users/dto/filters.dto';
 
 export class WebinarFilterDTO {
@@ -26,4 +26,7 @@ export class WebinarFilterDTO {
   @IsObject()
   webinarDate?: RangeStringDto;
 
+  @IsOptional()
+  @IsMongoId()
+  assignedEmployee?: string;
 }

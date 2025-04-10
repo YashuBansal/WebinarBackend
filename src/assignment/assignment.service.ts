@@ -1191,6 +1191,7 @@ export class AssignmentService {
   }
 
   async changeAssignment(data: ReAssignmentDTO, adminId: string) {
+    console.log(data, adminId);
     const session = await this.mongoConnection.startSession();
     session.startTransaction();
 
@@ -1472,12 +1473,131 @@ export class AssignmentService {
     ]);
   }
 
+  // Make sure your assignmentsModel is properly injected/available (`this.assignmentsModel`)
+
+  async findAssignmentsForTodayIST_NoLib(metaData: {
+    adminId: Types.ObjectId;
+    webinarId?: Types.ObjectId;
+    attendeeIds?: Types.ObjectId[];
+  }) {
+    // 1. Define IST Offset in milliseconds (UTC+5:30)
+    const IST_OFFSET_HOURS = 5;
+    const IST_OFFSET_MINUTES = 30;
+    const istOffsetMilliseconds =
+      (IST_OFFSET_HOURS * 60 + IST_OFFSET_MINUTES) * 60 * 1000;
+
+    // 2. Get current time in UTC milliseconds
+    const nowUtcMs = Date.now(); // Equivalent to new Date().getTime()
+
+    // 3. Calculate the equivalent millisecond timestamp representing the current moment *in* IST
+    const nowInISTEquivalentMs = nowUtcMs + istOffsetMilliseconds;
+
+    // 4. Create a temporary Date object based on the IST-equivalent time.
+    //    We will use UTC methods on this object to extract the Y/M/D components *as they appear in IST*.
+    const tempISTDate = new Date(nowInISTEquivalentMs);
+
+    const yearIST = tempISTDate.getUTCFullYear();
+    const monthIST = tempISTDate.getUTCMonth(); // 0-indexed (January is 0)
+    const dayIST = tempISTDate.getUTCDate();
+
+    // 5. Calculate the UTC timestamp corresponding to the *start* of "today" in IST (00:00:00 IST).
+    //    This is done by finding 00:00:00 UTC on the derived IST date components,
+    //    and then subtracting the IST offset.
+    const midnightUTCForISTDateMs = Date.UTC(
+      yearIST,
+      monthIST,
+      dayIST,
+      0,
+      0,
+      0,
+      0,
+    );
+    const startOfISTDayInUTCms =
+      midnightUTCForISTDateMs - istOffsetMilliseconds;
+    const startOfTodayUTC = new Date(startOfISTDayInUTCms);
+
+    // 6. Calculate the UTC timestamp corresponding to the *start* of the *next day* in IST (00:00:00 IST tomorrow).
+    //    This will be the exclusive upper bound for the query.
+    //    Use Date.UTC to handle potential month/year rollovers automatically when adding 1 day.
+    const midnightUTCForNextISTDateMs = Date.UTC(
+      yearIST,
+      monthIST,
+      dayIST + 1,
+      0,
+      0,
+      0,
+      0,
+    );
+    const startOfNextISTDayInUTCms =
+      midnightUTCForNextISTDateMs - istOffsetMilliseconds;
+    const startOfTomorrowUTC = new Date(startOfNextISTDayInUTCms);
+
+    // --- Logging for verification (optional) ---
+    const formatDateUTC = (d) => d.toISOString(); // Simple UTC ISO string
+    console.log(
+      `Current Time (System UTC): ${new Date(nowUtcMs).toISOString()}`,
+    );
+    console.log(
+      `Start of Today (IST) in UTC: ${formatDateUTC(startOfTodayUTC)}`,
+    );
+    console.log(
+      `Start of Tomorrow (IST) in UTC: ${formatDateUTC(startOfTomorrowUTC)}`,
+    );
+    console.log('--- Querying MongoDB using UTC boundaries (No Library) ---');
+    // --- End Logging ---
+
+    // 7. Construct the Mongoose Query
+    const queryConditions = {
+      adminId: metaData.adminId,
+      createdAt: {
+        $gte: startOfTodayUTC, // Greater than or equal to the start of today (IST) in UTC
+        $lt: startOfTomorrowUTC, // Less than the start of tomorrow (IST) in UTC
+      },
+
+      ...(metaData.webinarId ? { webinar: metaData.webinarId } : {}),
+      ...(metaData.attendeeIds &&
+        metaData.attendeeIds.length > 0 && {
+          attendee: { $in: metaData.attendeeIds },
+        }),
+    };
+
+    const pipeline: PipelineStage[] = [
+      {
+        $match: queryConditions,
+      },
+      {
+        $group: {
+          _id: '$user',
+          count: { $sum: 1 },
+        },
+      },
+    ];
+
+    const assignments = await this.assignmentsModel.aggregate(pipeline);
+    console.log(
+      `Found ${assignments.length} assignments created today (IST) without external library.`,
+    );
+
+    await this.userService.updateEmployeeAssignmentCounts(assignments);
+
+    return assignments;
+  }
+
   async deleteAssignmentsByWebinar(
     session: ClientSession,
     adminId: Types.ObjectId,
     webinarId: Types.ObjectId,
     attendeeIds?: Types.ObjectId[],
   ) {
+    const assignments = await this.findAssignmentsForTodayIST_NoLib(
+      {
+        adminId,
+      webinarId,
+      attendeeIds,
+      }
+    );
+    console.log('assignments', assignments);
+
     return this.assignmentsModel
       .deleteMany(
         {
@@ -1496,6 +1616,14 @@ export class AssignmentService {
     attendeeIds: Types.ObjectId[],
   ) {
     console.log('assignment -> deleted');
+    
+    const assignments = await this.findAssignmentsForTodayIST_NoLib(
+      {
+        adminId,
+      attendeeIds,
+      }
+    );
+    console.log('assignments', assignments);
     return this.assignmentsModel
       .deleteMany(
         {

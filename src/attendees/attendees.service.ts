@@ -635,6 +635,9 @@ export class AttendeesService {
                 ...(filters.location && {
                   location: { $regex: filters.location, $options: 'i' },
                 }),
+                ...(filters.source && {
+                  source: { $regex: filters.source, $options: 'i' },
+                }),
                 ...(filters.timeInSession && {
                   timeInSession: filters.timeInSession,
                 }),
@@ -2151,6 +2154,8 @@ export class AttendeesService {
   }
 
   async updateAttendees(query: any, set: any, session?: ClientSession) {
+    console.log(query, set, session);
+
     return this.attendeeModel.updateMany(
       query,
       { $set: set },

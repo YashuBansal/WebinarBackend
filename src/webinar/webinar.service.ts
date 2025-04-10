@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   forwardRef,
   Inject,
   Injectable,
@@ -103,6 +104,11 @@ export class WebinarService {
             webinarName: { $regex: filters.webinarName, $options: 'i' },
           }),
           ...dateFilter,
+          ...(filters.assignedEmployee && {
+            assignedEmployees: new Types.ObjectId(
+              `${filters.assignedEmployee}`,
+            ),
+          }),
         },
       },
       {
@@ -159,7 +165,7 @@ export class WebinarService {
                 as: 'attendee',
                 cond: {
                   $and: [
-                    { $eq: ['$$attendee.isAttended', true]},
+                    { $eq: ['$$attendee.isAttended', true] },
                     { $ne: ['$$attendee.isDeleted', true] },
                   ],
                 },
@@ -280,96 +286,85 @@ export class WebinarService {
   async deleteWebinar(id: string, admin: string): Promise<any> {
     const webinarId = new Types.ObjectId(`${id}`);
     const adminId = new Types.ObjectId(`${admin}`);
-    const session = await this.webinarModel.db.startSession();
+    const session = await this.webinarModel.startSession();
 
     try {
-      session.startTransaction();
+      await session.withTransaction(async (currentSession) => {
+        // Delete webinar
+        const deletedWebinar = await this.webinarModel
+          .findOneAndDelete({
+            _id: webinarId,
+            adminId: new Types.ObjectId(adminId),
+          })
+          .session(currentSession);
 
-      // Delete webinar
-      const deletedWebinar = await this.webinarModel
-        .findOneAndDelete({
-          _id: webinarId,
-          adminId: new Types.ObjectId(adminId),
-        })
-        .session(session);
+        if (!deletedWebinar) {
+          throw new NotFoundException('Webinar not found');
+        }
 
-      if (!deletedWebinar) {
-        throw new NotFoundException('Webinar not found');
-      }
+        const attendees: any =
+          await this.attendeesService.getAttendeeForDeletion(
+            webinarId,
+            currentSession,
+          );
+        const attendeeIds = attendees.map((a) => a._id);
 
-      const attendees: any = await this.attendeesService.getAttendeeForDeletion(
-        webinarId,
-        session,
-      );
-      const attendeeIds = attendees.map((a) => a._id);
-
-      // Configure deletion workflow
-      const DELETION_DEPENDENCIES = [
-        {
-          service: this.alarmService,
-          method: 'deleteAlarmsByAttendeeIds',
-          args: [attendeeIds],
-        },
-        {
-          service: this.assignmentService,
-          method: 'deleteAssignmentsByWebinar',
-          args: [adminId, webinarId],
-        },
-        {
-          service: this.attendeesService,
-          method: 'deleteAttendeesByWebinar',
-          args: [webinarId, adminId],
-        },
-        {
-          service: this.enrollmentService,
-          method: 'deleteAssignmentsByWebinar',
-          args: [adminId, webinarId],
-        },
-        {
-          service: this.notesService,
-          method: 'deleteNotesByAttendees',
-          args: [attendeeIds],
-        },
-        {
-          service: this.notificationService,
-          method: 'deleteNotificationsByWebinar',
-          args: [webinarId],
-        },
-      ];
-
-      // Execute deletions
-      for (const dependency of DELETION_DEPENDENCIES) {
-        await dependency.service[dependency.method](
-          session,
-          ...dependency.args,
+        // Configure deletion workflow
+        await this.alarmService.deleteAlarmsByAttendeeIds(
+          currentSession,
+          attendeeIds,
         );
-      }
-      const contactCount =
-        await this.attendeesService.getNonUniqueAttendeesCount(
-          [],
+
+        await this.assignmentService.deleteAssignmentsByWebinar(
+          currentSession,
           adminId,
-          session,
+          webinarId,
         );
 
-      await this.subscriptionService.updateContactCount(
-        adminId,
-        contactCount,
-        session,
-      );
+        await this.attendeesService.deleteAttendeesByWebinar(
+          currentSession,
+          webinarId,
+          adminId,
+        );
 
-      await session.commitTransaction();
+        await this.enrollmentService.deleteEnrollmentsByWebinar(
+          currentSession,
+          adminId,
+          webinarId,
+        );
+
+        await this.notesService.deleteNotesByAttendees(
+          currentSession,
+          attendeeIds,
+        );
+
+        await this.notificationService.deleteNotificationsByWebinar(
+          currentSession,
+          webinarId,
+        );
+
+        const contactCount =
+          await this.attendeesService.getNonUniqueAttendeesCount(
+            [],
+            adminId,
+            currentSession,
+          );
+
+        await this.subscriptionService.updateContactCount(
+          adminId,
+          contactCount,
+          currentSession,
+        );
+
+        return { message: 'Webinar deleted successfully' };
+      });
     } catch (error) {
-      await session.abortTransaction();
-      this.logger.error(
-        `Partial deletion failure: ${error.message}`,
-        error.stack,
-      );
-      throw new Error('Partial deletion failure - check logs');
+      console.error('Transaction failed during hideAttendees:', error);
+      throw new BadRequestException(error.message);
     } finally {
       await session.endSession();
+      console.log('Session ended.');
     }
-
-    return { message: 'Webinar deleted successfully' };
   }
 
   async getEmployeeWebinars(

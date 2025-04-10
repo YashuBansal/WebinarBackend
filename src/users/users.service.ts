@@ -52,7 +52,6 @@ export class UsersService {
     private readonly customLeadTypeService: CustomLeadTypeService,
     private readonly productsService: ProductsService,
     private readonly notificationService: NotificationService,
-
   ) {}
 
   getUsers() {
@@ -949,7 +948,7 @@ export class UsersService {
       await this.subscriptionService.addSubscription(subscriptionPayload);
 
     const { totalWithGST, itemAmount, discountAmount, gst } =
-       this.subscriptionService.generatePriceForPlan(
+      this.subscriptionService.generatePriceForPlan(
         plan.amount,
         createClientDto.durationType,
         durationConfig,
@@ -970,7 +969,9 @@ export class UsersService {
     );
 
     await this.customLeadTypeService.createDefaultLeadTypes(`${user._id}`);
-    await this.productsService.createDefaultProductLevels(user._id as Types.ObjectId);
+    await this.productsService.createDefaultProductLevels(
+      user._id as Types.ObjectId,
+    );
 
     return { user, subscription, billingHistory };
   }
@@ -1094,11 +1095,12 @@ export class UsersService {
       )
       .exec();
     return superAdmin;
-    
   }
 
   async updateWhatsappToken(id: string, whatsappToken: string) {
-    return await this.userModel.findByIdAndUpdate(id, { whatsappToken }, { new: true }).select(' whatsappToken');
+    return await this.userModel
+      .findByIdAndUpdate(id, { whatsappToken }, { new: true })
+      .select(' whatsappToken');
   }
 
   async getClientsForDropdown() {
@@ -1117,5 +1119,44 @@ export class UsersService {
 
   async getEmployeesForNotes(adminId: Types.ObjectId) {
     return this.userModel.find({ adminId }, '_id email userName isActive');
+  }
+
+  async updateEmployeeAssignmentCounts(
+    empData: { _id: Types.ObjectId; count: number }[],
+  ) {
+    // Check if there's any data to process
+    if (!empData || empData.length === 0) {
+      console.log('No employee data provided for update.');
+      return { acknowledged: true, modifiedCount: 0, matchedCount: 0 }; // Mimic bulkWrite result structure
+    }
+
+    // Prepare bulk operations array
+    const operations = empData.map((emp) => ({
+      updateOne: {
+        filter: { _id: emp._id },
+        // Use an update pipeline to calculate the new value safely
+        update: [
+          {
+            $set: {
+              dailyContactCount: {
+                // Calculate the maximum of 0 and (current value - decrement count)
+                $max: [
+                  0, // Ensures the floor is 0
+                  { $subtract: ['$dailyContactCount', emp.count] }, // Decrease by the specific count
+                ],
+              },
+            },
+          },
+        ],
+      },
+    }));
+    console.log('Bulk operations prepared:', operations);
+
+    // Execute the bulk write operation
+    const result = await this.userModel.bulkWrite(operations, {
+      ordered: false, // Process updates even if some fail (optional)
+    });
+    console.log('Bulk update result:', result);
+    return result;
   }
 }
