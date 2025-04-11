@@ -1,4 +1,9 @@
-import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import {
+  forwardRef,
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+} from '@nestjs/common';
 import { LocationController } from './location.controller';
 import { LocationService } from './location.service';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
@@ -16,7 +21,7 @@ import { NotificationModule } from 'src/notification/notification.module';
     MongooseModule.forFeature([
       { name: Location.name, schema: LocationSchema },
     ]),
-    NotificationModule
+    NotificationModule,
   ],
   controllers: [LocationController],
   providers: [LocationService],
@@ -38,6 +43,9 @@ export class LocationModule {
 
     consumer
       .apply(AuthSuperAdminMiddleware)
-      .forRoutes({ path: 'location*', method: RequestMethod.DELETE });
+      .forRoutes(
+        { path: 'location*', method: RequestMethod.DELETE },
+        { path: 'location/import', method: RequestMethod.POST },
+      );
   }
 }

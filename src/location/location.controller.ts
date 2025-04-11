@@ -9,7 +9,7 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
+import { CreateLoationsDto, CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
 import { LocationService } from './location.service';
 import { AdminId, Id, Role } from 'src/decorators/custom.decorator';
 import { ConfigService } from '@nestjs/config';
@@ -163,5 +163,12 @@ export class LocationController {
         'Only Admin or Super admin are authorised to disapprove locations',
       );
     }
+  }
+
+  @Post('import')
+  async addLocations(
+    @Body() data: CreateLoationsDto
+  ): Promise<any> {
+    return await this.locationService.addLocations(data);
   }
 }

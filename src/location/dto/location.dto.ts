@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsNotEmpty,
   IsOptional,
@@ -38,6 +39,12 @@ export class CreateLocationDto {
 
   @IsOptional()
   color?: any;
+}
+
+export class CreateLoationsDto {
+  @IsArray()
+  @IsString({ each: true })
+  locations: string[];
 }
 
 export class UpdateLocationDto {
