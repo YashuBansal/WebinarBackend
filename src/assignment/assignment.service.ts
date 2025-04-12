@@ -473,7 +473,6 @@ export class AssignmentService {
       );
     }
 
-    console.log('existingAttendee before', attendee.email, webinarId);
     // Check if an attendee with the same email is already added to this webinar
     const existingAttendee: Attendee | null =
       await this.attendeeService.fetchAttendeeByWebinar(
@@ -1191,129 +1190,127 @@ export class AssignmentService {
   }
 
   async changeAssignment(data: ReAssignmentDTO, adminId: string) {
-    console.log(data, adminId);
-    const session = await this.mongoConnection.startSession();
-    session.startTransaction();
 
+    const session = await this.assignmentsModel.startSession();
     try {
-      const employee = await this.userService.getEmployee(data.employeeId);
-      if (!employee || employee.adminId.toString() !== `${adminId}`) {
-        throw new NotFoundException(
-          'Employee not found or unauthorized access',
-        );
-      }
-      if (!employee.isActive) {
-        throw new BadRequestException('Employee is inactive');
-      }
-      if (employee.dailyContactCount >= employee.dailyContactLimit) {
-        throw new BadRequestException(
-          'Employee has reached daily contact limit',
-        );
-      }
+      await session.withTransaction(async (currentSession) => {
+        const employee = await this.userService.getEmployee(data.employeeId);
+        if (!employee || employee.adminId.toString() !== `${adminId}`) {
+          throw new NotFoundException(
+            'Employee not found or unauthorized access',
+          );
+        }
+        if (!employee.isActive) {
+          throw new BadRequestException('Employee is inactive');
+        }
+        if (employee.dailyContactCount >= employee.dailyContactLimit) {
+          throw new BadRequestException(
+            'Employee has reached daily contact limit',
+          );
+        }
 
-      const assignmentIds = data.assignments.map(
-        (a) => new Types.ObjectId(a.assignmentId),
-      );
-      const attendeeIds = data.assignments.map(
-        (a) => new Types.ObjectId(a.attendeeId),
-      );
+        const assignmentIds = data.assignments.map(
+          (a) => new Types.ObjectId(a.assignmentId),
+        );
+        const attendeeIds = data.assignments.map(
+          (a) => new Types.ObjectId(a.attendeeId),
+        );
 
-      const deletedAssignmentsResult = await this.assignmentsModel.deleteMany(
-        {
-          _id: { $in: assignmentIds },
+        const deletedAssignmentsResult = await this.assignmentsModel.deleteMany(
+          {
+            _id: { $in: assignmentIds },
+            adminId: new Types.ObjectId(`${adminId}`),
+            webinar: new Types.ObjectId(data.webinarId),
+            attendee: { $in: attendeeIds },
+            recordType: data.recordType,
+          },
+          { session: currentSession },
+        );
+
+        if (deletedAssignmentsResult.deletedCount !== data.assignments.length) {
+          throw new NotFoundException(
+            'Some assignments were not found or unauthorized access',
+          );
+        }
+
+        const query = data.isTemp
+          ? { tempAssignedTo: employee._id }
+          : { assignedTo: employee._id, tempAssignedTo: null };
+
+        const updatedAttendeesResult =
+          await this.attendeeService.updateAttendees(
+            {
+              _id: { $in: attendeeIds },
+              adminId: new Types.ObjectId(`${adminId}`),
+              webinar: new Types.ObjectId(data.webinarId),
+              isAttended:
+                data.recordType === RecordType.POST_WEBINAR ? true : false,
+            },
+            { isPulledback: false, ...query },
+            currentSession,
+          );
+
+        if (updatedAttendeesResult.matchedCount !== data.assignments.length) {
+          throw new NotFoundException(
+            'Some attendees were not found or unauthorized access',
+          );
+        }
+
+        const newAssignmentsData = data.assignments.map((assignment) => ({
           adminId: new Types.ObjectId(`${adminId}`),
+          user: employee._id,
           webinar: new Types.ObjectId(data.webinarId),
-          attendee: { $in: attendeeIds },
+          attendee: new Types.ObjectId(assignment.attendeeId),
           recordType: data.recordType,
-        },
-        { session },
-      );
+          status: AssignmentStatus.ACTIVE,
+          ...(data.isTemp ? { isTemporary: true } : {}),
+        }));
 
-      if (deletedAssignmentsResult.deletedCount !== data.assignments.length) {
-        throw new NotFoundException(
-          'Some assignments were not found or unauthorized access',
+        const createdAssignments = await this.assignmentsModel.insertMany(
+          newAssignmentsData,
+          { session: currentSession },
         );
-      }
 
-      const query = data.isTemp
-        ? { tempAssignedTo: employee._id }
-        : { assignedTo: employee._id, tempAssignedTo: null };
+        if (
+          !createdAssignments ||
+          createdAssignments.length !== data.assignments.length
+        ) {
+          throw new InternalServerErrorException(
+            'Failed to create all new assignments',
+          );
+        }
 
-      const updatedAttendeesResult = await this.attendeeService.updateAttendees(
-        {
-          _id: { $in: attendeeIds },
-          adminId: new Types.ObjectId(`${adminId}`),
-          webinar: new Types.ObjectId(data.webinarId),
-          isAttended:
-            data.recordType === RecordType.POST_WEBINAR ? true : false,
-        },
-        { $set: { isPulledback: false, ...query } },
-        session,
-      );
-
-      if (updatedAttendeesResult.matchedCount !== data.assignments.length) {
-        throw new NotFoundException(
-          'Some attendees were not found or unauthorized access',
+        await this.userService.incrementCount(
+          employee._id.toString(),
+          createdAssignments.length,
+          currentSession,
         );
-      }
 
-      const newAssignmentsData = data.assignments.map((assignment) => ({
-        adminId: new Types.ObjectId(`${adminId}`),
-        user: employee._id,
-        webinar: new Types.ObjectId(data.webinarId),
-        attendee: new Types.ObjectId(assignment.attendeeId),
-        recordType: data.recordType,
-        status: AssignmentStatus.ACTIVE,
-        ...(data.isTemp ? { isTemporary: true } : {}),
-      }));
+        // Send notification
+        await this.notificationService.createNotification({
+          recipient: employee._id.toString(),
+          title: 'New Tasks Assigned',
+          message: `You have been assigned ${createdAssignments.length} new tasks ${data.isTemp ? 'temporarily' : ''}. Please check your task list for details.`,
+          type: notificationType.INFO,
+          actionType: notificationActionType.REASSIGNMENT,
+          metadata: {
+            webinarId: data.webinarId,
+          },
+        });
 
-      const createdAssignments = await this.assignmentsModel.insertMany(
-        newAssignmentsData,
-        { session },
-      );
-
-      if (
-        !createdAssignments ||
-        createdAssignments.length !== data.assignments.length
-      ) {
-        throw new InternalServerErrorException(
-          'Failed to create all new assignments',
-        );
-      }
-
-      await this.userService.incrementCount(
-        employee._id.toString(),
-        createdAssignments.length,
-        session,
-      );
-
-      await session.commitTransaction();
-      session.endSession();
-
-      // Send notification
-      await this.notificationService.createNotification({
-        recipient: employee._id.toString(),
-        title: 'New Tasks Assigned',
-        message: `You have been assigned ${createdAssignments.length} new tasks ${data.isTemp ? 'temporarily' : ''}. Please check your task list for details.`,
-        type: notificationType.INFO,
-        actionType: notificationActionType.REASSIGNMENT,
-        metadata: {
-          webinarId: data.webinarId,
-        },
+        return {
+          message: 'Reassignment completed successfully',
+          updatedAssignmentsCount: deletedAssignmentsResult.deletedCount,
+          updatedAttendeesCount: updatedAttendeesResult.matchedCount,
+          newAssignments: createdAssignments,
+        };
       });
-
-      return {
-        message: 'Reassignment completed successfully',
-        updatedAssignmentsCount: deletedAssignmentsResult.deletedCount,
-        updatedAttendeesCount: updatedAttendeesResult.matchedCount,
-        newAssignments: createdAssignments,
-      };
     } catch (error) {
-      await session.abortTransaction(); // Roll back all changes if any operation fails
-      session.endSession();
-      throw new InternalServerErrorException(
-        `An error occurred during reassignment: ${error.message}`,
-      );
+      console.error('Transaction failed during hideAttendees:', error);
+      throw new BadRequestException(error.message);
+    } finally {
+      await session.endSession();
+      console.log('Session ended.');
     }
   }
 
@@ -1340,7 +1337,7 @@ export class AssignmentService {
               assignedTo: { $ne: null },
               _id: { $in: attendeeIds },
             },
-            { $set: { isPulledback: true } },
+            { isPulledback: true },
           );
 
         if (updatedAttendeesResult.matchedCount !== attendeeIds.length) {
@@ -1362,7 +1359,7 @@ export class AssignmentService {
         if (updatedAssignmentsResult.matchedCount !== attendeeIds.length) {
           await this.attendeeService.updateAttendees(
             { _id: { $in: attendeeIds } },
-            { $set: { isPulledback: false } },
+            { isPulledback: false },
           );
           throw new NotFoundException(
             'Some assignments were not found for the attendees',
@@ -1589,14 +1586,11 @@ export class AssignmentService {
     webinarId: Types.ObjectId,
     attendeeIds?: Types.ObjectId[],
   ) {
-    const assignments = await this.findAssignmentsForTodayIST_NoLib(
-      {
-        adminId,
+    const assignments = await this.findAssignmentsForTodayIST_NoLib({
+      adminId,
       webinarId,
       attendeeIds,
-      }
-    );
-    console.log('assignments', assignments);
+    });
 
     return this.assignmentsModel
       .deleteMany(
@@ -1615,15 +1609,11 @@ export class AssignmentService {
     adminId: Types.ObjectId,
     attendeeIds: Types.ObjectId[],
   ) {
-    console.log('assignment -> deleted');
-    
-    const assignments = await this.findAssignmentsForTodayIST_NoLib(
-      {
-        adminId,
+
+    const assignments = await this.findAssignmentsForTodayIST_NoLib({
+      adminId,
       attendeeIds,
-      }
-    );
-    console.log('assignments', assignments);
+    });
     return this.assignmentsModel
       .deleteMany(
         {

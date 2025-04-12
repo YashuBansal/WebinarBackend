@@ -101,7 +101,6 @@ export class AttendeesService {
     }
     let tempAttendees = attendees;
 
-    console.log(this.websocketGateway.activeUsers);
     const socketId = this.websocketGateway.activeUsers.get(String(adminId));
     let lastProgress = 0;
     const updateProgress = (current) => {
@@ -586,15 +585,6 @@ export class AttendeesService {
           webinar: new Types.ObjectId(webinarId),
           isAttended: isAttended,
           isDeleted: { $ne: true },
-          ...(filters.isAssigned &&
-            (filters.isAssigned === 'true'
-              ? { assignedTo: { $ne: null } }
-              : {
-                  $or: [
-                    { assignedTo: null },
-                    { assignedTo: { $exists: false } },
-                  ],
-                })),
           ...(validCall && {
             ...(validCall === 'Worked'
               ? { status: { $ne: null } }
@@ -612,6 +602,16 @@ export class AttendeesService {
           }),
         },
       },
+
+      ...(filters.isAssigned
+        ? [
+            {
+              $addFields: {
+                lookupField: { $ifNull: ['$tempAssignedTo', '$assignedTo'] },
+              },
+            },
+          ]
+        : []),
 
       ...(hasFilters
         ? [
@@ -647,6 +647,10 @@ export class AttendeesService {
                 ...(filters.tags && {
                   tags: { $in: filters.tags },
                 }),
+                ...(filters.isAssigned &&
+                  Types.ObjectId.isValid(filters.isAssigned) && {
+                    lookupField: new Types.ObjectId(filters.isAssigned),
+                  }),
               },
             },
           ]
@@ -757,11 +761,15 @@ export class AttendeesService {
       { $sort: { [sort.sortBy]: sort.sortOrder === SortOrder.ASC ? 1 : -1 } },
       { $skip: skip },
       ...(limit > 0 ? [{ $limit: limit }] : []),
-      {
-        $addFields: {
-          lookupField: { $ifNull: ['$tempAssignedTo', '$assignedTo'] },
-        },
-      },
+      ...(filters.isAssigned
+        ? []
+        : [
+            {
+              $addFields: {
+                lookupField: { $ifNull: ['$tempAssignedTo', '$assignedTo'] },
+              },
+            },
+          ]),
       {
         $lookup: {
           from: 'users',
@@ -2154,8 +2162,6 @@ export class AttendeesService {
   }
 
   async updateAttendees(query: any, set: any, session?: ClientSession) {
-    console.log(query, set, session);
-
     return this.attendeeModel.updateMany(
       query,
       { $set: set },

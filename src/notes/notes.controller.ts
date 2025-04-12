@@ -47,34 +47,39 @@ export class NotesController {
     }
 
     const attendee = await this.attendeeService.fetchAttendeeById(new Types.ObjectId(`${body.attendee}`));
+    console.log(attendee, 'attendee', createdBy, 'createdBy', [
+      String(attendee.assignedTo),
+      String(attendee.adminId),
+      String(attendee.tempAssignedTo)
+    ]);
 
     if (
-      attendee &&
-      [
+      !attendee ||
+      !([
         String(attendee.assignedTo),
         String(attendee.adminId),
-        String(attendee.tempAssignedTo),
-      ].includes(String(createdBy))
+        String(attendee.tempAssignedTo)
+      ].includes(createdBy))
     ) {
-      if (Array.isArray(files.image) && files.image.length > 0) {
-        const response = await this.cloudinaryService.uploadImage(
-          files.image[0].path,
-        );
-        body.image = { url: response.url, public_id: response.public_id };
-        unlinkSync(files.image[0].path);
-      }
-      const note = await this.notesService.createNote(body, createdBy, adminId);
-      if (!note) {
-        throw new InternalServerErrorException(
-          'Faced an error creating note, Please try again later.',
-        );
-      }
-      return note;
-    } else {
       throw new UnauthorizedException(
         'Only Admin or assigned attendee is allowed to update attendee data.',
       );
     }
+
+    if (Array.isArray(files.image) && files.image.length > 0) {
+      const response = await this.cloudinaryService.uploadImage(
+        files.image[0].path,
+      );
+      body.image = { url: response.url, public_id: response.public_id };
+      unlinkSync(files.image[0].path);
+    }
+    const note = await this.notesService.createNote(body, createdBy, adminId);
+    if (!note) {
+      throw new InternalServerErrorException(
+        'Faced an error creating note, Please try again later.',
+      );
+    }
+    return note;
   }
 
   @Get()
