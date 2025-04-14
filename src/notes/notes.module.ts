@@ -10,6 +10,7 @@ import { UsersModule } from 'src/users/users.module';
 import { AssignmentModule } from 'src/assignment/assignment.module';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { AttendeesModule } from 'src/attendees/attendees.module';
+import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AttendeesModule } from 'src/attendees/attendees.module';
     ]),
     AssignmentModule,
     forwardRef(() => AttendeesModule),
+    
 
     MulterModule.register({
       storage: diskStorage({
@@ -34,7 +36,7 @@ import { AttendeesModule } from 'src/attendees/attendees.module';
     }),
   ],
   controllers: [NotesController],
-  providers: [NotesService, CloudinaryService],
+  providers: [NotesService, CloudinaryService, WebsocketGateway],
   exports: [NotesService],
 })
 export class NotesModule {

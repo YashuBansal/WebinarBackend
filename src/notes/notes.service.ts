@@ -1,4 +1,9 @@
-import { Inject, forwardRef, Injectable } from '@nestjs/common';
+import {
+  Inject,
+  forwardRef,
+  Injectable,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, PipelineStage, Types } from 'mongoose';
 import { Notes } from 'src/schemas/Notes.schema';
@@ -6,6 +11,8 @@ import { CreateNoteDto } from './dto/notes.dto';
 import { UsersService } from 'src/users/users.service';
 import { AssignmentService } from 'src/assignment/assignment.service';
 import { AttendeesService } from 'src/attendees/attendees.service';
+import { WebsocketGateway } from 'src/websocket/websocket.gateway';
+import { SocketEvents } from 'src/websocket/dto/socket.dto';
 
 @Injectable()
 export class NotesService {
@@ -16,6 +23,7 @@ export class NotesService {
     private readonly assignService: AssignmentService,
     @Inject(forwardRef(() => AttendeesService))
     private readonly attendeeService: AttendeesService,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
   async createNote(
@@ -52,7 +60,11 @@ export class NotesService {
       isWorked: body.isWorked === 'true' ? true : false,
     });
 
-    this.attendeeService.emitNoteCreation(adminId);
+    this.websocketGateway.emitSocketEvent(
+      adminId,
+      SocketEvents.ATTENDEE_STATUS_UPDATE,
+      {},
+    );
     return note;
   }
 
@@ -220,10 +232,26 @@ export class NotesService {
     };
   }
 
+  validateDate(start: string, end: string): { startDate: Date; endDate: Date } {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new BadRequestException('Invalid date format');
+    }
+
+    if (startDate > endDate) {
+      throw new BadRequestException(
+        'Start date cannot be greater than end date',
+      );
+    }
+    return { startDate, endDate };
+  }
+
   async getNotesByAdminId(
     id: string,
-    startDate: string,
-    endDate: string,
+    startDate: Date,
+    endDate: Date,
   ): Promise<any> {
     const adminId = new Types.ObjectId(`${id}`);
     // Step 1: Retrieve employees under the given adminId
@@ -236,10 +264,36 @@ export class NotesService {
           {
             $match: {
               createdBy: employee._id, // Match notes created by this employee
-              createdAt: {
-                $gte: new Date(startDate),
-                $lte: new Date(endDate),
-              },
+              $expr: {
+                $and: [
+                  { 
+                    $gte: [
+                      {
+                        $dateFromParts: {
+                          year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
+                          month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
+                          day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
+                          timezone: "Asia/Kolkata"
+                        }
+                      },
+                      startDate
+                    ]
+                  },
+                  { 
+                    $lte: [
+                      {
+                        $dateFromParts: {
+                          year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
+                          month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
+                          day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
+                          timezone: "Asia/Kolkata"
+                        }
+                      },
+                      endDate
+                    ]
+                  }
+                ]
+              }
             },
           },
           {

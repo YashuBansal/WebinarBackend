@@ -9,6 +9,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { WebsocketExceptionFilter } from './ws-exception.filter';
+import { SocketEvents } from './dto/socket.dto';
 
 @WebSocketGateway({
   cors: {
@@ -17,9 +18,7 @@ import { WebsocketExceptionFilter } from './ws-exception.filter';
 })
 @UseFilters(new WebsocketExceptionFilter())
 export class WebsocketGateway {
-  constructor(
-    private schedulerRegistry: SchedulerRegistry,
-  ) {}
+  constructor(private schedulerRegistry: SchedulerRegistry) {}
 
   private readonly logger = new Logger(WebsocketGateway.name);
   public activeUsers = new Map<string, string>(); // Map to store userId -> socketId
@@ -27,11 +26,9 @@ export class WebsocketGateway {
   @WebSocketServer()
   public server: Server;
 
-
   handleConnection(client: any) {
     this.logger.log(`Client connected: ${client.id}`);
   }
-
 
   @SubscribeMessage('join')
   handleJoin(
@@ -57,6 +54,18 @@ export class WebsocketGateway {
       this.activeUsers.delete(userId);
       // console.log('active users', this.activeUsers);
       this.logger.log(`User ${userId} disconnected`);
+    }
+  }
+
+  emitSocketEvent(recipientId: string, event: SocketEvents, data: any) {
+    const socketId = this.activeUsers.get(String(recipientId));
+    if (socketId) {
+      this.server.to(socketId).emit(event, data);
+    }
+    else {
+      this.logger.warn(
+        `Socket ID not found for user ${recipientId}. Event: ${event}`,
+      );
     }
   }
 }

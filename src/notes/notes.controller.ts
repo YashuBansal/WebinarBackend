@@ -101,6 +101,9 @@ export class NotesController {
     @Role() role: string,
     @Query() query: { startDate: string; endDate: string; employeeId: undefined | string },
   ) {
+
+    const { startDate, endDate } = this.notesService.validateDate(query.startDate, query.endDate);
+
     let isAdminAllowed = false;
     if (query.employeeId) {
       const employee = await this.usersService.getEmployee(query.employeeId);
@@ -130,8 +133,8 @@ export class NotesController {
     } else if (role === this.configService.get('appRoles')['ADMIN']) {
       const notes = await this.notesService.getNotesByAdminId(
         userId,
-        query.startDate,
-        query.endDate,
+        startDate,
+        endDate,
       );
       return notes;
     }

@@ -14,6 +14,9 @@ export class Location extends Document {
   })
   name: string;
 
+  @Prop({ type: String, trim: true, lowercase: true })
+  state: string;
+
   @Prop({ type: Boolean, required: true })
   isVerified: boolean;
 
@@ -29,8 +32,8 @@ export class Location extends Document {
   @Prop({ type: Boolean, default: false })
   deactivated: boolean;
 
-  @Prop({type: String, required: false})
-  note: string
+  @Prop({ type: String, required: false })
+  note: string;
 }
 
 export const LocationSchema = SchemaFactory.createForClass(Location);

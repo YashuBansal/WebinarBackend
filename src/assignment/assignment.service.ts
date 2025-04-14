@@ -155,6 +155,9 @@ export class AssignmentService {
           ...(filters.tags && {
             tags: { $in: filters.tags },
           }),
+          ...(filters.source && {
+            source: { $regex: filters.source, $options: 'i' },
+          }),
         },
       },
       ...(filters.leadType
@@ -1441,16 +1444,16 @@ export class AssignmentService {
 
   async fetchAssignmentsForNotes(
     employeeId: Types.ObjectId,
-    startDate: string,
-    endDate: string,
+    startDate: Date,
+    endDate: Date,
   ) {
     return this.assignmentsModel.aggregate([
       {
         $match: {
           user: employeeId,
           createdAt: {
-            $gte: new Date(startDate),
-            $lte: new Date(endDate),
+            $gte: startDate,
+            $lte: endDate,
           },
         },
       },
