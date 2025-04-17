@@ -1,4 +1,4 @@
-import { IsMongoId, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsMongoId, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateUserActivityDto {
   @IsNotEmpty()
@@ -25,4 +25,8 @@ export class InactiviUserDTO {
 
   @IsMongoId()
   userId: string;
+
+  @IsNumber()
+  @Min(1)
+  seconds: number;
 }

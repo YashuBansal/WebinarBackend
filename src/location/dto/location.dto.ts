@@ -12,6 +12,10 @@ export class CreateLocationDto {
   @IsNotEmpty()
   name: string;
 
+  @IsString()
+  @IsNotEmpty()
+  state: string;
+
   @IsOptional()
   @IsString()
   @IsNotEmpty()

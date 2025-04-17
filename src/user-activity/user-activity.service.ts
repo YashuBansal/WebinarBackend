@@ -71,7 +71,7 @@ export class UserActivityService {
     const notification = {
       recipient: adminId,
       title: 'User Inactivity Alert',
-      message: `User ${body.userName} (${body.email}) has been inactive for a while.`,
+      message: `User ${body.userName} (${body.email}) has been inactive for ${body.seconds} seconds.`,
       type: notificationType.INFO,
       actionType: notificationActionType.USER_ACTIVITY,
       metadata: {

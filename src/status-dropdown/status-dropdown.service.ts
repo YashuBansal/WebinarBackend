@@ -26,6 +26,7 @@ export class StatusDropdownService {
     createdBy: string,
     role: string,
     isWorked: boolean,
+    isInvalid: boolean,
   ): Promise<StatusDropdown> {
     // Check if the label exists as a default option
     const existingDefault = await this.statusDropdownModel.findOne({
@@ -59,6 +60,7 @@ export class StatusDropdownService {
       createdBy: new Types.ObjectId(`${createdBy}`),
       isDefault,
       isWorked: isWorked ? true : false,
+      isInvalid: isInvalid ? true : false,
     });
 
     return await newStatus.save();

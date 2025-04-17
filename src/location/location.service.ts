@@ -1,6 +1,6 @@
 import { Injectable, NotAcceptableException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import {
   CreateLoationsDto,
   CreateLocationDto,
@@ -44,9 +44,7 @@ export class LocationService {
     });
 
     if (findLocations.length >= locations.length) {
-      throw new NotAcceptableException(
-        'All the Locations already exists.',
-      );
+      throw new NotAcceptableException('All the Locations already exists.');
     }
 
     const filteredLocations = locations.filter((location) => {
@@ -83,6 +81,33 @@ export class LocationService {
       this.sendNotificationToSuperAdmin();
     }
     return result;
+  }
+
+  async updateLocation(
+    locationId: Types.ObjectId,
+    state: string,
+    location: string,
+  ): Promise<any> {
+    if (
+      !locationId ||
+      !mongoose.isValidObjectId(locationId) ||
+      !state ||
+      !location
+    ) {
+      throw new NotAcceptableException(
+        'Location ID, state and location are required.',
+      );
+    }
+
+    const locationData = await this.locationModel.findById(locationId);
+
+    if (!locationData) {
+      throw new NotAcceptableException('Location not found.');
+    }
+
+    locationData.state = state;
+    locationData.name = location;
+    await locationData.save();
   }
 
   async getLocations(page: number, limit: number): Promise<any> {

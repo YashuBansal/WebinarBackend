@@ -1,5 +1,15 @@
-import { IsString, IsNotEmpty, IsOptional, IsArray, ValidateNested, IsMongoId, IsBoolean, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsMongoId,
+  IsBoolean,
+  IsEnum,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+import { Types } from 'mongoose';
 
 enum BooleanString {
   True = 'true',
@@ -47,8 +57,15 @@ export class CreateNoteDto {
   @IsNotEmpty({ message: 'Status is required' })
   status: string;
 
-  @IsEnum(BooleanString, { message: 'isWorked must be either "true" or "false"' })
+  @IsEnum(BooleanString, {
+    message: 'isWorked must be either "true" or "false"',
+  })
   isWorked: BooleanString;
+
+  @IsEnum(BooleanString, {
+    message: 'Is Invalid Phone must be either "true" or "false"',
+  })
+  isInvalidPhone: BooleanString;
 
   @IsOptional()
   image: any;

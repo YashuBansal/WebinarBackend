@@ -35,19 +35,17 @@ export class NotesService {
 
     const user = await this.usersService.getUserById(createdBy);
     let validCall = false;
+    const callDuration = body.callDuration;
+    const totalCallDuration: number =
+      Number(callDuration.min) * 60 + Number(callDuration.sec);
 
     if (user && user?.validCallTime) {
-      const callDuration = body.callDuration;
-      const totalCallDuration: number =
-        Number(callDuration.hr) * 60 * 60 +
-        Number(callDuration.min) * 60 +
-        Number(callDuration.sec);
       if (totalCallDuration >= user.validCallTime) {
         validCall = true;
       }
     }
 
-    await this.attendeeService.updateAttendee(
+    const attendee = await this.attendeeService.updateAttendee(
       body.attendee,
       adminId,
       createdBy,
@@ -58,6 +56,9 @@ export class NotesService {
       ...body,
       createdBy,
       isWorked: body.isWorked === 'true' ? true : false,
+      adminId: new Types.ObjectId(`${adminId}`),
+      webinarId: attendee.webinar,
+      callDuration: totalCallDuration
     });
 
     this.websocketGateway.emitSocketEvent(
@@ -266,34 +267,64 @@ export class NotesService {
               createdBy: employee._id, // Match notes created by this employee
               $expr: {
                 $and: [
-                  { 
+                  {
                     $gte: [
                       {
                         $dateFromParts: {
-                          year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                          month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                          day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                          timezone: "Asia/Kolkata"
-                        }
+                          year: {
+                            $year: {
+                              date: '$createdAt',
+                              timezone: 'Asia/Kolkata',
+                            },
+                          },
+                          month: {
+                            $month: {
+                              date: '$createdAt',
+                              timezone: 'Asia/Kolkata',
+                            },
+                          },
+                          day: {
+                            $dayOfMonth: {
+                              date: '$createdAt',
+                              timezone: 'Asia/Kolkata',
+                            },
+                          },
+                          timezone: 'Asia/Kolkata',
+                        },
                       },
-                      startDate
-                    ]
+                      startDate,
+                    ],
                   },
-                  { 
+                  {
                     $lte: [
                       {
                         $dateFromParts: {
-                          year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                          month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                          day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                          timezone: "Asia/Kolkata"
-                        }
+                          year: {
+                            $year: {
+                              date: '$createdAt',
+                              timezone: 'Asia/Kolkata',
+                            },
+                          },
+                          month: {
+                            $month: {
+                              date: '$createdAt',
+                              timezone: 'Asia/Kolkata',
+                            },
+                          },
+                          day: {
+                            $dayOfMonth: {
+                              date: '$createdAt',
+                              timezone: 'Asia/Kolkata',
+                            },
+                          },
+                          timezone: 'Asia/Kolkata',
+                        },
                       },
-                      endDate
-                    ]
-                  }
-                ]
-              }
+                      endDate,
+                    ],
+                  },
+                ],
+              },
             },
           },
           {
@@ -449,5 +480,52 @@ export class NotesService {
       .session(session)
       .exec();
     // TODO: Delete images from cloudinary
+  }
+
+  async fetchNotesDataForClientDashboard(
+    adminId: Types.ObjectId,
+    webinarId?: Types.ObjectId,
+  ) {
+    const pipeline = [
+      {
+        $match: {
+          // Use the actual ObjectId string representation or a variable
+          adminId,
+          webinarId,
+        },
+      },
+      {
+        // First group: Count by user and status combination
+        $group: {
+          _id: {
+            // Compound key
+            user: '$createdBy',
+            status: '$status',
+          },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        // Second group: Group by user, collecting status counts
+        $group: {
+          _id: '$_id.user', // Group by the 'user' part of the previous _id
+          statusCounts: {
+            $push: {
+              // Push a specific document structure, not $$ROOT
+              status: '$_id.status', // Get status from the previous _id
+              count: '$count', // Get count from the previous stage
+            },
+          },
+        },
+      },
+      // Optional: Rename _id to 'user' if preferred
+      {
+        $project: {
+          _id: 0, // Remove the default _id
+          user: '$_id', // Rename the grouped _id to 'user'
+          statusCounts: 1, // Keep the statusCounts array
+        },
+      },
+    ];
   }
 }

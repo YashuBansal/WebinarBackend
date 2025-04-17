@@ -2,9 +2,24 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Attendee } from './Attendee.schema';
 import { User } from './User.schema';
+import { Webinar } from './Webinar.schema';
 
 @Schema({ timestamps: true })
 export class Notes extends Document {
+  @Prop({
+    type: Types.ObjectId,
+    ref: User.name,
+    required: [true, 'Admin id is required'],
+  })
+  adminId: Types.ObjectId;
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: Webinar.name,
+    required: [true, 'Webinar id is required'],
+  })
+  webinarId: Types.ObjectId;
+
   @Prop({
     type: Types.ObjectId,
     ref: Attendee.name,
@@ -34,26 +49,11 @@ export class Notes extends Document {
   phone: string;
 
   @Prop({
-    type: {
-      hr: {
-        type: Number,
-        default: 0,
-      },
-      min: {
-        type: Number,
-        default: 0,
-      },
-      sec: {
-        type: Number,
-        default: 0,
-      },
-    },
+    type: Number,
+    default: 0,
+    min: 0,
   })
-  callDuration: {
-    hr: string;
-    min: string;
-    sec: string;
-  };
+  callDuration: Number;
 
   @Prop({
     type: String,
@@ -79,6 +79,11 @@ export class Notes extends Document {
     default: false,
   })
   isWorked: boolean;
+
+  @Prop({
+    type: Boolean,
+  })
+  isInvalidPhone: boolean;
 }
 
 export const NotesSchema = SchemaFactory.createForClass(Notes);
@@ -89,6 +94,9 @@ NotesSchema.pre('save', function (next) {
   }
   if (typeof this.attendee === 'string') {
     this.attendee = new Types.ObjectId(`${this.attendee}`);
+  }
+  if (typeof this.webinarId === 'string') {
+    this.webinarId = new Types.ObjectId(`${this.webinarId}`);
   }
   next();
 });

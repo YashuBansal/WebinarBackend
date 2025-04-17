@@ -20,25 +20,30 @@ export class StatusDropdownController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(
-    @Body() body: { label: string; isWorked: boolean; },
+    @Body() body: { label: string; isWorked: boolean; isInvalid: boolean },
     @Id() id: string,
     @Role() role: string,
   ) {
     if (!body.label) throw new Error('Please enter a label');
-    return await this.statusDropdownService.create(body.label, id, role, body.isWorked);
+    return await this.statusDropdownService.create(
+      body.label,
+      id,
+      role,
+      body.isWorked,
+      body.isInvalid,
+    );
   }
 
   @Get()
-  async findAll(
-    @Role() role: string,
-    @AdminId() adminId: string,
-  ) {
+  async findAll(@Role() role: string, @AdminId() adminId: string) {
     return await this.statusDropdownService.findAll(role, adminId);
   }
 
   @Get('/filter')
   async getStatusesForFilterDropdown(@AdminId() adminId: string) {
-    return await this.statusDropdownService.getStatusesForFilterDropdown(adminId);
+    return await this.statusDropdownService.getStatusesForFilterDropdown(
+      adminId,
+    );
   }
 
   // Update a status by ID

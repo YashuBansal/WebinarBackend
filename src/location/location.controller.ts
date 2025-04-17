@@ -13,6 +13,7 @@ import { CreateLoationsDto, CreateLocationDto, UpdateLocationDto } from './dto/l
 import { LocationService } from './location.service';
 import { AdminId, Id, Role } from 'src/decorators/custom.decorator';
 import { ConfigService } from '@nestjs/config';
+import { Types } from 'mongoose';
 
 @Controller('location')
 export class LocationController {
@@ -163,6 +164,19 @@ export class LocationController {
         'Only Admin or Super admin are authorised to disapprove locations',
       );
     }
+  }
+
+  @Patch('/update/:id')
+  async updatelocation(
+    @Body() updateLocationDto: {state: string, name: string},
+    @Param('id') id: string,
+  ): Promise<any> {
+
+    return await this.locationService.updateLocation(
+      new Types.ObjectId(id),
+      updateLocationDto.state,
+      updateLocationDto.name,
+    );
   }
 
   @Post('import')

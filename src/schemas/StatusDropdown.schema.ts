@@ -26,6 +26,12 @@ export class StatusDropdown extends Document {
     type: Boolean,
     default: false,
   })
+  isInvalid: boolean;
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
   isDefault: boolean;
 }
 

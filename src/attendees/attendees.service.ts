@@ -1028,7 +1028,7 @@ export class AttendeesService {
     adminId: string,
     userId: string,
     updateAttendeeDto: UpdateAttendeeDto,
-  ) {
+  ): Promise<Attendee> {
     const attendee = await this.attendeeModel.findOne({
       _id: new Types.ObjectId(`${id}`),
     });
