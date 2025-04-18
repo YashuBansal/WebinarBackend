@@ -529,3 +529,103 @@ export class NotesService {
     ];
   }
 }
+
+
+// [ // Replace db.collection with your actual collection name
+//   // Stage 1: Initial Filtering
+//   {
+//     $match: {
+//       // --- Use your actual adminId ---
+//       adminId: ObjectId('67f3af912b0a6c6292117f47'),
+//       // --- Ensure callDuration is valid and filter out irrelevant ones ---
+//       callDuration: { $gte: 0 }
+//     }
+//   },
+
+//   // Stage 2: First Grouping - Granular data collection
+//   {
+//     $group: {
+//       _id: {
+//         // Group by the combination needed for intermediate calculations
+//         user: '$createdBy',
+//         attendee: '$attendee',
+//         status: '$status'
+//       },
+//       // Find the maximum duration within this specific user/attendee/status combo
+//       maxDurationForCombo: { $max: '$callDuration' },
+//       // Count documents matching this specific user/attendee/status combo
+//       countForCombo: { $sum: 1 }
+//     }
+//   },
+
+//   // Stage 3: Second Grouping - Consolidate by User
+//   {
+//     $group: {
+//       _id: '$_id.user', // Final grouping key: user
+
+//       // Collect data needed to find the overall max duration per attendee for this user
+//       attendeeDurations: {
+//         $push: {
+//           attendee: '$_id.attendee',
+//           duration: '$maxDurationForCombo' // Push attendee and the max duration found for their combo(s)
+//         }
+//       },
+
+//       // Collect data needed to sum up counts for each status for this user
+//       statusCountsInput: {
+//         $push: {
+//           status: '$_id.status',
+//           count: '$countForCombo' // Push status and the count found for its combo(s)
+//         }
+//       },
+//     }
+//   },
+
+//   // Stage 4: Final Processing and Shaping the Output
+//   {
+//     $project: {
+//       _id: 0,       // Exclude the default _id field
+//       user: '$_id', // Rename _id to 'user'
+
+// 		attendeeDurations: 1,
+//       // Calculate final status counts (as an array of {k: status, v: count})
+//       statusCounts: {
+//         $map: { // Convert the result object back to an array
+//           input: {
+//             $objectToArray: { // First convert the reduced object to an array
+//               // Use $reduce to process the input array and sum counts per status
+//               $reduce: {
+//                 input: '$statusCountsInput',
+//                 initialValue: {}, // Start with an empty object { status: totalCountSoFar }
+//                 in: {
+//                   $let: {
+//                     vars: {
+//                       currentStatus: '$$this.status',
+//                       currentCount: '$$this.count',
+//                       // Get count already stored for this status, default to 0 if none
+//                       existingCount: { $ifNull: [ { $getField: { field: '$$this.status', input: '$$value' } }, 0 ] }
+//                     },
+//                     in: {
+//                       // Merge existing results with the updated count for the current status
+//                       $mergeObjects: [
+//                         '$$value',
+//                         // Create object { status: updatedTotalCount }
+//                         { $arrayToObject: [[ [ '$$currentStatus', { $add: [ '$$existingCount', '$$currentCount' ] } ] ]] }
+//                       ]
+//                     }
+//                   }
+//                 }
+//               }
+//             }
+//           },
+//           as: "statusCount", // Variable name for each element in the mapped array
+//           in: { // Define the structure of each element in the final output array
+//             status: '$$statusCount.k',
+//             count: '$$statusCount.v'
+//           }
+//         }
+//       },
+
+//     }
+//   }
+// ]

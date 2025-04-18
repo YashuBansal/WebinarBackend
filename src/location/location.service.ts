@@ -13,6 +13,7 @@ import {
   notificationType,
 } from 'src/schemas/notification.schema';
 import { UsersService } from 'src/users/users.service';
+import e from 'express';
 
 @Injectable()
 export class LocationService {
@@ -114,7 +115,7 @@ export class LocationService {
     if (limit === 0) {
       const result = await this.locationModel
         .find({ isVerified: true, deactivated: false })
-        .select('name');
+        .select('name state');
       return {
         data: result,
       };
@@ -199,19 +200,25 @@ export class LocationService {
     };
   }
 
-  async getLocationRequests(
-    page: number,
-    limit: number,
-    isVerified: boolean,
-    admin?: string,
-    isAdminVerified?: boolean,
-  ): Promise<any> {
-    const query = { isVerified };
+  async getLocationRequests(payload: {
+    page: number;
+    limit: number;
+    admin?: string;
+    employee?: string;
+    isAdminVerified?: boolean;
+  }): Promise<any> {
+    const { page, limit, admin, isAdminVerified, employee } = payload;
+
+    const query = { isVerified: false };
     if (admin) {
       query['admin'] = new Types.ObjectId(`${admin}`);
     }
     if (isAdminVerified) {
       query['isAdminVerified'] = isAdminVerified;
+    }
+
+    if (employee) {
+      query['employee'] = new Types.ObjectId(`${employee}`);
     }
 
     const skip = (page - 1) * limit;
@@ -362,5 +369,9 @@ export class LocationService {
     }
 
     return result;
+  }
+
+  async deleteLocationById(Ids: Types.ObjectId[]) {
+    return this.locationModel.deleteMany({ _id: { $in: Ids } });
   }
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   NotAcceptableException,
   Param,
@@ -9,7 +10,11 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { CreateLoationsDto, CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
+import {
+  CreateLoationsDto,
+  CreateLocationDto,
+  UpdateLocationDto,
+} from './dto/location.dto';
 import { LocationService } from './location.service';
 import { AdminId, Id, Role } from 'src/decorators/custom.decorator';
 import { ConfigService } from '@nestjs/config';
@@ -86,21 +91,26 @@ export class LocationController {
     const limit = parseInt(qlimit) || 10;
 
     if (role === this.configService.get('appRoles').SUPER_ADMIN) {
-      const result = await this.locationService.getLocationRequests(
+      const result = await this.locationService.getLocationRequests({
         page,
         limit,
-        false,
-        null,
-        true,
-      );
+        admin: null,
+        isAdminVerified: true,
+      });
       return result;
     } else if (this.configService.get('appRoles').ADMIN === role) {
-      const result = await this.locationService.getLocationRequests(page, limit, false, id);
+      const result = await this.locationService.getLocationRequests({
+        page,
+        limit,
+        admin: id,
+      });
       return result;
     } else {
-      throw new UnauthorizedException(
-        'Only Admin or Super admin are authorised to see all requested locations',
-      );
+      return await this.locationService.getLocationRequests({
+        page,
+        limit,
+        employee: id,
+      });
     }
   }
 
@@ -168,10 +178,9 @@ export class LocationController {
 
   @Patch('/update/:id')
   async updatelocation(
-    @Body() updateLocationDto: {state: string, name: string},
+    @Body() updateLocationDto: { state: string; name: string },
     @Param('id') id: string,
   ): Promise<any> {
-
     return await this.locationService.updateLocation(
       new Types.ObjectId(id),
       updateLocationDto.state,
@@ -180,9 +189,16 @@ export class LocationController {
   }
 
   @Post('import')
-  async addLocations(
-    @Body() data: CreateLoationsDto
-  ): Promise<any> {
+  async addLocations(@Body() data: CreateLoationsDto): Promise<any> {
     return await this.locationService.addLocations(data);
+  }
+
+  @Delete()
+  async deleteLocations(@Body() data: { locationIds: string[] }): Promise<any> {
+    if (!data.locationIds || data.locationIds.length === 0) {
+      throw new NotAcceptableException('Location IDs not provided.');
+    }
+    const locationIds = data.locationIds.map((id) => new Types.ObjectId(id));
+    return await this.locationService.deleteLocationById(locationIds);
   }
 }
