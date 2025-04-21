@@ -13,7 +13,6 @@ import {
   notificationType,
 } from 'src/schemas/notification.schema';
 import { UsersService } from 'src/users/users.service';
-import e from 'express';
 
 @Injectable()
 export class LocationService {

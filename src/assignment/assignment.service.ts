@@ -1193,7 +1193,6 @@ export class AssignmentService {
   }
 
   async changeAssignment(data: ReAssignmentDTO, adminId: string) {
-
     const session = await this.assignmentsModel.startSession();
     try {
       await session.withTransaction(async (currentSession) => {
@@ -1612,7 +1611,6 @@ export class AssignmentService {
     adminId: Types.ObjectId,
     attendeeIds: Types.ObjectId[],
   ) {
-
     const assignments = await this.findAssignmentsForTodayIST_NoLib({
       adminId,
       attendeeIds,
@@ -1854,5 +1852,105 @@ export class AssignmentService {
       data: result,
       message: 'Assignments fetched successfully',
     };
+  }
+
+  async getAssignmentsCount(startDate: Date, endDate: Date, adminId: Types.ObjectId, webinar?: Types.ObjectId) {
+    const pipeline = [
+      {
+        $match: {
+          adminId ,
+          ...(webinar ? { webinar } : {}), // Optional filter for webinarId
+          // $expr: {
+          //   $and: [
+          //     {
+          //       $gte: [
+          //         {
+          //           $dateFromParts: {
+          //             year: {
+          //               $year: {
+          //                 date: '$createdAt',
+          //                 timezone: 'Asia/Kolkata',
+          //               },
+          //             },
+          //             month: {
+          //               $month: {
+          //                 date: '$createdAt',
+          //                 timezone: 'Asia/Kolkata',
+          //               },
+          //             },
+          //             day: {
+          //               $dayOfMonth: {
+          //                 date: '$createdAt',
+          //                 timezone: 'Asia/Kolkata',
+          //               },
+          //             },
+          //             timezone: 'Asia/Kolkata',
+          //           },
+          //         },
+          //         startDate,
+          //       ],
+          //     },
+          //     {
+          //       $lte: [
+          //         {
+          //           $dateFromParts: {
+          //             year: {
+          //               $year: {
+          //                 date: '$createdAt',
+          //                 timezone: 'Asia/Kolkata',
+          //               },
+          //             },
+          //             month: {
+          //               $month: {
+          //                 date: '$createdAt',
+          //                 timezone: 'Asia/Kolkata',
+          //               },
+          //             },
+          //             day: {
+          //               $dayOfMonth: {
+          //                 date: '$createdAt',
+          //                 timezone: 'Asia/Kolkata',
+          //               },
+          //             },
+          //             timezone: 'Asia/Kolkata',
+          //           },
+          //         },
+          //         endDate,
+          //       ],
+          //     },
+          //   ],
+          // },
+        }
+      },
+      {
+        $group: {
+          _id: '$user',
+          count: {
+            $sum: 1
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'userData',
+        }
+      },
+      {
+        $project: {
+          count: 1,
+          validCallTime: {
+            $arrayElemAt: ['$userData.validCallTime',0]
+          },
+          userEmail: {
+            $arrayElemAt: ['$userData.email',0]
+          },
+        }
+      }
+    ];
+
+    return this.assignmentsModel.aggregate(pipeline).exec();
   }
 }

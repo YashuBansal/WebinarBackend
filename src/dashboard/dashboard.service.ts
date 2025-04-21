@@ -1,13 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
+import { start } from 'repl';
+import { AssignmentService } from 'src/assignment/assignment.service';
+import { NotesService } from 'src/notes/notes.service';
 import { Attendee } from 'src/schemas/Attendee.schema';
 import { BillingHistory } from 'src/schemas/BillingHistory.schema';
-import { Plans } from 'src/schemas/Plans.schema';
 import { Subscription } from 'src/schemas/Subscription.schema';
 import { User } from 'src/schemas/User.schema';
-import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class DashboardService {
@@ -19,9 +20,27 @@ export class DashboardService {
     private billingHistoryModel: Model<BillingHistory>,
     @InjectModel(Attendee.name)
     private attendeeModel: Model<Attendee>,
-    private usersService: UsersService,
     private readonly configService: ConfigService,
+    private readonly assingmentService: AssignmentService,
+    private readonly notesService: NotesService,
   ) {}
+
+  validateDate(start: string, end: string): { startDate: Date; endDate: Date } {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new BadRequestException('Invalid date format');
+    }
+
+    if (startDate > endDate) {
+      throw new BadRequestException(
+        'Start date cannot be greater than end date',
+      );
+    }
+    console.log(startDate, endDate);
+    return { startDate, endDate };
+  }
 
   async superAdminDashboard(startDate: string, endDate: string): Promise<any> {
     // const pipeline = [
@@ -507,5 +526,25 @@ export class DashboardService {
 
     const result = await this.billingHistoryModel.aggregate(pipeline);
     return result;
+  }
+
+  async fetchAdminDashboardData(
+    startDate: Date,
+    endDate: Date,
+    adminId: Types.ObjectId,
+    webinarId?: Types.ObjectId,
+  ) {
+    console.log('Admin ID:', adminId, startDate, endDate, webinarId);
+
+    const [notes, assignmentsCount] = await Promise.all([
+      this.notesService.fetchNotesDataForClientDashboard(startDate, endDate, adminId, webinarId),
+      this.assingmentService.getAssignmentsCount(startDate, endDate, adminId, webinarId),
+    ]);
+
+    return {
+      notes,
+      assignmentsCount,
+      message: 'Data fetched successfully',
+    };
   }
 }

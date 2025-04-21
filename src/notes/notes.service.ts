@@ -58,7 +58,7 @@ export class NotesService {
       isWorked: body.isWorked === 'true' ? true : false,
       adminId: new Types.ObjectId(`${adminId}`),
       webinarId: attendee.webinar,
-      callDuration: totalCallDuration
+      callDuration: totalCallDuration,
     });
 
     this.websocketGateway.emitSocketEvent(
@@ -483,149 +483,292 @@ export class NotesService {
   }
 
   async fetchNotesDataForClientDashboard(
+    startDate: Date,
+    endDate: Date,
     adminId: Types.ObjectId,
     webinarId?: Types.ObjectId,
   ) {
     const pipeline = [
+      // ==========================================================================
+      // Pipeline Goal: For a specific admin and webinar, calculate per user:
+      // 1. Total count for each distinct status ('JOINED', 'LEFT', etc.).
+      // 2. The maximum call duration for each unique attendee associated with that user.
+      // ==========================================================================
+
+      // Stage 1: Initial Filtering
+      // Select relevant documents based on admin, webinar, and valid call duration.
       {
         $match: {
-          // Use the actual ObjectId string representation or a variable
+          // --- Filter by specific admin and webinar ---
+          // TODO: Replace with your actual ObjectId values
           adminId,
-          webinarId,
+          ...(webinarId ? { webinarId } : {}), // Optional filter for webinarId
+
+          // --- Ensure data quality: only consider records with a non-negative duration ---
+          callDuration: { $gte: 0 },
+          $expr: {
+            $and: [
+              {
+                $gte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  startDate,
+                ],
+              },
+              {
+                $lte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  endDate,
+                ],
+              },
+            ],
+          },
         },
       },
+
+      // Stage 2: First Grouping - Aggregate by User, Attendee, and Status
+      // This stage handles potential multiple entries for the same user/attendee/status combo.
+      // It finds the maximum duration and determines if 'isWorked' was true for *any* record in this specific combo.
       {
-        // First group: Count by user and status combination
         $group: {
           _id: {
-            // Compound key
-            user: '$createdBy',
-            status: '$status',
+            user: '$createdBy', // Grouping key component 1
+            attendee: '$attendee', // Grouping key component 2
+            status: '$status', // Grouping key component 3
           },
-          count: { $sum: 1 },
+          // Find the longest duration recorded for this specific user/attendee/status tuple
+          maxDurationForThisCombo: { $max: '$callDuration' },
+          // Determine if 'isWorked' is true for any document in this combo ($max treats true > false)
+          isWorkedForThisCombo: { $max: '$isWorked' }, // Changed name for clarity
+          // Count how many documents match this specific user/attendee/status tuple
+          countForThisCombo: { $sum: 1 },
         },
       },
+
+      // Stage 3: Second Grouping - Consolidate Data Per User
+      // Group the results from Stage 2 by user only.
+      // Prepare arrays of data needed for the final calculations in the $project stage.
       {
-        // Second group: Group by user, collecting status counts
         $group: {
-          _id: '$_id.user', // Group by the 'user' part of the previous _id
-          statusCounts: {
+          _id: '$_id.user', // Final grouping key: the user ('createdBy')
+
+          // Collect all max durations and 'isWorked' flags per attendee FOR THIS USER.
+          // This array might contain multiple entries for the same attendee if they had different statuses.
+          attendeeDataInput: {
+            // Renamed for clarity as it now holds more than just duration
             $push: {
-              // Push a specific document structure, not $$ROOT
-              status: '$_id.status', // Get status from the previous _id
-              count: '$count', // Get count from the previous stage
+              attendee: '$_id.attendee',
+              duration: '$maxDurationForThisCombo',
+              isWorked: '$isWorkedForThisCombo', // Pass the calculated 'isWorked' flag
+            },
+          },
+
+          // Collect all status counts FOR THIS USER (remains unchanged).
+          statusCountsInput: {
+            $push: {
+              status: '$_id.status',
+              count: '$countForThisCombo',
             },
           },
         },
       },
-      // Optional: Rename _id to 'user' if preferred
+
+      // Stage 4: Final Projection and Calculation
+      // Reshape the output and perform the final calculations.
       {
         $project: {
-          _id: 0, // Remove the default _id
-          user: '$_id', // Rename the grouped _id to 'user'
-          statusCounts: 1, // Keep the statusCounts array
-        },
+          _id: 0, // Exclude the default MongoDB _id
+          user: '$_id', // Rename the grouped _id (which is the user) to 'user'
+
+          // --- Calculate Final Status Counts --- (Logic remains unchanged)
+          statusCounts: {
+            $map: {
+              input: {
+                $objectToArray: {
+                  $reduce: {
+                    input: '$statusCountsInput',
+                    initialValue: {},
+                    in: {
+                      $let: {
+                        vars: {
+                          currentStatus: '$$this.status',
+                          currentCount: '$$this.count',
+                          accumulatedCount: {
+                            $ifNull: [
+                              {
+                                $getField: {
+                                  field: '$$this.status',
+                                  input: '$$value',
+                                },
+                              },
+                              0,
+                            ],
+                          },
+                        },
+                        in: {
+                          $mergeObjects: [
+                            '$$value',
+                            {
+                              $arrayToObject: [
+                                [
+                                  [
+                                    '$$currentStatus',
+                                    {
+                                      $add: [
+                                        '$$accumulatedCount',
+                                        '$$currentCount',
+                                      ],
+                                    },
+                                  ],
+                                ],
+                              ],
+                            },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              as: 'statusTotal',
+              in: { status: '$$statusTotal.k', count: '$$statusTotal.v' },
+            },
+          },
+
+          // --- Calculate Max Duration & Overall 'isWorked' Per Unique Attendee ---
+          // Goal: Transform attendeeDataInput into [{ attendee: 'A1', callDuration: D1, isWorked: W1 }, ...]
+          // where D1 is the max duration for A1, and W1 is true if *any* record for A1 had isWorked: true.
+          attendeeDurations: {
+            // Pattern: Use $reduce to aggregate into an object map { attendeeIdStr: { duration: maxD, worked: maxW } },
+            // then $objectToArray + $map to convert back to the desired array format.
+            $map: {
+              input: {
+                $objectToArray: {
+                  // 3. Convert the aggregated object back to an array: [{ k: attendeeIdStr, v: { duration: D, worked: W } }]
+                  $reduce: {
+                    // 1. Process the input array to find the max duration and overall 'isWorked' per attendee
+                    input: '$attendeeDataInput', // The array from Stage 3: [{ attendee: OID, duration: D, isWorked: W }, ...]
+                    initialValue: {}, // 2. Start with an empty object accumulator: { attendeeIdStr: { duration: maxD, worked: maxW } }
+                    in: {
+                      // $$value = the accumulator object being built (e.g., { 'attendeeA_str': { duration: 120, worked: false } })
+                      // $$this = the current element being processed (e.g., { attendee: ObjectId('A'), duration: 50, isWorked: true })
+                      $let: {
+                        // --- Variables needed for the calculation ---
+                        vars: {
+                          // Key for the accumulator object must be a string
+                          currentAttendeeStr: { $toString: '$$this.attendee' },
+                          // Safely get the *entire* data object previously accumulated for this attendee.
+                          // Default to { duration: 0, worked: false } if this is the first time seeing this attendee.
+                          existingDataForAttendee: {
+                            $ifNull: [
+                              // Attempt to get the object stored under the attendee's string ID in the accumulator ($$value)
+                              {
+                                $getField: {
+                                  field: { $toString: '$$this.attendee' },
+                                  input: '$$value',
+                                },
+                              },
+                              // Default value if the field doesn't exist in $$value yet
+                              { duration: 0, worked: false },
+                            ],
+                          },
+                        },
+                        // --- Perform calculations and update accumulator ---
+                        // The 'in' block can safely use variables defined in the 'vars' block above.
+                        in: {
+                          // Merge the existing accumulator ($$value) with a *new* object.
+                          // This new object contains only one key: the current attendee's string ID.
+                          // The value for this key is an updated object with the calculated max duration and overall worked status.
+                          $mergeObjects: [
+                            '$$value', // Start with the accumulator as it is
+                            {
+                              // Create the single-entry object to merge { attendeeIdStr: { updated data } }
+                              $arrayToObject: [
+                                [
+                                  [
+                                    // Creates a key-value pair array: [ [ key, value ] ]
+                                    '$$currentAttendeeStr', // The key: e.g., "67f..."
+                                    {
+                                      // The value: an object containing the new aggregated data
+                                      duration: {
+                                        $max: [
+                                          '$$existingDataForAttendee.duration',
+                                          '$$this.duration',
+                                        ],
+                                      }, // Calculate new max duration
+                                      worked: {
+                                        $max: [
+                                          '$$existingDataForAttendee.worked',
+                                          '$$this.isWorked',
+                                        ],
+                                      }, // Calculate new overall worked status (true > false)
+                                    },
+                                  ],
+                                ],
+                              ],
+                            },
+                          ],
+                        },
+                      }, // End of $let
+                    }, // End of $reduce.in
+                  }, // End of $reduce
+                }, // End of $objectToArray
+              }, // End of input for $map
+              as: 'attendeeAggregated', // Variable name for items like { k: 'attendeeA_str', v: { duration: 120, worked: true } }
+              in: {
+                // 4. Format each item into the final desired structure
+                attendee: '$$attendeeAggregated.k', // The attendee ID (as string)
+                callDuration: '$$attendeeAggregated.v.duration', // The overall max duration
+                isWorked: '$$attendeeAggregated.v.worked', // The overall 'isWorked' status (true if ever true)
+              },
+            }, // End of $map for attendeeDurations
+          }, // End of attendeeDurations field
+        }, // End of $project stage
       },
     ];
+    return this.notesModel.aggregate(pipeline).exec();
   }
 }
-
-
-// [ // Replace db.collection with your actual collection name
-//   // Stage 1: Initial Filtering
-//   {
-//     $match: {
-//       // --- Use your actual adminId ---
-//       adminId: ObjectId('67f3af912b0a6c6292117f47'),
-//       // --- Ensure callDuration is valid and filter out irrelevant ones ---
-//       callDuration: { $gte: 0 }
-//     }
-//   },
-
-//   // Stage 2: First Grouping - Granular data collection
-//   {
-//     $group: {
-//       _id: {
-//         // Group by the combination needed for intermediate calculations
-//         user: '$createdBy',
-//         attendee: '$attendee',
-//         status: '$status'
-//       },
-//       // Find the maximum duration within this specific user/attendee/status combo
-//       maxDurationForCombo: { $max: '$callDuration' },
-//       // Count documents matching this specific user/attendee/status combo
-//       countForCombo: { $sum: 1 }
-//     }
-//   },
-
-//   // Stage 3: Second Grouping - Consolidate by User
-//   {
-//     $group: {
-//       _id: '$_id.user', // Final grouping key: user
-
-//       // Collect data needed to find the overall max duration per attendee for this user
-//       attendeeDurations: {
-//         $push: {
-//           attendee: '$_id.attendee',
-//           duration: '$maxDurationForCombo' // Push attendee and the max duration found for their combo(s)
-//         }
-//       },
-
-//       // Collect data needed to sum up counts for each status for this user
-//       statusCountsInput: {
-//         $push: {
-//           status: '$_id.status',
-//           count: '$countForCombo' // Push status and the count found for its combo(s)
-//         }
-//       },
-//     }
-//   },
-
-//   // Stage 4: Final Processing and Shaping the Output
-//   {
-//     $project: {
-//       _id: 0,       // Exclude the default _id field
-//       user: '$_id', // Rename _id to 'user'
-
-// 		attendeeDurations: 1,
-//       // Calculate final status counts (as an array of {k: status, v: count})
-//       statusCounts: {
-//         $map: { // Convert the result object back to an array
-//           input: {
-//             $objectToArray: { // First convert the reduced object to an array
-//               // Use $reduce to process the input array and sum counts per status
-//               $reduce: {
-//                 input: '$statusCountsInput',
-//                 initialValue: {}, // Start with an empty object { status: totalCountSoFar }
-//                 in: {
-//                   $let: {
-//                     vars: {
-//                       currentStatus: '$$this.status',
-//                       currentCount: '$$this.count',
-//                       // Get count already stored for this status, default to 0 if none
-//                       existingCount: { $ifNull: [ { $getField: { field: '$$this.status', input: '$$value' } }, 0 ] }
-//                     },
-//                     in: {
-//                       // Merge existing results with the updated count for the current status
-//                       $mergeObjects: [
-//                         '$$value',
-//                         // Create object { status: updatedTotalCount }
-//                         { $arrayToObject: [[ [ '$$currentStatus', { $add: [ '$$existingCount', '$$currentCount' ] } ] ]] }
-//                       ]
-//                     }
-//                   }
-//                 }
-//               }
-//             }
-//           },
-//           as: "statusCount", // Variable name for each element in the mapped array
-//           in: { // Define the structure of each element in the final output array
-//             status: '$$statusCount.k',
-//             count: '$$statusCount.v'
-//           }
-//         }
-//       },
-
-//     }
-//   }
-// ]

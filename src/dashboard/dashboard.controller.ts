@@ -1,5 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
+import { Id } from 'src/decorators/custom.decorator';
+import mongoose, { Types } from 'mongoose';
 
 @Controller('dashboard')
 export class DashboardController {
@@ -14,6 +16,24 @@ export class DashboardController {
       query.endDate,
     );
     return result;
+  }
+
+  @Get('admin')
+  async getAdminDashboard(
+    @Query() query: { startDate: string; endDate: string; webinarId: string },
+    @Id() adminId: string,
+  ): Promise<any> {
+    const { startDate, endDate, webinarId } = query;
+    const { startDate: start, endDate: end } =
+      this.dashboardService.validateDate(startDate, endDate);
+    return await this.dashboardService.fetchAdminDashboardData(
+      start,
+      end,
+      new Types.ObjectId(`${adminId}`),
+      mongoose.isValidObjectId(webinarId)
+        ? new Types.ObjectId(webinarId)
+        : undefined,
+    );
   }
 
   @Get('plans')

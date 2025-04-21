@@ -10,12 +10,20 @@ import {
   SubscriptionSchema,
 } from 'src/schemas/Subscription.schema';
 import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
-import { BillingHistory, BillingHistorySchema } from 'src/schemas/BillingHistory.schema';
+import {
+  BillingHistory,
+  BillingHistorySchema,
+} from 'src/schemas/BillingHistory.schema';
 import { Attendee, AttendeeSchema } from 'src/schemas/Attendee.schema';
+import { AssignmentModule } from 'src/assignment/assignment.module';
+import { NotesModule } from 'src/notes/notes.module';
+import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 
 @Module({
   imports: [
     UsersModule,
+    AssignmentModule,
+    NotesModule,
     MongooseModule.forFeature([
       {
         name: User.name,
@@ -48,5 +56,8 @@ export class DashboardModule {
         { path: 'dashboard/users', method: RequestMethod.ALL },
         { path: 'dashboard/revenue', method: RequestMethod.ALL },
       );
+    consumer
+      .apply(AuthAdminTokenMiddleware)
+      .forRoutes({ path: 'dashboard/admin', method: RequestMethod.ALL });
   }
 }
