@@ -84,9 +84,15 @@ export class Notes extends Document {
     type: Boolean,
   })
   isInvalidPhone: boolean;
+
+  @Prop({
+    type: Date,
+  })
+  assignmentDate: Date;
 }
 
 export const NotesSchema = SchemaFactory.createForClass(Notes);
+NotesSchema.index({ attendee: 1 });
 
 NotesSchema.pre('save', function (next) {
   if (typeof this.createdBy === 'string') {

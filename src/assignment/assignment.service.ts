@@ -21,7 +21,11 @@ import {
   AssignmentStatus,
   RecordType,
 } from 'src/schemas/Assignments.schema';
-import { AssignmentDto, ReAssignmentDTO } from './dto/Assignment.dto';
+import {
+  AssignmentDto,
+  MoveToPullbacksDTO,
+  ReAssignmentDTO,
+} from './dto/Assignment.dto';
 import { ConfigService } from '@nestjs/config';
 import {
   AttendeesFilterDto,
@@ -1193,6 +1197,7 @@ export class AssignmentService {
   }
 
   async changeAssignment(data: ReAssignmentDTO, adminId: string) {
+    console.log(data);
     const session = await this.assignmentsModel.startSession();
     try {
       await session.withTransaction(async (currentSession) => {
@@ -1205,7 +1210,10 @@ export class AssignmentService {
         if (!employee.isActive) {
           throw new BadRequestException('Employee is inactive');
         }
-        if (employee.dailyContactCount >= employee.dailyContactLimit) {
+        if (
+          employee.dailyContactCount >= employee.dailyContactLimit &&
+          !data.forceAssign
+        ) {
           throw new BadRequestException(
             'Employee has reached daily contact limit',
           );
@@ -1317,13 +1325,17 @@ export class AssignmentService {
   }
 
   async changeAttendeeAssignmentStatus(
-    attendees: string[],
+    data: MoveToPullbacksDTO,
     adminId: string,
-    webinarId: string,
-    recordType: RecordType,
-    employeeId?: string,
-    isTemp?: boolean,
   ) {
+    const {
+      employeeId,
+      webinarId,
+      recordType,
+      isTemp,
+      attendees,
+      forceAssign,
+    } = data;
     const attendeeIds = attendees.map(
       (attendee) => new Types.ObjectId(`${attendee}`),
     );
@@ -1396,10 +1408,11 @@ export class AssignmentService {
             attendeeId: assignment.attendee.toString(),
             assignmentId: assignment._id.toString(),
           })),
-          employeeId: employeeId,
-          webinarId: webinarId,
-          recordType: recordType,
-          isTemp: isTemp,
+          employeeId,
+          webinarId,
+          recordType,
+          isTemp,
+          forceAssign,
         },
         adminId,
       );
@@ -1854,81 +1867,89 @@ export class AssignmentService {
     };
   }
 
-  async getAssignmentsCount(startDate: Date, endDate: Date, adminId: Types.ObjectId, webinar?: Types.ObjectId) {
+  async getAssignmentsCount(
+    startDate: Date,
+    endDate: Date,
+    adminId: Types.ObjectId,
+    webinar?: Types.ObjectId,
+  ) {
     const pipeline = [
       {
         $match: {
-          adminId ,
+          adminId,
           ...(webinar ? { webinar } : {}), // Optional filter for webinarId
-          // $expr: {
-          //   $and: [
-          //     {
-          //       $gte: [
-          //         {
-          //           $dateFromParts: {
-          //             year: {
-          //               $year: {
-          //                 date: '$createdAt',
-          //                 timezone: 'Asia/Kolkata',
-          //               },
-          //             },
-          //             month: {
-          //               $month: {
-          //                 date: '$createdAt',
-          //                 timezone: 'Asia/Kolkata',
-          //               },
-          //             },
-          //             day: {
-          //               $dayOfMonth: {
-          //                 date: '$createdAt',
-          //                 timezone: 'Asia/Kolkata',
-          //               },
-          //             },
-          //             timezone: 'Asia/Kolkata',
-          //           },
-          //         },
-          //         startDate,
-          //       ],
-          //     },
-          //     {
-          //       $lte: [
-          //         {
-          //           $dateFromParts: {
-          //             year: {
-          //               $year: {
-          //                 date: '$createdAt',
-          //                 timezone: 'Asia/Kolkata',
-          //               },
-          //             },
-          //             month: {
-          //               $month: {
-          //                 date: '$createdAt',
-          //                 timezone: 'Asia/Kolkata',
-          //               },
-          //             },
-          //             day: {
-          //               $dayOfMonth: {
-          //                 date: '$createdAt',
-          //                 timezone: 'Asia/Kolkata',
-          //               },
-          //             },
-          //             timezone: 'Asia/Kolkata',
-          //           },
-          //         },
-          //         endDate,
-          //       ],
-          //     },
-          //   ],
-          // },
-        }
+          $expr: {
+            $and: [
+              {
+                $gte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  startDate,
+                ],
+              },
+              {
+                $lte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  endDate,
+                ],
+              },
+            ],
+          },
+        },
       },
       {
         $group: {
           _id: '$user',
           count: {
-            $sum: 1
-          }
-        }
+            $sum: 1,
+          },
+          attendees: {
+            $push: '$attendee',
+          },
+        },
       },
       {
         $lookup: {
@@ -1936,21 +1957,97 @@ export class AssignmentService {
           localField: '_id',
           foreignField: '_id',
           as: 'userData',
-        }
+        },
       },
       {
         $project: {
           count: 1,
+          attendees: 1,
           validCallTime: {
-            $arrayElemAt: ['$userData.validCallTime',0]
+            $arrayElemAt: ['$userData.validCallTime', 0],
           },
           userEmail: {
-            $arrayElemAt: ['$userData.email',0]
+            $arrayElemAt: ['$userData.email', 0],
           },
-        }
-      }
+        },
+      },
     ];
 
-    return this.assignmentsModel.aggregate(pipeline).exec();
+    return this.assignmentsModel
+      .aggregate(pipeline, { allowDiskUse: true })
+      .exec();
+  }
+
+  async getAssignmentByAttendeeId(attendee: Types.ObjectId) {
+    return this.assignmentsModel.findOne({ attendee }).exec();
+  }
+
+  async getEmployeeAssignments(startDate: Date, endDate: Date, user: Types.ObjectId, webinar?: Types.ObjectId){
+
+    return this.assignmentsModel.find({
+      user,
+      ...(webinar ? { webinar } : {}),
+      $expr: {
+        $and: [
+          {
+            $gte: [
+              {
+                $dateFromParts: {
+                  year: {
+                    $year: {
+                      date: '$createdAt',
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  month: {
+                    $month: {
+                      date: '$createdAt',
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  day: {
+                    $dayOfMonth: {
+                      date: '$createdAt',
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  timezone: 'Asia/Kolkata',
+                },
+              },
+              startDate,
+            ],
+          },
+          {
+            $lte: [
+              {
+                $dateFromParts: {
+                  year: {
+                    $year: {
+                      date: '$createdAt',
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  month: {
+                    $month: {
+                      date: '$createdAt',
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  day: {
+                    $dayOfMonth: {
+                      date: '$createdAt',
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  timezone: 'Asia/Kolkata',
+                },
+              },
+              endDate,
+            ],
+          },
+        ],
+      },
+    }).select('attendee').exec();
+
   }
 }

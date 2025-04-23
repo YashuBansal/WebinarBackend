@@ -26,6 +26,20 @@ export class NotesService {
     private readonly websocketGateway: WebsocketGateway,
   ) {}
 
+  async updateAssignmentDateOnNotes(
+    noteId: Types.ObjectId,
+    attendeeId: Types.ObjectId,
+  ) {
+    const assignment: any =
+      await this.assignService.getAssignmentByAttendeeId(attendeeId);
+    if (!assignment && assignment?.createdAt) return;
+    const assignmentId = assignment._id;
+    await this.notesModel.updateOne(
+      { _id: noteId },
+      { $set: { assignmentDate: assignment.createdAt } },
+    );
+  }
+
   async createNote(
     body: CreateNoteDto,
     createdBy: string,
@@ -65,6 +79,10 @@ export class NotesService {
       adminId,
       SocketEvents.ATTENDEE_STATUS_UPDATE,
       {},
+    );
+    this.updateAssignmentDateOnNotes(
+      note._id as Types.ObjectId,
+      attendee._id as Types.ObjectId,
     );
     return note;
   }
@@ -482,12 +500,7 @@ export class NotesService {
     // TODO: Delete images from cloudinary
   }
 
-  async fetchNotesDataForClientDashboard(
-    startDate: Date,
-    endDate: Date,
-    adminId: Types.ObjectId,
-    webinarId?: Types.ObjectId,
-  ) {
+  async fetchNotesDataForClientDashboard(attendees: Types.ObjectId[]) {
     const pipeline = [
       // ==========================================================================
       // Pipeline Goal: For a specific admin and webinar, calculate per user:
@@ -499,73 +512,12 @@ export class NotesService {
       // Select relevant documents based on admin, webinar, and valid call duration.
       {
         $match: {
-          // --- Filter by specific admin and webinar ---
-          // TODO: Replace with your actual ObjectId values
-          adminId,
-          ...(webinarId ? { webinarId } : {}), // Optional filter for webinarId
+          attendee: {
+            $in: attendees,
+          },
 
           // --- Ensure data quality: only consider records with a non-negative duration ---
           callDuration: { $gte: 0 },
-          $expr: {
-            $and: [
-              {
-                $gte: [
-                  {
-                    $dateFromParts: {
-                      year: {
-                        $year: {
-                          date: '$createdAt',
-                          timezone: 'Asia/Kolkata',
-                        },
-                      },
-                      month: {
-                        $month: {
-                          date: '$createdAt',
-                          timezone: 'Asia/Kolkata',
-                        },
-                      },
-                      day: {
-                        $dayOfMonth: {
-                          date: '$createdAt',
-                          timezone: 'Asia/Kolkata',
-                        },
-                      },
-                      timezone: 'Asia/Kolkata',
-                    },
-                  },
-                  startDate,
-                ],
-              },
-              {
-                $lte: [
-                  {
-                    $dateFromParts: {
-                      year: {
-                        $year: {
-                          date: '$createdAt',
-                          timezone: 'Asia/Kolkata',
-                        },
-                      },
-                      month: {
-                        $month: {
-                          date: '$createdAt',
-                          timezone: 'Asia/Kolkata',
-                        },
-                      },
-                      day: {
-                        $dayOfMonth: {
-                          date: '$createdAt',
-                          timezone: 'Asia/Kolkata',
-                        },
-                      },
-                      timezone: 'Asia/Kolkata',
-                    },
-                  },
-                  endDate,
-                ],
-              },
-            ],
-          },
         },
       },
 

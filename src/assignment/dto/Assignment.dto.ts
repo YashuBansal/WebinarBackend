@@ -125,6 +125,10 @@ export class ReAssignmentDTO {
   @ValidateNested({ each: true })
   @Type(() => AssignmentAttendee)
   assignments: AssignmentAttendee[];
+  
+  @IsOptional()
+  @IsBoolean()
+  forceAssign?: boolean;
 }
 
 export class FetchReAssignmentsDTO {
@@ -157,6 +161,10 @@ export class MoveToPullbacksDTO {
 
   @IsMongoId()
   webinarId: string;
+
+  @IsOptional()
+  @IsBoolean()
+  forceAssign?: boolean;
 }
 
 export class DateRangeDto {

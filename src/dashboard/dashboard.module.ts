@@ -9,7 +9,6 @@ import {
   Subscription,
   SubscriptionSchema,
 } from 'src/schemas/Subscription.schema';
-import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
 import {
   BillingHistory,
   BillingHistorySchema,
@@ -18,6 +17,7 @@ import { Attendee, AttendeeSchema } from 'src/schemas/Attendee.schema';
 import { AssignmentModule } from 'src/assignment/assignment.module';
 import { NotesModule } from 'src/notes/notes.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
+import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 
 @Module({
   imports: [
@@ -59,5 +59,8 @@ export class DashboardModule {
     consumer
       .apply(AuthAdminTokenMiddleware)
       .forRoutes({ path: 'dashboard/admin', method: RequestMethod.ALL });
+    consumer
+      .apply(AuthTokenMiddleware)
+      .forRoutes({ path: 'dashboard/employee', method: RequestMethod.ALL });
   }
 }

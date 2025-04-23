@@ -512,6 +512,21 @@ export class AttendeesService {
         },
       },
       {
+        $addFields: {
+          lookupField: {
+            $ifNull: ['$tempAssignedTo', '$assignedTo'],
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users', // The collection for admin and assignedTo (User model)
+          localField: 'lookupField', // The field from Attendee to match in User
+          foreignField: '_id', // The field in the User collection
+          as: 'lookedUpDetails', // Alias to store populated admin details
+        },
+      },
+      {
         $project: {
           email: 1,
           attendeeHistory: {
@@ -530,6 +545,11 @@ export class AttendeesService {
             updatedAt: '$updatedAt', // Include updatedAt for reference
             tags: '$tags',
             location: '$location',
+            assignedToUserName: {
+              $ifNull:[{
+                $arrayElemAt: ['$lookedUpDetails.userName',0]
+              }, '']
+            }
           },
         },
       },

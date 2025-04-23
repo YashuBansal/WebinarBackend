@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { Id } from 'src/decorators/custom.decorator';
 import mongoose, { Types } from 'mongoose';
@@ -30,6 +30,31 @@ export class DashboardController {
       start,
       end,
       new Types.ObjectId(`${adminId}`),
+      mongoose.isValidObjectId(webinarId)
+        ? new Types.ObjectId(webinarId)
+        : undefined,
+    );
+  }
+
+  @Get('employee')
+  async getEmployeeDashboard(
+    @Query()
+    query: {
+      startDate: string;
+      endDate: string;
+      webinarId: string;
+      employeeId: string;
+    },
+    @Id() employee: string,
+  ): Promise<any> {
+    const { startDate, endDate, webinarId, employeeId } = query;
+    const userId = mongoose.isValidObjectId(employeeId) ? employeeId : employee;
+    const { startDate: start, endDate: end } =
+      this.dashboardService.validateDate(startDate, endDate);
+    return await this.dashboardService.fetchEmployeeDashboardData(
+      start,
+      end,
+      new Types.ObjectId(`${userId}`),
       mongoose.isValidObjectId(webinarId)
         ? new Types.ObjectId(webinarId)
         : undefined,

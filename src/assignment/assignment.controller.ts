@@ -226,12 +226,8 @@ export class AssignmentController {
     @Id() adminId: string,
   ) {
     return await this.assignmentService.changeAttendeeAssignmentStatus(
-      body.attendees,
+      body,
       adminId,
-      body.webinarId,
-      body.recordType,
-      body.employeeId,
-      body.isTemp,
     );
   }
 
