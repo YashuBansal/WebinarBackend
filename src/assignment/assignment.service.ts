@@ -1200,6 +1200,10 @@ export class AssignmentService {
     console.log(data);
     const session = await this.assignmentsModel.startSession();
     try {
+
+      let updatedAssignmentsCount=0;
+      let updatedAttendeesCount = 0;
+      let newAssignments: any = null;
       await session.withTransaction(async (currentSession) => {
         const employee = await this.userService.getEmployee(data.employeeId);
         if (!employee || employee.adminId.toString() !== `${adminId}`) {
@@ -1242,6 +1246,7 @@ export class AssignmentService {
             'Some assignments were not found or unauthorized access',
           );
         }
+        
 
         const query = data.isTemp
           ? { tempAssignedTo: employee._id }
@@ -1308,13 +1313,17 @@ export class AssignmentService {
           },
         });
 
-        return {
-          message: 'Reassignment completed successfully',
-          updatedAssignmentsCount: deletedAssignmentsResult.deletedCount,
-          updatedAttendeesCount: updatedAttendeesResult.matchedCount,
-          newAssignments: createdAssignments,
-        };
+          updatedAssignmentsCount = deletedAssignmentsResult.deletedCount;
+          updatedAttendeesCount = updatedAttendeesResult.matchedCount;
+          newAssignments = createdAssignments;
       });
+      await this.getEmployeeDailyContactCount(new Types.ObjectId(`${adminId}`));
+      return {
+        message: 'Reassignment completed successfully',
+        updatedAssignmentsCount ,
+        updatedAttendeesCount ,
+        newAssignments ,
+      };
     } catch (error) {
       console.error('Transaction failed during hideAttendees:', error);
       throw new BadRequestException(error.message);
@@ -1982,72 +1991,140 @@ export class AssignmentService {
     return this.assignmentsModel.findOne({ attendee }).exec();
   }
 
-  async getEmployeeAssignments(startDate: Date, endDate: Date, user: Types.ObjectId, webinar?: Types.ObjectId){
+  async getEmployeeAssignments(
+    startDate: Date,
+    endDate: Date,
+    user: Types.ObjectId,
+    webinar?: Types.ObjectId,
+  ) {
+    return this.assignmentsModel
+      .find({
+        user,
+        ...(webinar ? { webinar } : {}),
+        $expr: {
+          $and: [
+            {
+              $gte: [
+                {
+                  $dateFromParts: {
+                    year: {
+                      $year: {
+                        date: '$createdAt',
+                        timezone: 'Asia/Kolkata',
+                      },
+                    },
+                    month: {
+                      $month: {
+                        date: '$createdAt',
+                        timezone: 'Asia/Kolkata',
+                      },
+                    },
+                    day: {
+                      $dayOfMonth: {
+                        date: '$createdAt',
+                        timezone: 'Asia/Kolkata',
+                      },
+                    },
+                    timezone: 'Asia/Kolkata',
+                  },
+                },
+                startDate,
+              ],
+            },
+            {
+              $lte: [
+                {
+                  $dateFromParts: {
+                    year: {
+                      $year: {
+                        date: '$createdAt',
+                        timezone: 'Asia/Kolkata',
+                      },
+                    },
+                    month: {
+                      $month: {
+                        date: '$createdAt',
+                        timezone: 'Asia/Kolkata',
+                      },
+                    },
+                    day: {
+                      $dayOfMonth: {
+                        date: '$createdAt',
+                        timezone: 'Asia/Kolkata',
+                      },
+                    },
+                    timezone: 'Asia/Kolkata',
+                  },
+                },
+                endDate,
+              ],
+            },
+          ],
+        },
+      })
+      .select('attendee')
+      .exec();
+  }
 
-    return this.assignmentsModel.find({
-      user,
-      ...(webinar ? { webinar } : {}),
-      $expr: {
-        $and: [
-          {
-            $gte: [
-              {
-                $dateFromParts: {
-                  year: {
-                    $year: {
-                      date: '$createdAt',
-                      timezone: 'Asia/Kolkata',
-                    },
-                  },
-                  month: {
-                    $month: {
-                      date: '$createdAt',
-                      timezone: 'Asia/Kolkata',
-                    },
-                  },
-                  day: {
-                    $dayOfMonth: {
-                      date: '$createdAt',
-                      timezone: 'Asia/Kolkata',
-                    },
-                  },
-                  timezone: 'Asia/Kolkata',
-                },
-              },
-              startDate,
-            ],
-          },
-          {
-            $lte: [
-              {
-                $dateFromParts: {
-                  year: {
-                    $year: {
-                      date: '$createdAt',
-                      timezone: 'Asia/Kolkata',
-                    },
-                  },
-                  month: {
-                    $month: {
-                      date: '$createdAt',
-                      timezone: 'Asia/Kolkata',
-                    },
-                  },
-                  day: {
-                    $dayOfMonth: {
-                      date: '$createdAt',
-                      timezone: 'Asia/Kolkata',
-                    },
-                  },
-                  timezone: 'Asia/Kolkata',
-                },
-              },
-              endDate,
-            ],
-          },
-        ],
+  async getEmployeeDailyContactCount(adminId: Types.ObjectId, session ?: ClientSession) {
+    // 1. Get the current date/time in UTC.
+    // MongoDB stores dates in UTC by default, and Date objects in JS are also time zone aware
+    // but manipulations often involve UTC or local time depending on the method.
+    const now = new Date();
+
+    // 2. Calculate the start and end boundaries for "today" in IST (UTC+5:30).
+    // IST is UTC + 5 hours 30 minutes.
+    // This means midnight in IST is 18:30 UTC the *previous* day.
+    // So, "today" in IST spans from 18:30 UTC yesterday to 18:30 UTC today.
+
+    // Calculate the UTC Date object for TODAY at 18:30 UTC.
+    // This point marks the END boundary (exclusive) of the IST day we're interested in.
+    const endOfISTDay = new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        18, // UTC Hour (18 for 18:30)
+        30, // UTC Minute (30 for 18:30)
+        0, // UTC Second
+        0, // UTC Millisecond
+      ),
+    );
+
+    // Calculate the UTC Date object for YESTERDAY at 18:30 UTC.
+    // This point marks the START boundary (inclusive) of the IST day we're interested in.
+    const startOfISTDay = new Date(endOfISTDay.getTime() - 24 * 60 * 60 * 1000); // Subtract 24 hours
+
+    // 3. Define the query filter.
+    // We want documents where:
+    // - user matches the given empId
+    // - createdAt is greater than or equal to the start of the IST day (in UTC)
+    // - createdAt is strictly less than the end of the IST day (in UTC)
+    const filter = {
+      adminId,
+      createdAt: {
+        $gte: startOfISTDay, // Greater than or equal to the start of the IST day
+        $lt: endOfISTDay, // Less than the end of the IST day
       },
-    }).select('attendee').exec();
+    };
+    const pipeline: PipelineStage[] = [
+      {
+        $match: filter,
+      },
+      {
+        $group: {
+          _id: '$user',
+          totalAssignments: {
+            $sum: 1,
+          },
+        },
+      },
+    ];
 
+    const result = await this.assignmentsModel.aggregate(pipeline).exec();
+
+    console.log(result);
+
+    return await this.userService.updateDailyContactCount(result, session);
   }
 }

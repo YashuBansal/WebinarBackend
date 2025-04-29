@@ -205,6 +205,7 @@ export class AttendeesService {
                   gender: attendee.gender || null,
                   timeInSession: attendee.timeInSession || 0,
                   location: attendee.location || null,
+                  source: attendee.source || 'Import',
                 },
               },
             },

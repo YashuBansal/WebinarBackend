@@ -1159,4 +1159,27 @@ export class UsersService {
     console.log('Bulk update result:', result);
     return result;
   }
+
+  updateDailyContactCount(
+    data: {
+      _id: Types.ObjectId;
+      totalAssignments: number;
+    }[],
+    session ?: ClientSession,
+  ) {
+    const operations = data.map((emp) => ({
+      updateOne: {
+        filter: { _id: emp._id },
+        update: [
+          {
+            $set: {
+              dailyContactCount: emp.totalAssignments,
+            },
+          },
+        ], // Attach the session if provided
+      },
+    }));
+
+    return this.userModel.bulkWrite(operations, { ordered: false, session  });
+  }
 }
