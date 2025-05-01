@@ -1160,14 +1160,18 @@ export class UsersService {
     return result;
   }
 
-  updateDailyContactCount(
+  async updateDailyContactCount(
     data: {
       _id: Types.ObjectId;
       totalAssignments: number;
     }[],
-    session ?: ClientSession,
+    adminId: Types.ObjectId,
+    session?: ClientSession,
   ) {
-    const operations = data.map((emp) => ({
+    const userIdsInData = data.map((d) => d._id);
+
+    // Step 1: Update employees from `data`
+    const updateAssignments = data.map((emp) => ({
       updateOne: {
         filter: { _id: emp._id },
         update: [
@@ -1176,10 +1180,26 @@ export class UsersService {
               dailyContactCount: emp.totalAssignments,
             },
           },
-        ], // Attach the session if provided
+        ],
       },
     }));
 
-    return this.userModel.bulkWrite(operations, { ordered: false, session  });
+    // Step 2: Set `dailyContactCount` to 0 for others not in `data` and with count > 0
+    const resetUnassigned = {
+      updateMany: {
+        filter: {
+          adminId,
+          _id: { $nin: userIdsInData },
+          dailyContactCount: { $gt: 0 },
+        },
+        update: {
+          $set: { dailyContactCount: 0 },
+        },
+      },
+    };
+
+    const operations = [...updateAssignments, resetUnassigned];
+
+    return this.userModel.bulkWrite(operations, { ordered: false, session });
   }
 }

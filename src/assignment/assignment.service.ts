@@ -1261,7 +1261,7 @@ export class AssignmentService {
               isAttended:
                 data.recordType === RecordType.POST_WEBINAR ? true : false,
             },
-            { isPulledback: false, ...query },
+            { isPulledback: false, ...query, status: null },
             currentSession,
           );
 
@@ -1388,6 +1388,8 @@ export class AssignmentService {
             'Some assignments were not found for the attendees',
           );
         }
+
+        await this.getEmployeeDailyContactCount(new Types.ObjectId(`${adminId}`));
 
         return {
           message: 'Attendees and assignments updated successfully',
@@ -2001,6 +2003,7 @@ export class AssignmentService {
       .find({
         user,
         ...(webinar ? { webinar } : {}),
+        status: AssignmentStatus.ACTIVE,
         $expr: {
           $and: [
             {
@@ -2060,13 +2063,14 @@ export class AssignmentService {
               ],
             },
           ],
-        },
+        }
       })
       .select('attendee')
       .exec();
   }
 
   async getEmployeeDailyContactCount(adminId: Types.ObjectId, session ?: ClientSession) {
+    console.log('Getting employee daily contact count...');
     // 1. Get the current date/time in UTC.
     // MongoDB stores dates in UTC by default, and Date objects in JS are also time zone aware
     // but manipulations often involve UTC or local time depending on the method.
@@ -2102,6 +2106,7 @@ export class AssignmentService {
     // - createdAt is strictly less than the end of the IST day (in UTC)
     const filter = {
       adminId,
+      status: AssignmentStatus.ACTIVE,
       createdAt: {
         $gte: startOfISTDay, // Greater than or equal to the start of the IST day
         $lt: endOfISTDay, // Less than the end of the IST day
@@ -2125,6 +2130,6 @@ export class AssignmentService {
 
     console.log(result);
 
-    return await this.userService.updateDailyContactCount(result, session);
+    return await this.userService.updateDailyContactCount(result,adminId, session);
   }
 }
