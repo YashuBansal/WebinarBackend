@@ -332,10 +332,12 @@ export class AssignmentService {
     }
 
     if (attendeeIds.length > 0) {
+      const webinar = await this.webinarService.getWebinarById(data.webinar);
+      const webinarName = webinar?.webinarName || 'Webinar';
       const notification = {
         recipient: data.user,
         title: 'New Tasks Assigned',
-        message: `You have been assigned ${attendeeIds.length} new tasks. Please check your task list for details.`,
+        message: `You have been assigned ${attendeeIds.length} new tasks in ${webinarName}. Please check your task list for details.`,
         type: notificationType.INFO,
         actionType: notificationActionType.ASSIGNMENT,
         metadata: {
@@ -572,7 +574,7 @@ export class AssignmentService {
     const notificationForAdmin = {
       recipient: adminId,
       title: 'New Attendee Registered',
-      message: `A new attendee has registered for the webinar. Please check your attendee list for details.`,
+      message: `A new attendee has registered for the webinar ${webinar?.webinarName}. Please check your attendee list for details.`,
       type: notificationType.INFO,
       actionType: notificationActionType.ATTENDEE_REGISTRATION,
       metadata: {
@@ -583,7 +585,7 @@ export class AssignmentService {
 
     setTimeout(() => {
       this.notificationService.createNotification(notificationForAdmin);
-    }, 1000);
+    }, 2000);
 
     const newAttendee = newAttendees[0];
 
@@ -742,10 +744,12 @@ export class AssignmentService {
       };
     }
 
+    const webinar = await this.webinarService.getWebinarById(webinarId.toString());
+
     const notification = {
       recipient: employeeId.toString(),
       title: 'New Task Assigned',
-      message: `You have been assigned a new task. Please check your task list for details.`,
+      message: `You have been assigned a new task in webinar ${webinar?.webinarName}. Please check your task list for details.`,
       type: notificationType.INFO,
       actionType: notificationActionType.ASSIGNMENT,
       metadata: {
@@ -940,11 +944,18 @@ export class AssignmentService {
 
     const reassignmentCount = result.modifiedCount;
 
+    const user = await this.userService.getUserById(userId);
+    const userName = user?.userName || 'User';
+    const webinar = await this.webinarService.getWebinarById(
+      webinarId.toString(),
+    );
+    const webinarName = webinar?.webinarName || 'Webinar';
+
     if (reassignmentCount > 0) {
       await this.notificationService.createNotification({
         recipient: adminId,
-        title: 'Reassignment Requests Submitted',
-        message: `${reassignmentCount} reassignment requests have been submitted.`,
+        title: `Reassignment Requests Submitted by ${userName}`,
+        message: `${reassignmentCount} reassignment requests have been submitted from the webinar ${webinarName}.`,
         type: notificationType.INFO,
         actionType: notificationActionType.REASSIGNMENT,
         metadata: {
@@ -1150,10 +1161,15 @@ export class AssignmentService {
         await session.commitTransaction();
         session.endSession();
 
+        const webinar = await this.webinarService.getWebinarById(
+          webinarId.toString(),
+        );
+        const webinarName = webinar?.webinarName || 'Webinar';
+
         await this.notificationService.createNotification({
           recipient: userId,
           title: 'Reassignment Request Approved',
-          message: 'Your reassignment request has been approved.',
+          message: `Your reassignment request has been approved from the webinar ${webinarName}.`,
           type: notificationType.SUCCESS,
           actionType: notificationActionType.REASSIGNMENT,
           metadata: {
@@ -1179,10 +1195,16 @@ export class AssignmentService {
         },
         { $set: { status: AssignmentStatus.ACTIVE } },
       );
+
+      const webinar = await this.webinarService.getWebinarById(
+        webinarId.toString(),
+      );
+      const webinarName = webinar?.webinarName || 'Webinar';
+
       await this.notificationService.createNotification({
         recipient: userId,
         title: 'Reassignment Request Rejected',
-        message: 'Your reassignment request has been rejected.',
+        message: `Your reassignment request has been rejected from the webinar ${webinarName}.`,
         type: notificationType.WARNING,
         actionType: notificationActionType.REASSIGNMENT,
         metadata: {
@@ -1200,8 +1222,7 @@ export class AssignmentService {
     console.log(data);
     const session = await this.assignmentsModel.startSession();
     try {
-
-      let updatedAssignmentsCount=0;
+      let updatedAssignmentsCount = 0;
       let updatedAttendeesCount = 0;
       let newAssignments: any = null;
       await session.withTransaction(async (currentSession) => {
@@ -1246,7 +1267,6 @@ export class AssignmentService {
             'Some assignments were not found or unauthorized access',
           );
         }
-        
 
         const query = data.isTemp
           ? { tempAssignedTo: employee._id }
@@ -1301,11 +1321,16 @@ export class AssignmentService {
           currentSession,
         );
 
+        const webinar = await this.webinarService.getWebinarById(
+          data.webinarId.toString(),
+        );
+        const webinarName = webinar?.webinarName || 'Webinar';
+
         // Send notification
         await this.notificationService.createNotification({
           recipient: employee._id.toString(),
           title: 'New Tasks Assigned',
-          message: `You have been assigned ${createdAssignments.length} new tasks ${data.isTemp ? 'temporarily' : ''}. Please check your task list for details.`,
+          message: `You have been assigned ${createdAssignments.length} new tasks ${data.isTemp ? 'temporarily' : ''} in the webinar ${webinarName} . Please check your task list for details.`,
           type: notificationType.INFO,
           actionType: notificationActionType.REASSIGNMENT,
           metadata: {
@@ -1313,16 +1338,16 @@ export class AssignmentService {
           },
         });
 
-          updatedAssignmentsCount = deletedAssignmentsResult.deletedCount;
-          updatedAttendeesCount = updatedAttendeesResult.matchedCount;
-          newAssignments = createdAssignments;
+        updatedAssignmentsCount = deletedAssignmentsResult.deletedCount;
+        updatedAttendeesCount = updatedAttendeesResult.matchedCount;
+        newAssignments = createdAssignments;
       });
       await this.getEmployeeDailyContactCount(new Types.ObjectId(`${adminId}`));
       return {
         message: 'Reassignment completed successfully',
-        updatedAssignmentsCount ,
-        updatedAttendeesCount ,
-        newAssignments ,
+        updatedAssignmentsCount,
+        updatedAttendeesCount,
+        newAssignments,
       };
     } catch (error) {
       console.error('Transaction failed during hideAttendees:', error);
@@ -1389,7 +1414,9 @@ export class AssignmentService {
           );
         }
 
-        await this.getEmployeeDailyContactCount(new Types.ObjectId(`${adminId}`));
+        await this.getEmployeeDailyContactCount(
+          new Types.ObjectId(`${adminId}`),
+        );
 
         return {
           message: 'Attendees and assignments updated successfully',
@@ -2063,13 +2090,16 @@ export class AssignmentService {
               ],
             },
           ],
-        }
+        },
       })
       .select('attendee')
       .exec();
   }
 
-  async getEmployeeDailyContactCount(adminId: Types.ObjectId, session ?: ClientSession) {
+  async getEmployeeDailyContactCount(
+    adminId: Types.ObjectId,
+    session?: ClientSession,
+  ) {
     console.log('Getting employee daily contact count...');
     // 1. Get the current date/time in UTC.
     // MongoDB stores dates in UTC by default, and Date objects in JS are also time zone aware
@@ -2130,6 +2160,10 @@ export class AssignmentService {
 
     console.log(result);
 
-    return await this.userService.updateDailyContactCount(result,adminId, session);
+    return await this.userService.updateDailyContactCount(
+      result,
+      adminId,
+      session,
+    );
   }
 }

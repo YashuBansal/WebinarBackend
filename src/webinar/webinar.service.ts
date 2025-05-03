@@ -392,4 +392,8 @@ export class WebinarService {
       result.assignedEmployees.filter((employee) => employee?.isActive) || []
     );
   }
+
+  async getWebinarById(webinarId: string): Promise<Webinar> {
+    return this.webinarModel.findById(webinarId).lean();
+  }
 }
