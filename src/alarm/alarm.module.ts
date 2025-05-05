@@ -14,6 +14,7 @@ import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { ConfigService } from '@nestjs/config';
+import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 
 @Module({
   imports: [
@@ -25,6 +26,8 @@ import { ConfigService } from '@nestjs/config';
       },
     ]),
     forwardRef(() => SubscriptionModule),
+
+    AttendeeLogModule
 
     
   ],

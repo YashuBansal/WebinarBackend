@@ -1,18 +1,33 @@
 // user-activity.controller.ts
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Post, Put, Query, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { AdminId, Id, Role } from 'src/decorators/custom.decorator';
-import { CreateUserActivityDto, InactiviUserDTO } from './dto/user-activity.dto';
+import {
+  CreateUserActivityDto,
+  InactiviUserDTO,
+} from './dto/user-activity.dto';
 import { UserActivityService } from './user-activity.service';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { UsersService } from 'src/users/users.service';
 import { ConfigService } from '@nestjs/config';
 
 @Controller('user-activities')
 export class UserActivityController {
-  constructor(private readonly userActivityService: UserActivityService,
+  constructor(
+    private readonly userActivityService: UserActivityService,
     private readonly userService: UsersService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
   ) {}
 
   @Post()
@@ -35,6 +50,18 @@ export class UserActivityController {
     };
   }
 
+
+  @Get('employee')
+  async getUserActivityOfEmployees(@Id() id: string) {
+    console.log('ID:', id);
+    if (!id || !mongoose.isValidObjectId(id)) {
+      throw new BadRequestException('User ID is required.');
+    }
+    return await this.userActivityService.getUserActivityOfEmployees(
+      new Types.ObjectId(`${id}`),
+    );
+  }
+
   @Get(':userId')
   async getUserActivitiesByUser(
     @Req() req: Request,
@@ -42,7 +69,6 @@ export class UserActivityController {
     @Query('page') page: string,
     @Query('limit') limit: string,
   ) {
-
     if (!userId) {
       throw new BadRequestException('User ID is required.');
     }
@@ -72,26 +98,34 @@ export class UserActivityController {
   ) {
     console.log('Admin ID:', adminId);
     console.log('ID:', id);
-    let admin = "";
+    let admin = '';
     const clientRoleId = this.configService.get('appRoles').ADMIN;
 
-    if(role === clientRoleId){
+    if (role === clientRoleId) {
       admin = id;
-    }else{
+    } else {
       admin = adminId;
     }
-    return await this.userActivityService.getUserActivitiesByAdmin(admin, email, parseInt(page) || 1, parseInt(limit) || 10);
+    return await this.userActivityService.getUserActivitiesByAdmin(
+      admin,
+      email,
+      parseInt(page) || 1,
+      parseInt(limit) || 10,
+    );
   }
 
   @Put('inactive')
-  async sendInactiveEmail(  
+  async sendInactiveEmail(
     @AdminId() adminId: string,
-    @Body() body: InactiviUserDTO
-  ){
+    @Body() body: InactiviUserDTO,
+  ) {
     // const admin = await this.userService.getUserById(adminId);
     // if(!admin){
     //   throw new NotFoundException('Admin not found');
     // }
-    return await this.userActivityService.sendInactivityNotification(adminId, body);
+    return await this.userActivityService.sendInactivityNotification(
+      adminId,
+      body,
+    );
   }
 }

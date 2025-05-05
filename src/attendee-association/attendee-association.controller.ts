@@ -30,6 +30,8 @@ export class AttendeeAssociationController {
       body.email,
       adminId,
       body.leadType,
+      body.leadTypeLabel,
+      body.createdBy
     );
     return association;
   }

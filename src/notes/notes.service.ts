@@ -81,7 +81,7 @@ export class NotesService {
        attendee: attendee.email,
        item: '',
        action: AttendeeAction.NOTE,
-       details: `Note created with status: ${body.status}.`,
+       details: `Note created by ${body.createdBy} with status: ${body.status}.`,
        adminId: new Types.ObjectId(`${adminId}`)
     })
 

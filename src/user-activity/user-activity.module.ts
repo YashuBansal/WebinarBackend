@@ -12,6 +12,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { GetAdminIdForUserActivityMiddleware } from 'src/middlewares/getAdminIdForUserActivity.Middleware';
 import { NotificationModule } from 'src/notification/notification.module';
 import { ConfigService } from '@nestjs/config';
+import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
+import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 
 @Module({
   imports: [
@@ -26,16 +28,25 @@ import { ConfigService } from '@nestjs/config';
     JwtModule.register({
       global: true,
     }),
-    NotificationModule
+    NotificationModule,
   ],
   controllers: [UserActivityController],
-  providers: [UserActivityService, ConfigService],
+  providers: [UserActivityService, ConfigService, WebsocketGateway],
   exports: [UserActivityService],
 })
 export class UserActivityModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(GetAdminIdForUserActivityMiddleware)
+      .exclude({
+        path: 'user-activities/employee',
+        method: RequestMethod.GET,
+      })
       .forRoutes(UserActivityController);
+
+    consumer.apply(AuthAdminTokenMiddleware).forRoutes({
+      path: 'user-activities/employee',
+      method: RequestMethod.GET,
+    });
   }
 }

@@ -5,12 +5,13 @@ import {
 } from './dto/user-activity.dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { UserActivity } from 'src/schemas/UserActivity.schema';
-import { Model, Types } from 'mongoose';
+import { Model, PipelineStage, Types } from 'mongoose';
 import { NotificationService } from 'src/notification/notification.service';
 import {
   notificationActionType,
   notificationType,
 } from 'src/schemas/notification.schema';
+import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 
 @Injectable()
 export class UserActivityService {
@@ -18,6 +19,7 @@ export class UserActivityService {
     @InjectModel(UserActivity.name)
     private readonly userActivityModel: Model<UserActivity>,
     private readonly notificationService: NotificationService,
+    private readonly socketGateway: WebsocketGateway,
   ) {}
 
   async addUserActivity(
@@ -86,7 +88,12 @@ export class UserActivityService {
     return [];
   }
 
-  async getUserActivitiesByAdmin(adminId: string, email?: string, page:number=1, limit:number=10) {
+  async getUserActivitiesByAdmin(
+    adminId: string,
+    email?: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
     const skip = (page - 1) * limit;
     const query: any = {
       $or: [
@@ -115,5 +122,68 @@ export class UserActivityService {
       },
       message: 'User activities retrieved',
     };
+  }
+
+  async getUserActivityOfEmployees(adminId: Types.ObjectId) {
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          adminId,
+        },
+      },
+      {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+      {
+        $group: {
+          _id: '$user',
+          actions: {
+            $first: {
+              action: '$action',
+              details: '$details',
+              createdAt: '$createdAt',
+              updatedAt: '$updatedAt',
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'userDetails',
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          userEmail: { $arrayElemAt: ['$userDetails.email', 0] },
+          action: '$actions.action',
+          details: '$actions.details',
+          createdAt: '$actions.createdAt',
+          updatedAt: '$actions.updatedAt',
+        },
+      },
+      {
+        $sort: {
+          userEmail: 1,
+        }
+      }
+    ];
+
+    const employees = await this.userActivityModel.aggregate(pipeline).exec();
+    employees.forEach((employee) => {
+      if(this.socketGateway.activeUsers.has(employee._id.toString())){
+        employee['isOnline'] = true;
+      }
+      else{
+        employee['isOnline'] = false;
+      }
+      
+    })
+    return employees;
   }
 }

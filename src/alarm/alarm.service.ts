@@ -15,6 +15,8 @@ import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { ConfigService } from '@nestjs/config';
+import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
+import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 @Injectable()
 export class AlarmService {
   constructor(
@@ -27,6 +29,7 @@ export class AlarmService {
     @Inject(forwardRef(() => SubscriptionService))
     private readonly subscriptionService: SubscriptionService,
     private readonly configService: ConfigService,
+    private readonly attendeeLogService: AttendeeLogService,
   ) {}
 
   private readonly logger = new Logger(AlarmService.name);
@@ -164,8 +167,40 @@ export class AlarmService {
     return 'Alarm set.';
   }
 
+  formatDateTime(isoString: string | Date): string {
+    if (!isoString) return 'N/A';
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) {
+        return 'Invalid Date'; // Handle invalid date strings
+      }
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    } catch (error) {
+      console.error('Error formatting date:', isoString, error);
+      return 'Error'; // Return 'Error' on unexpected format issues
+    }
+  }
+
   async saveAlarmInDB(createAlarmDto: CreateAlarmDto): Promise<any> {
     const alarm = await this.alarmsModel.create(createAlarmDto);
+    console.log('alarm created', createAlarmDto);
+    if (createAlarmDto.adminId && createAlarmDto.createdBy) {
+      this.attendeeLogService.createSingleAttendeeLog({
+        attendee: createAlarmDto.email,
+        item: '',
+        action: AttendeeAction.ALARM,
+        details: `Alarm created by ${createAlarmDto.createdBy} for Date/Time : ${this.formatDateTime(createAlarmDto.date)}.`,
+        adminId: new Types.ObjectId(`${createAlarmDto.adminId}`),
+      });
+    }
+
     return alarm;
   }
 

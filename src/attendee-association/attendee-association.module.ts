@@ -8,10 +8,12 @@ import {
 } from 'src/schemas/attendee-association.schema';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { UsersModule } from 'src/users/users.module';
+import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 
 @Module({
   imports: [
     forwardRef(() => UsersModule),
+    AttendeeLogModule,
     MongooseModule.forFeature([
       {
         name: AttendeeAssociation.name,

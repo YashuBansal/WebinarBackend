@@ -1,35 +1,50 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
+import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAssociation } from 'src/schemas/attendee-association.schema';
+import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 
 @Injectable()
 export class AttendeeAssociationService {
   constructor(
     @InjectModel(AttendeeAssociation.name)
     private readonly attendeeAssociationModel: Model<AttendeeAssociation>,
+    private readonly attendeeLogService: AttendeeLogService,
   ) {}
 
   async createAssociation(
     email: string,
     adminId: Types.ObjectId,
     leadTypeId: Types.ObjectId,
+    leadTypeLabel: string,
+    createdBy: string,
   ): Promise<AttendeeAssociation> {
-    const association = await this.attendeeAssociationModel.findOne({
-      email: email,
-      adminId: new Types.ObjectId(`${adminId}`),
-    });
-    if (association) {
-      association.leadType = new Types.ObjectId(`${leadTypeId}`);
-      return await association.save();
-    }
+    const updatedAssociation =
+      await this.attendeeAssociationModel.findOneAndUpdate(
+        { email, adminId },
+        {
+          $set: {
+            leadType: leadTypeId,
+          },
+        },
+        {
+          upsert: true,
+          new: true, // return the updated or inserted document
+          setDefaultsOnInsert: true, // applies schema defaults on insert
+        },
+      );
 
-    const newAssociation = new this.attendeeAssociationModel({
-      email: email,
-      adminId: new Types.ObjectId(`${adminId}`),
-      leadType: new Types.ObjectId(`${leadTypeId}`),
-    });
-    return await newAssociation.save();
+    if (updatedAssociation) {
+      this.attendeeLogService.createSingleAttendeeLog({
+        attendee: email,
+        item: '',
+        action: AttendeeAction.LEAD_TYPE,
+        details: `Lead Type Updated by ${createdBy} : ${leadTypeLabel}.`,
+        adminId: new Types.ObjectId(`${adminId}`)
+     })
+    }
+    return updatedAssociation;
   }
 
   async getAssociation(

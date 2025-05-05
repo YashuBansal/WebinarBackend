@@ -8,7 +8,10 @@ export enum AttendeeAction {
     LEFT = 'LEFT',
     CANCELLED = 'CANCELLED',
     COMPLETED = 'COMPLETED',
-    NOTE = 'Note'
+    NOTE = 'Note',
+    LEAD_TYPE = 'Lead Type',
+    ALARM = 'Alarm',
+    ALARM_CANCELLED = 'Alarm Cancelled',
   }
   
 

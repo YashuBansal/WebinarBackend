@@ -1,4 +1,4 @@
-import { IsEmail, IsMongoId, IsNotEmpty, IsOptional } from "class-validator";
+import { IsEmail, IsMongoId, IsNotEmpty, IsOptional, IsString } from "class-validator";
 import { Types } from "mongoose";
 
 export class AttendeeAssociationDto {
@@ -9,5 +9,13 @@ export class AttendeeAssociationDto {
     @IsNotEmpty({ message: 'Email is required' })
     @IsEmail({}, { message: 'Email must be a valid email address' })
     email: string;
+
+      @IsString()
+      @IsNotEmpty({ message: 'createdBy is required' })
+      createdBy: string;
+
+      @IsString()
+      @IsNotEmpty({ message: 'leadType Label is required' })
+      leadTypeLabel: string;
 
 }

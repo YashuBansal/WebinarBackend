@@ -9,7 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { AlarmService } from './alarm.service';
-import { Id } from 'src/decorators/custom.decorator';
+import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { CreateAlarmDto } from './dto/alarm.dto';
 
 @Controller('alarm')
@@ -19,9 +19,11 @@ export class AlarmController {
   @Post()
   async setAlarm(
     @Id() id: string,
+    @AdminId() adminId: string,
     @Body() createAlarmDto: CreateAlarmDto,
   ): Promise<any> {
     createAlarmDto.user = id;
+    createAlarmDto.adminId = adminId;
     const result = await this.alarmService.setAlarm(createAlarmDto);
     return result;
   }

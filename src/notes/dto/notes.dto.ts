@@ -57,6 +57,10 @@ export class CreateNoteDto {
   @IsNotEmpty({ message: 'Status is required' })
   status: string;
 
+  @IsString()
+  @IsNotEmpty({ message: 'createdBy is required' })
+  createdBy: string;
+
   @IsEnum(BooleanString, {
     message: 'isWorked must be either "true" or "false"',
   })

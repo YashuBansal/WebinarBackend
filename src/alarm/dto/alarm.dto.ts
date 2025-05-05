@@ -24,6 +24,14 @@ export class CreateAlarmDto {
 
   @IsOptional()
   @IsString()
+  createdBy?: string;
+
+  @IsOptional()
+  @IsString()
+  adminId?: string;
+
+  @IsOptional()
+  @IsString()
   @Matches(/^\+91\d{10}$/, {
     message: 'Must start with +91 followed by 10 digits'
   })
