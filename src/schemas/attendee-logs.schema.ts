@@ -1,0 +1,44 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document, Types } from 'mongoose';
+import { User } from './User.schema';
+
+export enum AttendeeAction {
+    REGISTERED = 'REGISTERED',
+    JOINED = 'JOINED',
+    LEFT = 'LEFT',
+    CANCELLED = 'CANCELLED',
+    COMPLETED = 'COMPLETED',
+    NOTE = 'Note'
+  }
+  
+
+@Schema({ timestamps: true })
+export class AttendeeLog extends Document {
+  @Prop({ type: String,  required: true })
+  attendee: string;
+
+  @Prop({ required: true })
+  action: string;
+
+  @Prop({
+    type: String,
+    required: false,
+  })
+  item: string;
+
+  @Prop({ default: '' })
+  details: string;
+
+  @Prop({ type: Types.ObjectId, ref: User.name, required: true })
+  adminId: Types.ObjectId;
+}
+
+export const AttendeeLogSchema = SchemaFactory.createForClass(AttendeeLog);
+AttendeeLogSchema.pre('save', function (next) {
+  if (typeof this.adminId === 'string') {
+    this.adminId = new Types.ObjectId(`${this.adminId}`);
+  }
+  next();
+});
+
+AttendeeLogSchema.index({ adminId: 1 });

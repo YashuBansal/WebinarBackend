@@ -47,6 +47,8 @@ import {
 import { TagsService } from 'src/tags/tags.service';
 import { Usecase } from 'src/schemas/tags.schema';
 import { EnrollmentsService } from 'src/enrollments/enrollments.service';
+import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
+import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 
 @Injectable()
 export class AssignmentService {
@@ -66,6 +68,7 @@ export class AssignmentService {
     private readonly userService: UsersService,
     private readonly tagsService: TagsService,
     private readonly enrollmentService: EnrollmentsService,
+    private readonly attendeeLogService: AttendeeLogService
   ) {}
 
   async getAssignments(
@@ -564,6 +567,7 @@ export class AssignmentService {
     ) {
       throw new InternalServerErrorException('Failed to add attendee.');
     }
+    
 
     if (attendeeCount === 0) {
       await this.subscriptionService.incrementContactCount(
@@ -588,6 +592,16 @@ export class AssignmentService {
     }, 2000);
 
     const newAttendee = newAttendees[0];
+
+    
+
+    this.attendeeLogService.createSingleAttendeeLog({
+      attendee: newAttendee.email,
+      action: AttendeeAction.REGISTERED,
+      item: 'Attendee',
+      details: `${newAttendee.email} registered for webinar ${webinar?.webinarName}`,
+      adminId: new Types.ObjectId(adminId),
+    })
 
     const executeFurther: boolean = await this.handleTags(
       newAttendee,

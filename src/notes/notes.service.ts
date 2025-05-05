@@ -13,6 +13,8 @@ import { AssignmentService } from 'src/assignment/assignment.service';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { SocketEvents } from 'src/websocket/dto/socket.dto';
+import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
+import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 
 @Injectable()
 export class NotesService {
@@ -24,6 +26,7 @@ export class NotesService {
     @Inject(forwardRef(() => AttendeesService))
     private readonly attendeeService: AttendeesService,
     private readonly websocketGateway: WebsocketGateway,
+    private readonly attendeeLogService: AttendeeLogService
   ) {}
 
   async updateAssignmentDateOnNotes(
@@ -33,7 +36,6 @@ export class NotesService {
     const assignment: any =
       await this.assignService.getAssignmentByAttendeeId(attendeeId);
     if (!assignment && assignment?.createdAt) return;
-    const assignmentId = assignment._id;
     await this.notesModel.updateOne(
       { _id: noteId },
       { $set: { assignmentDate: assignment.createdAt } },
@@ -74,6 +76,14 @@ export class NotesService {
       webinarId: attendee.webinar,
       callDuration: totalCallDuration,
     });
+
+    this.attendeeLogService.createSingleAttendeeLog({
+       attendee: attendee.email,
+       item: '',
+       action: AttendeeAction.NOTE,
+       details: `Note created with status: ${body.status}.`,
+       adminId: new Types.ObjectId(`${adminId}`)
+    })
 
     this.websocketGateway.emitSocketEvent(
       adminId,

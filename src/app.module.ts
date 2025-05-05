@@ -49,6 +49,7 @@ import { TagsModule } from './tags/tags.module';
 import { ProductRevenueModule } from './product-revenue/product-revenue.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { JwtModule } from '@nestjs/jwt';
+import { AttendeeLogModule } from './attendee-log/attendee-log.module';
 
 @Module({
   imports: [
@@ -122,6 +123,7 @@ import { JwtModule } from '@nestjs/jwt';
         },
       ],
     }),
+    AttendeeLogModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService],

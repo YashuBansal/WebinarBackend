@@ -11,6 +11,7 @@ import { AssignmentModule } from 'src/assignment/assignment.module';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { AttendeesModule } from 'src/attendees/attendees.module';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
+import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { WebsocketGateway } from 'src/websocket/websocket.gateway';
     ]),
     AssignmentModule,
     forwardRef(() => AttendeesModule),
-    
+    AttendeeLogModule,
 
     MulterModule.register({
       storage: diskStorage({

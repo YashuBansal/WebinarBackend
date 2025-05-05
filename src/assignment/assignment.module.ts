@@ -20,6 +20,7 @@ import { GetAdminIdForUserActivityMiddleware } from 'src/middlewares/getAdminIdF
 import { NotificationModule } from 'src/notification/notification.module';
 import { TagsModule } from 'src/tags/tags.module';
 import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
+import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
     NotificationModule,
     TagsModule,
     EnrollmentsModule,
+    AttendeeLogModule
   ],
   providers: [AssignmentService],
   controllers: [AssignmentController],
