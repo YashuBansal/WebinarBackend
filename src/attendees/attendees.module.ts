@@ -24,6 +24,7 @@ import { AlarmModule } from 'src/alarm/alarm.module';
 import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
 import { NotesModule } from 'src/notes/notes.module';
 import { AttendeeAssociationModule } from 'src/attendee-association/attendee-association.module';
+import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 
 @Module({
   imports: [
@@ -41,7 +42,8 @@ import { AttendeeAssociationModule } from 'src/attendee-association/attendee-ass
     AlarmModule,
     EnrollmentsModule,
     NotesModule,
-    AttendeeAssociationModule
+    AttendeeAssociationModule,
+    AttendeeLogModule
   ],
   controllers: [AttendeesController],
   providers: [AttendeesService,WebsocketGateway],

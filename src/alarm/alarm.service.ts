@@ -231,7 +231,7 @@ export class AlarmService {
     }
   }
 
-  async cancelAlarm(alarmId: string, id: string): Promise<any> {
+  async cancelAlarm(alarmId: string, id: string, createdBy: string,adminId: Types.ObjectId): Promise<any> {
     const alarmData = await this.alarmsModel.findById(alarmId);
     console.log(alarmId, alarmData);
 
@@ -259,6 +259,16 @@ export class AlarmService {
       { $set: { isActive: false } },
       { new: true },
     );
+
+    if (adminId && createdBy && deleteAlarm) {
+      this.attendeeLogService.createSingleAttendeeLog({
+        attendee: deleteAlarm.email,
+        item: '',
+        action: AttendeeAction.ALARM_CANCELLED,
+        details: `Alarm cancelled by ${createdBy} for Date/Time : ${this.formatDateTime(deleteAlarm.date)}.`,
+        adminId: new Types.ObjectId(`${adminId}`),
+      });
+    }
 
     return deleteAlarm;
   }

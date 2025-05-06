@@ -139,6 +139,15 @@ export class UpdateAttendeeDto {
   @IsString()
   status?: string;
 
+  @IsOptional()
+  @IsString()
+  createdBy?: string;
+
+
+  @IsOptional()
+  @IsString()
+  webinarName?: string;
+
   // @IsOptional()
   // @IsArray({ message: 'Products must be an array' })
   // @IsMongoId({ each: true, message: 'Each product ID must be a valid MongoId' })

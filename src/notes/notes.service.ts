@@ -35,7 +35,7 @@ export class NotesService {
   ) {
     const assignment: any =
       await this.assignService.getAssignmentByAttendeeId(attendeeId);
-    if (!assignment && assignment?.createdAt) return;
+    if (!assignment && !assignment?.createdAt) return;
     await this.notesModel.updateOne(
       { _id: noteId },
       { $set: { assignmentDate: assignment.createdAt } },

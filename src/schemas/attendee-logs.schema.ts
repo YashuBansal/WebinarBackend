@@ -12,6 +12,8 @@ export enum AttendeeAction {
     LEAD_TYPE = 'Lead Type',
     ALARM = 'Alarm',
     ALARM_CANCELLED = 'Alarm Cancelled',
+    UPDATE_ATTENDEE = 'Update Attendee',
+    Enrollment_CREATED = "Enrollment Created",
   }
   
 

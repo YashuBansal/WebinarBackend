@@ -12,6 +12,19 @@ export class CreateEnrollmentDto {
   @IsString()
   @IsNotEmpty()
   product: string;
+  
+  @IsOptional()
+  @IsString()
+  createdBy?: string;
+
+  @IsOptional()
+  @IsString()
+  webinarName?: string;
+
+  @IsOptional()
+  @IsString()
+  productName?: string;
+
 
   @IsOptional()
   @IsString()

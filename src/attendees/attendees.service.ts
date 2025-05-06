@@ -40,6 +40,8 @@ import { AlarmService } from 'src/alarm/alarm.service';
 import { EnrollmentsService } from 'src/enrollments/enrollments.service';
 import { NotesService } from 'src/notes/notes.service';
 import { AttendeeAssociationService } from 'src/attendee-association/attendee-association.service';
+import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
+import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 
 @Injectable()
 export class AttendeesService {
@@ -60,6 +62,7 @@ export class AttendeesService {
     private readonly enrollService: EnrollmentsService,
     private readonly notesService: NotesService,
     private readonly attendeeAssociationService: AttendeeAssociationService,
+    private readonly attendeeLogService: AttendeeLogService,
   ) {}
 
   async addAttendees(attendees: [CreateAttendeeDto]): Promise<any> {
@@ -337,6 +340,11 @@ export class AttendeesService {
     } finally {
       session.endSession();
     }
+
+    // this.attendeeLogService.createMultipleAttendeeLog({
+    //   attendees: tempAttendees,
+    //   adminId: new Types.ObjectId(`${adminId}`),
+    // });
   }
 
   async hideAttendees(
@@ -547,10 +555,13 @@ export class AttendeesService {
             tags: '$tags',
             location: '$location',
             assignedToUserName: {
-              $ifNull:[{
-                $arrayElemAt: ['$lookedUpDetails.userName',0]
-              }, '']
-            }
+              $ifNull: [
+                {
+                  $arrayElemAt: ['$lookedUpDetails.userName', 0],
+                },
+                '',
+              ],
+            },
           },
         },
       },
@@ -1069,6 +1080,20 @@ export class AttendeesService {
       );
       if (!result)
         throw new NotFoundException('No record found to be updated.');
+
+      if (
+        adminId &&
+        updateAttendeeDto.createdBy &&
+        updateAttendeeDto.webinarName
+      ) {
+        this.attendeeLogService.createSingleAttendeeLog({
+          attendee: result.email,
+          item: '',
+          action: AttendeeAction.UPDATE_ATTENDEE,
+          details: `Attendee Updated by ${updateAttendeeDto.createdBy} from the webinar : ${updateAttendeeDto.webinarName}.`,
+          adminId: new Types.ObjectId(`${adminId}`),
+        });
+      }
       return result;
     } else
       throw new UnauthorizedException(

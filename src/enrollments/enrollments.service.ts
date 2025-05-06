@@ -14,6 +14,8 @@ import {
   UpdateEnrollmentDto,
 } from './dto/enrollment.dto';
 import { ProductsService } from 'src/products/products.service';
+import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
+import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 
 @Injectable()
 export class EnrollmentsService {
@@ -22,6 +24,7 @@ export class EnrollmentsService {
     private readonly enrollmentModel: Model<Enrollment>,
     @Inject(forwardRef(() => ProductsService))
     private readonly productsService: ProductsService,
+    private readonly attendeeLogService: AttendeeLogService,
   ) { }
 
   async createEnrollment(
@@ -43,10 +46,24 @@ export class EnrollmentsService {
 
     if (isExist) throw new NotAcceptableException('Enrollment already exists');
 
+
     const result = await this.enrollmentModel.create({
       ...createEnrollmentDto,
       price: product.price,
     });
+
+    
+    const {createdBy, webinarName, productName} = createEnrollmentDto;
+
+    if ( createdBy && webinarName && productName) {
+      this.attendeeLogService.createSingleAttendeeLog({
+        attendee: result.attendee,
+        item: '',
+        action: AttendeeAction.Enrollment_CREATED,
+        details: `Enrollment created by ${createdBy} for the webinar : ${webinarName} and product : ${productName}.`,
+        adminId: new Types.ObjectId(`${createEnrollmentDto.adminId}`),
+      });
+    }
     return result;
   }
 

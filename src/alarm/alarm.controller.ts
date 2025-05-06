@@ -11,11 +11,12 @@ import {
 import { AlarmService } from './alarm.service';
 import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { CreateAlarmDto } from './dto/alarm.dto';
+import { Types } from 'mongoose';
 
 @Controller('alarm')
 export class AlarmController {
   constructor(private readonly alarmService: AlarmService) {}
- 
+
   @Post()
   async setAlarm(
     @Id() id: string,
@@ -53,9 +54,16 @@ export class AlarmController {
   @Patch()
   async cancelAlarm(
     @Id() id: string,
+    @AdminId() adminId: string,
     @Body('id') alarmId: string,
+    @Body('createdBy') createdBy: string,
   ): Promise<any> {
-    const result = await this.alarmService.cancelAlarm(alarmId, id);
+    const result = await this.alarmService.cancelAlarm(
+      alarmId,
+      id,
+      createdBy,
+      new Types.ObjectId(`${adminId}`),
+    );
     return result;
   }
 }
