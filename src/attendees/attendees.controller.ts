@@ -98,7 +98,7 @@ export class AttendeesController {
   async addPostAttendees(
     @Id() adminId: string,
     @Body()
-    body: { data: [CreateAttendeeDto]; webinarId: string; isAttended: boolean },
+    body: { data: [CreateAttendeeDto]; webinarId: string; isAttended: boolean; },
   ): Promise<any> {
     const webinar = await this.webinarService.getWebinar(
       body.webinarId,
@@ -136,6 +136,7 @@ export class AttendeesController {
       body.isAttended,
       adminId,
       postWebinarExists ? true : false,
+      webinar.webinarName,
     );
     return result;
   }

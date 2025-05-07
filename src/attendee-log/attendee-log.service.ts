@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { CreateAttendeeDto } from 'src/attendees/dto/attendees.dto';
-import { AttendeeLog } from 'src/schemas/attendee-logs.schema';
+import { AttendeeAction, AttendeeLog } from 'src/schemas/attendee-logs.schema';
 
 @Injectable()
 export class AttendeeLogService {
   constructor(
-    @InjectModel(AttendeeLog.name) private attendeeModel: Model<AttendeeLog>,
+    @InjectModel(AttendeeLog.name) private attendeeLogModel: Model<AttendeeLog>,
   ) {}
 
   async createSingleAttendeeLog({
@@ -23,7 +23,7 @@ export class AttendeeLogService {
     details: string;
     adminId: Types.ObjectId;
   }) {
-    const attendeeLog = new this.attendeeModel({
+    const attendeeLog = new this.attendeeLogModel({
       attendee,
       action,
       item,
@@ -35,7 +35,7 @@ export class AttendeeLogService {
   }
 
   async fetchAttendeeLogsByAttendee(email: string) {
-    return await this.attendeeModel
+    return await this.attendeeLogModel
       .find({ attendee: email })
       .sort({ createdAt: -1 });
   }
@@ -43,19 +43,23 @@ export class AttendeeLogService {
   async createMultipleAttendeeLog({
     attendees,
     adminId,
+    webinarName,
+    session,
   }: {
     attendees: CreateAttendeeDto[];
-
+    webinarName: string;
+    session: ClientSession;
     adminId: Types.ObjectId;
   }) {
-    // const attendeeLog = new this.attendeeModel({
-    //   attendee,
-    //   action,
-    //   item,
-    //   details,
-    //   adminId,
-    // });
+    if (!webinarName) return;
+    const attendeeLogs = attendees.map((attendee) => ({
+      attendee: attendee.email,
+      action: AttendeeAction.ADDED,
+      item: webinarName,
+      details: `Attendee ${attendee.email} has been added to the webinar : ${webinarName}`,
+      adminId,
+    }));
 
-    // return await attendeeLog.save();
+    return await this.attendeeLogModel.insertMany(attendeeLogs, { session });
   }
 }

@@ -85,6 +85,7 @@ export class AttendeesService {
     isAttended: boolean,
     adminId: string,
     postWebinarExists: boolean,
+    webinarName: string,
   ): Promise<any> {
     const subscription =
       await this.subscriptionService.getSubscription(adminId);
@@ -195,7 +196,7 @@ export class AttendeesService {
     const session = await this.attendeeModel.startSession();
 
     try {
-      await session.withTransaction(async () => {
+      await session.withTransaction(async (currentSession) => {
         if (attendeesForUpdate.length > 0) {
           const bulkOps = attendeesForUpdate.map((attendee) => ({
             updateOne: {
@@ -213,16 +214,26 @@ export class AttendeesService {
               },
             },
           }));
-          await this.attendeeModel.bulkWrite(bulkOps, { session });
+          await this.attendeeModel.bulkWrite(bulkOps, {
+            session: currentSession,
+          });
         }
         updateProgress(70);
 
         const newAttendees = await this.attendeeModel.insertMany(
           tempAttendees,
           {
-            session,
+            session: currentSession,
           },
         );
+
+        await this.attendeeLogService.createMultipleAttendeeLog({
+          attendees: tempAttendees,
+          adminId: new Types.ObjectId(`${adminId}`),
+          webinarName,
+          session: currentSession,
+        });
+
         updateProgress(75);
         const assignedEmployees =
           await this.webinarService.getAssignedEmployees(webinar);
@@ -288,19 +299,19 @@ export class AttendeesService {
             const newAssignments =
               await this.assignService.createManyAssignments(
                 empData.assignMents,
-                session,
+                currentSession,
               );
 
             const updatedAttendees = await this.attendeeModel.updateMany(
               { _id: { $in: empData.attendees.map((a) => a._id) } },
               { $set: { assignedTo: new Types.ObjectId(`${empId}`) } },
-              { session },
+              { session: currentSession },
             );
 
             await this.userService.incrementCount(
               empId,
               empData.contactCount,
-              session,
+              currentSession,
             );
             if (
               newAssignments.length !== updatedAttendees.modifiedCount ||
@@ -331,20 +342,20 @@ export class AttendeesService {
         );
         updateProgress(100);
       });
-    } catch (error) {
+
       return {
-        success: false,
-        message: 'Importing failed',
-        error: error?.message || 'something went wrong, check logs',
+        success: true,
+        message: 'Attendee Import Completed',
+        data: tempAttendees,
       };
+
+    } catch (error) {
+      throw new BadRequestException(
+        error?.message || 'Attendee Import Failed. Please try again.',
+      );
     } finally {
       session.endSession();
     }
-
-    // this.attendeeLogService.createMultipleAttendeeLog({
-    //   attendees: tempAttendees,
-    //   adminId: new Types.ObjectId(`${adminId}`),
-    // });
   }
 
   async hideAttendees(

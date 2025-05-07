@@ -14,6 +14,7 @@ export enum AttendeeAction {
     ALARM_CANCELLED = 'Alarm Cancelled',
     UPDATE_ATTENDEE = 'Update Attendee',
     Enrollment_CREATED = "Enrollment Created",
+    ADDED = 'Added',
   }
   
 
