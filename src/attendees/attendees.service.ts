@@ -232,6 +232,7 @@ export class AttendeesService {
           adminId: new Types.ObjectId(`${adminId}`),
           webinarName,
           session: currentSession,
+          isAttended
         });
 
         updateProgress(75);
@@ -244,6 +245,7 @@ export class AttendeesService {
 
         const empData: {
           id: Types.ObjectId;
+          userName: string;
           contactLimit: number;
           attendees: any[];
           assignMents: any[];
@@ -252,6 +254,7 @@ export class AttendeesService {
           .filter((emp) => emp.role.toString() === role)
           .map((emp) => ({
             id: emp._id,
+            userName: emp.userName,
             contactLimit: emp.dailyContactLimit - emp.dailyContactCount || 0,
             attendees: [],
             assignMents: [],
@@ -308,6 +311,14 @@ export class AttendeesService {
               { session: currentSession },
             );
 
+            await this.attendeeLogService.createMultipleAssignmentsLog(
+              empData,
+              webinarName,
+              new Types.ObjectId(`${adminId}`),
+              currentSession,
+              isAttended,
+            );
+
             await this.userService.incrementCount(
               empId,
               empData.contactCount,
@@ -348,7 +359,6 @@ export class AttendeesService {
         message: 'Attendee Import Completed',
         data: tempAttendees,
       };
-
     } catch (error) {
       throw new BadRequestException(
         error?.message || 'Attendee Import Failed. Please try again.',
@@ -2208,6 +2218,13 @@ export class AttendeesService {
     return this.attendeeModel.find({
       _id: { $in: attendeeIds },
       assignedTo: { $ne: null },
+    });
+  }
+
+
+  async fetchAttendees(attendeeIds: Types.ObjectId[]) {
+    return this.attendeeModel.find({
+      _id: { $in: attendeeIds },
     });
   }
 

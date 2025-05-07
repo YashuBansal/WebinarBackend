@@ -153,7 +153,7 @@ export class AssignmentController {
       throw new BadRequestException('Daily Contact Limit Exceeded');
     }
 
-    const result = await this.assignmentService.addAssignment(body, adminId);
+    const result = await this.assignmentService.addAssignment(body, adminId, employee);
 
     return result;
   }

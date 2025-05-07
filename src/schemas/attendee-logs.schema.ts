@@ -15,6 +15,7 @@ export enum AttendeeAction {
     UPDATE_ATTENDEE = 'Update Attendee',
     Enrollment_CREATED = "Enrollment Created",
     ADDED = 'Added',
+    ASSIGNMENT = 'Assignment',
   }
   
 

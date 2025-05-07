@@ -49,6 +49,8 @@ import { Usecase } from 'src/schemas/tags.schema';
 import { EnrollmentsService } from 'src/enrollments/enrollments.service';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
+import { User } from 'src/schemas/User.schema';
+import { Webinar } from 'src/schemas/Webinar.schema';
 
 @Injectable()
 export class AssignmentService {
@@ -68,7 +70,7 @@ export class AssignmentService {
     private readonly userService: UsersService,
     private readonly tagsService: TagsService,
     private readonly enrollmentService: EnrollmentsService,
-    private readonly attendeeLogService: AttendeeLogService
+    private readonly attendeeLogService: AttendeeLogService,
   ) {}
 
   async getAssignments(
@@ -274,7 +276,7 @@ export class AssignmentService {
     return { pagination, result };
   }
 
-  async addAssignment(data: AssignmentDto, adminId: string) {
+  async addAssignment(data: AssignmentDto, adminId: string, employee: User) {
     const attendeeIds = data.attendees.map((a) => new Types.ObjectId(`${a}`));
 
     const attendeeData = await this.attendeeService.fetchAssigned(attendeeIds);
@@ -283,16 +285,22 @@ export class AssignmentService {
       throw new BadRequestException('Attendee already assigned');
     }
 
+    const webinar = await this.webinarService.getWebinarById(data.webinar);
+
+    if (!webinar) {
+      throw new NotFoundException('Webinar not found');
+    }
+
     const session = await this.assignmentsModel.startSession();
     try {
-      await session.withTransaction(async () => {
+      await session.withTransaction(async (currentSession) => {
         const updatedAttendees = await this.attendeeService.updateAttendees(
           {
             _id: { $in: attendeeIds },
             adminId: new Types.ObjectId(`${adminId}`),
           },
           { assignedTo: new Types.ObjectId(`${data.user}`) },
-          session,
+          currentSession,
         );
 
         if (updatedAttendees.matchedCount !== attendeeIds.length) {
@@ -310,7 +318,7 @@ export class AssignmentService {
 
         const createdAssignments = await this.assignmentsModel.insertMany(
           newAssignmentsData,
-          { session },
+          { session: currentSession },
         );
 
         if (
@@ -322,10 +330,24 @@ export class AssignmentService {
           );
         }
 
+        const allAttendeesData =
+          await this.attendeeService.fetchAttendees(attendeeIds);
+
+        await this.attendeeLogService.createMultipleAssignmentsLog(
+          {
+            userName: employee.userName,
+            attendees: allAttendeesData,
+          },
+          webinar.webinarName,
+          new Types.ObjectId(adminId),
+          currentSession,
+          data.recordType === RecordType.POST_WEBINAR,
+        );
+
         await this.userService.incrementCount(
           data.user,
           createdAssignments.length,
-          session,
+          currentSession,
         );
       });
     } catch (error) {
@@ -367,12 +389,13 @@ export class AssignmentService {
   async handleTags(
     attendee: Attendee,
     attendeeEmail: string,
-    webinarId: string,
+    webinar: Webinar,
     adminId: Types.ObjectId,
     tags: string[],
     assignedProducts: any[] = [],
     assignedEmployees: any[] = [],
   ): Promise<boolean> {
+    const webinarId = webinar._id.toString();
     const attendeeId = attendee?._id;
 
     const existingTags = await this.tagsService.getTags(adminId);
@@ -430,9 +453,9 @@ export class AssignmentService {
         } else {
           await this.createNewAssignmentForPreWebinar(
             adminId,
-            new Types.ObjectId(`${webinarId}`),
+            webinar,
             attendee,
-            taggedEmployee._id,
+            taggedEmployee,
             'preWebinar',
           );
         }
@@ -514,7 +537,7 @@ export class AssignmentService {
         await this.handleTags(
           existingAttendee,
           attendee.email,
-          webinarId,
+          webinar,
           new Types.ObjectId(adminId),
           newTags,
           webinar.productIds,
@@ -567,7 +590,6 @@ export class AssignmentService {
     ) {
       throw new InternalServerErrorException('Failed to add attendee.');
     }
-    
 
     if (attendeeCount === 0) {
       await this.subscriptionService.incrementContactCount(
@@ -593,20 +615,18 @@ export class AssignmentService {
 
     const newAttendee = newAttendees[0];
 
-    
-
     this.attendeeLogService.createSingleAttendeeLog({
       attendee: newAttendee.email,
       action: AttendeeAction.REGISTERED,
       item: 'Attendee',
       details: `${newAttendee.email} registered for webinar ${webinar?.webinarName}`,
       adminId: new Types.ObjectId(adminId),
-    })
+    });
 
     const executeFurther: boolean = await this.handleTags(
       newAttendee,
       newAttendee.email,
-      webinarId,
+      webinar,
       new Types.ObjectId(adminId),
       newAttendee.tags,
       webinar.productIds,
@@ -662,9 +682,9 @@ export class AssignmentService {
           // Create a new assignment
           return this.createNewAssignmentForPreWebinar(
             new Types.ObjectId(`${adminId}`),
-            new Types.ObjectId(`${webinarId}`),
+            webinar,
             newAttendee,
-            employee._id as Types.ObjectId,
+            employee,
             recordType,
           );
         }
@@ -695,9 +715,9 @@ export class AssignmentService {
 
         return this.createNewAssignmentForPreWebinar(
           new Types.ObjectId(`${adminId}`),
-          new Types.ObjectId(`${webinarId}`),
+          webinar,
           newAttendee,
-          employee._id,
+          employee,
           recordType,
         );
       } else {
@@ -713,11 +733,13 @@ export class AssignmentService {
 
   async createNewAssignmentForPreWebinar(
     adminId: Types.ObjectId,
-    webinarId: Types.ObjectId,
+    webinar: Webinar,
     newAttendee: Attendee,
-    employeeId: Types.ObjectId,
+    employee: User,
     recordType: string,
   ) {
+    const employeeId = employee._id;
+    const webinarId = webinar._id;
     const newAssignment = await this.assignmentsModel.create({
       adminId,
       webinar: webinarId,
@@ -758,7 +780,13 @@ export class AssignmentService {
       };
     }
 
-    const webinar = await this.webinarService.getWebinarById(webinarId.toString());
+    await this.attendeeLogService.createAssignmentsLog(
+      employee.userName,
+      newAttendee.email,
+      webinar.webinarName,
+      new Types.ObjectId(`${adminId}`),
+      recordType === RecordType.POST_WEBINAR,
+    );
 
     const notification = {
       recipient: employeeId.toString(),
