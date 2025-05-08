@@ -34,6 +34,19 @@ export class AttendeeLogService {
     return await attendeeLog.save();
   }
 
+  async createAttendeeLogs(
+    data: {
+      attendee: string;
+      action: string;
+      item?: string;
+      details: string;
+      adminId: Types.ObjectId;
+    }[],
+    session?: ClientSession,
+  ) {
+    return await this.attendeeLogModel.insertMany(data, { session });
+  }
+
   async fetchAttendeeLogsByAttendee(email: string) {
     return await this.attendeeLogModel
       .find({ attendee: email })
@@ -45,7 +58,7 @@ export class AttendeeLogService {
     adminId,
     webinarName,
     session,
-    isAttended
+    isAttended,
   }: {
     attendees: CreateAttendeeDto[];
     webinarName: string;
@@ -111,6 +124,6 @@ export class AttendeeLogService {
       item: webinarName,
       details: `Attendee has been assigned to ${userName} in the ${webinarType} webinar : ${webinarName}`,
       adminId,
-    })
+    });
   }
 }

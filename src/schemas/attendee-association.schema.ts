@@ -30,4 +30,13 @@ export class AttendeeAssociation extends Document {
 
 export const AttendeeAssociationSchema = SchemaFactory.createForClass(AttendeeAssociation);
 
+AttendeeAssociationSchema.pre('save', function (next) {
+  console.log('AttendeeAssociationSchema pre save', this.adminId, this.email, this.leadType);
+  if (typeof this.leadType === 'string') {
+    this.leadType = new Types.ObjectId(`${this.leadType}`);
+  }
+  
+  next();
+});
+
 AttendeeAssociationSchema.index({ adminId: 1, email: 1, leadType: 1 });

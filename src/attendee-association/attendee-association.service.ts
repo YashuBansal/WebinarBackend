@@ -25,7 +25,7 @@ export class AttendeeAssociationService {
         { email, adminId },
         {
           $set: {
-            leadType: leadTypeId,
+            leadType: new Types.ObjectId(`${leadTypeId}`), 
           },
         },
         {

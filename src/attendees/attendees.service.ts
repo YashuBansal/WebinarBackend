@@ -623,6 +623,7 @@ export class AttendeesService {
     const hasFilters = Object.keys(filters).some(
       (key) => filters[key] !== null && filters[key] !== undefined,
     );
+    console.log(filters, 'filters');
 
     const basePipeline: PipelineStage[] = [
       {
@@ -2245,5 +2246,16 @@ export class AttendeesService {
 
   async fetchAttendeeById(id: Types.ObjectId) {
     return this.attendeeModel.findById(id);
+  }
+
+
+  async getAttendeesByIds(
+    adminId: Types.ObjectId,
+    attendeeIds: Types.ObjectId[],
+  ): Promise<Attendee[]> {
+    return this.attendeeModel.find({
+      _id: { $in: attendeeIds },
+      adminId,
+    });
   }
 }

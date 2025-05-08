@@ -16,6 +16,10 @@ export enum AttendeeAction {
     Enrollment_CREATED = "Enrollment Created",
     ADDED = 'Added',
     ASSIGNMENT = 'Assignment',
+    REASSIGNMENT_REQUEST = 'Reassignment Request',
+    REASSIGNMENT_APPROVED = 'Pullback Approved',
+    REASSIGNMENT_REJECTED = 'Reassignment Rejected',
+    REASSIGNMENT = 'Reassignment',
   }
   
 

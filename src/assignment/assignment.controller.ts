@@ -191,6 +191,7 @@ export class AssignmentController {
       body.webinarId,
       body.requestReason,
       role,
+      body.attendeeEmails
     );
   }
 
@@ -209,6 +210,7 @@ export class AssignmentController {
       body.status,
       body.userId,
       body.webinarId,
+      body.attendeeEmails
     );
   }
 

@@ -83,6 +83,11 @@ export class RequestReAssignmentsDTO {
   @IsMongoId({ each: true }) // Validate each item in the array as a MongoID
   assignments: string[];
 
+  @IsArray()
+  @IsNotEmpty()
+  @IsString({ each: true }) // Validate each item in the array as a MongoID
+  attendeeEmails: string[];
+
   @IsOptional()
   @IsEnum(['approved', 'rejected'])
   status: string;

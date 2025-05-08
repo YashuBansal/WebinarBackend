@@ -965,6 +965,7 @@ export class AssignmentService {
     webinarId: string,
     requestReason: string,
     role: string,
+    attendeeEmails: string[],
   ) {
     const recordType =
       this.configService.get('appRoles')['EMPLOYEE_REMINDER'] === role
@@ -994,6 +995,16 @@ export class AssignmentService {
     const webinarName = webinar?.webinarName || 'Webinar';
 
     if (reassignmentCount > 0) {
+      const logs = attendeeEmails.map((email) => ({
+        attendee: email,
+        action: AttendeeAction.REASSIGNMENT_REQUEST,
+        item: webinarName,
+        details: `${userName} requested reassignment in webinar : ${webinarName}`,
+        adminId: new Types.ObjectId(`${adminId}`),
+      }));
+
+      await this.attendeeLogService.createAttendeeLogs(logs);
+
       await this.notificationService.createNotification({
         recipient: adminId,
         title: `Reassignment Requests Submitted by ${userName}`,
@@ -1149,6 +1160,7 @@ export class AssignmentService {
     status: string,
     userId: string,
     webinarId: string,
+    attendeeEmails: string[],
   ) {
     const assignmentsIds = assignments.map(
       (assignment) => new Types.ObjectId(`${assignment}`),
@@ -1220,6 +1232,18 @@ export class AssignmentService {
           },
         });
 
+        if (attendeeEmails?.length) {
+          const logs = attendeeEmails.map((email) => ({
+            attendee: email,
+            action: AttendeeAction.REASSIGNMENT_APPROVED,
+            item: webinarName,
+            details: `Reassignment request approved in webinar : ${webinarName}`,
+            adminId: new Types.ObjectId(`${adminId}`),
+          }));
+
+          await this.attendeeLogService.createAttendeeLogs(logs);
+        }
+
         return {
           updatedAssignments: updatedAssignmentsResult,
           updatedAttendees: updatedAttendeesResult,
@@ -1254,6 +1278,19 @@ export class AssignmentService {
           webinarId: webinarId,
         },
       });
+
+      if (attendeeEmails?.length) {
+        const logs = attendeeEmails.map((email) => ({
+          attendee: email,
+          action: AttendeeAction.REASSIGNMENT_REJECTED,
+          item: webinarName,
+          details: `Reassignment request Rejected in webinar : ${webinarName}`,
+          adminId: new Types.ObjectId(`${adminId}`),
+        }));
+
+        await this.attendeeLogService.createAttendeeLogs(logs);
+      }
+
       return result;
     } else {
       throw new BadRequestException('Invalid status provided.');
@@ -1368,17 +1405,39 @@ export class AssignmentService {
         );
         const webinarName = webinar?.webinarName || 'Webinar';
 
+        const attendees = await this.attendeeService.getAttendeesByIds(
+          new Types.ObjectId(`${adminId}`),
+          newAssignmentsData.map((a) => a.attendee),
+        );
+
         // Send notification
-        await this.notificationService.createNotification({
-          recipient: employee._id.toString(),
-          title: 'New Tasks Assigned',
-          message: `You have been assigned ${createdAssignments.length} new tasks ${data.isTemp ? 'temporarily' : ''} in the webinar ${webinarName} . Please check your task list for details.`,
-          type: notificationType.INFO,
-          actionType: notificationActionType.REASSIGNMENT,
-          metadata: {
-            webinarId: data.webinarId,
-          },
-        });
+        if (createdAssignments?.length) {
+          if (attendees?.length) {
+            const logs = attendees.map((attendee) => ({
+              attendee: attendee.email,
+              action: AttendeeAction.REASSIGNMENT,
+              item: webinarName,
+              details: ` Attendee Reassigned to ${employee.userName} ${data.isTemp ? 'temporarily' : ''} in webinar : ${webinarName}`,
+              adminId: new Types.ObjectId(`${adminId}`),
+            }));
+
+            await this.attendeeLogService.createAttendeeLogs(
+              logs,
+              currentSession,
+            );
+          }
+
+          await this.notificationService.createNotification({
+            recipient: employee._id.toString(),
+            title: 'New Tasks Assigned',
+            message: `You have been assigned ${createdAssignments.length} new tasks ${data.isTemp ? 'temporarily' : ''} in the webinar ${webinarName} . Please check your task list for details.`,
+            type: notificationType.INFO,
+            actionType: notificationActionType.REASSIGNMENT,
+            metadata: {
+              webinarId: data.webinarId,
+            },
+          });
+        }
 
         updatedAssignmentsCount = deletedAssignmentsResult.deletedCount;
         updatedAttendeesCount = updatedAttendeesResult.matchedCount;
