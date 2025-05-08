@@ -71,7 +71,7 @@ export class AssignmentService {
     private readonly tagsService: TagsService,
     private readonly enrollmentService: EnrollmentsService,
     private readonly attendeeLogService: AttendeeLogService,
-  ) {}
+  ) { }
 
   async getAssignments(
     adminId: string,
@@ -171,41 +171,41 @@ export class AssignmentService {
       },
       ...(filters.leadType
         ? [
-            {
-              $lookup: {
-                from: 'attendeeassociations',
-                let: { tempMail: '$email' },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          {
-                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                          },
-                          { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $eq: [
-                              '$leadType',
-                              new Types.ObjectId(filters.leadType),
-                            ],
-                          },
-                        ],
-                      },
+          {
+            $lookup: {
+              from: 'attendeeassociations',
+              let: { tempMail: '$email' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        {
+                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                        },
+                        { $eq: ['$email', '$$tempMail'] },
+                        {
+                          $eq: [
+                            '$leadType',
+                            new Types.ObjectId(filters.leadType),
+                          ],
+                        },
+                      ],
                     },
                   },
-                ],
+                },
+              ],
 
-                as: 'attendeeAssociations',
-              },
+              as: 'attendeeAssociations',
             },
-            {
-              $unwind: {
-                path: '$attendeeAssociations',
-                preserveNullAndEmptyArrays: false,
-              },
+          },
+          {
+            $unwind: {
+              path: '$attendeeAssociations',
+              preserveNullAndEmptyArrays: false,
             },
-          ]
+          },
+        ]
         : []),
     ];
 
@@ -217,35 +217,35 @@ export class AssignmentService {
       ...(filters.leadType
         ? []
         : [
-            {
-              $lookup: {
-                from: 'attendeeassociations',
-                let: { tempMail: '$email' },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          {
-                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                          },
-                          { $eq: ['$email', '$$tempMail'] },
-                        ],
-                      },
+          {
+            $lookup: {
+              from: 'attendeeassociations',
+              let: { tempMail: '$email' },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        {
+                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                        },
+                        { $eq: ['$email', '$$tempMail'] },
+                      ],
                     },
                   },
-                ],
+                },
+              ],
 
-                as: 'attendeeAssociations',
-              },
+              as: 'attendeeAssociations',
             },
-            {
-              $unwind: {
-                path: '$attendeeAssociations',
-                preserveNullAndEmptyArrays: true,
-              },
+          },
+          {
+            $unwind: {
+              path: '$attendeeAssociations',
+              preserveNullAndEmptyArrays: true,
             },
-          ]),
+          },
+        ]),
       {
         $addFields: {
           leadType: '$attendeeAssociations.leadType',
@@ -440,7 +440,7 @@ export class AssignmentService {
         executeFurther &&
         taggedEmployee &&
         taggedEmployee.role.toString() ===
-          this.configService.get('appRoles').EMPLOYEE_REMINDER &&
+        this.configService.get('appRoles').EMPLOYEE_REMINDER &&
         taggedEmployee.dailyContactLimit > taggedEmployee.dailyContactCount
       ) {
         const existingAssignment = await this.assignmentsModel.findOne({
@@ -663,7 +663,7 @@ export class AssignmentService {
           return (
             employee._id.toString() === lastAssigned.assignedTo.toString() &&
             employee.role.toString() ===
-              this.configService.get('appRoles')['EMPLOYEE_REMINDER']
+            this.configService.get('appRoles')['EMPLOYEE_REMINDER']
           );
         },
       );
@@ -701,7 +701,7 @@ export class AssignmentService {
         (emp) =>
           emp.difference > 0 &&
           emp.role.toString() ===
-            this.configService.get('appRoles').EMPLOYEE_REMINDER, // Only employees with the correct role and capacity
+          this.configService.get('appRoles').EMPLOYEE_REMINDER, // Only employees with the correct role and capacity
       );
 
       const employees = filteredEmployee.sort(
@@ -1019,6 +1019,71 @@ export class AssignmentService {
           recordType,
         },
       });
+    }
+    return result;
+  }
+
+
+  async cancelRequestReAssignements(
+    userId: string,
+    adminId: string,
+    assignments: string[],
+    webinarId: string,
+    role: string,
+    attendeeEmails: string[],
+  ) {
+    const recordType =
+      this.configService.get('appRoles')['EMPLOYEE_REMINDER'] === role
+        ? 'preWebinar'
+        : 'postWebinar';
+
+    const assignmentsIds = assignments.map(
+      (assignment) => new Types.ObjectId(`${assignment}`),
+    );
+    const result = await this.assignmentsModel.updateMany(
+      {
+        adminId: new Types.ObjectId(`${adminId}`),
+        user: new Types.ObjectId(`${userId}`),
+        status: AssignmentStatus.REASSIGN_REQUESTED,
+        _id: { $in: assignmentsIds },
+      },
+      { $set: { status: AssignmentStatus.ACTIVE, requestReason: null } },
+    );
+
+    const reassignmentCount = result.modifiedCount;
+
+    const user = await this.userService.getUserById(userId);
+    const userName = user?.userName || 'User';
+    const webinar = await this.webinarService.getWebinarById(
+      webinarId.toString(),
+    );
+    const webinarName = webinar?.webinarName || 'Webinar';
+
+    if (reassignmentCount > 0) {
+      const logs = attendeeEmails.map((email) => ({
+        attendee: email,
+        action: AttendeeAction.REASSIGNMENT_REQUEST,
+        item: webinarName,
+        details: `${userName} cancelled the request for reassignment in ${recordType === 'preWebinar' ? 'Reminder' : 'Sales'} webinar : ${webinarName}`,
+        adminId: new Types.ObjectId(`${adminId}`),
+      }));
+
+      await this.attendeeLogService.createAttendeeLogs(logs);
+
+      // await this.notificationService.createNotification({
+      //   recipient: adminId,
+      //   title: `Reassignment Requests Submitted by ${userName}`,
+      //   message: `${reassignmentCount} reassignment requests have been submitted from the webinar ${webinarName}.`,
+      //   type: notificationType.INFO,
+      //   actionType: notificationActionType.REASSIGNMENT,
+      //   metadata: {
+      //     userId,
+      //     reassignmentCount,
+      //     type: 'request',
+      //     webinarId,
+      //     recordType,
+      //   },
+      // });
     }
     return result;
   }
@@ -1519,6 +1584,29 @@ export class AssignmentService {
           new Types.ObjectId(`${adminId}`),
         );
 
+
+
+        const attendees = await this.attendeeService.getAttendeesByIds(
+          new Types.ObjectId(`${adminId}`),
+          attendeeIds);
+
+        if (attendees?.length) {
+          const webinar = await this.webinarService.getWebinarById(webinarId);
+          const webinarName = webinar?.webinarName || 'Webinar';
+
+          const logs = attendees.map((attendee) => ({
+            attendee: attendee.email,
+            action: AttendeeAction.PULLBACK,
+            item: webinarName,
+            details: ` Attendee has been Pulled back in webinar : ${webinarName}`,
+            adminId: new Types.ObjectId(`${adminId}`),
+          }));
+
+          await this.attendeeLogService.createAttendeeLogs(
+            logs
+          );
+        }
+
         return {
           message: 'Attendees and assignments updated successfully',
           updatedAttendeesCount: updatedAttendeesResult.modifiedCount,
@@ -1708,8 +1796,8 @@ export class AssignmentService {
       ...(metaData.webinarId ? { webinar: metaData.webinarId } : {}),
       ...(metaData.attendeeIds &&
         metaData.attendeeIds.length > 0 && {
-          attendee: { $in: metaData.attendeeIds },
-        }),
+        attendee: { $in: metaData.attendeeIds },
+      }),
     };
 
     const pipeline: PipelineStage[] = [

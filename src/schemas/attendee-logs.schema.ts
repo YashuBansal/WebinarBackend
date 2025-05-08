@@ -20,6 +20,7 @@ export enum AttendeeAction {
     REASSIGNMENT_APPROVED = 'Pullback Approved',
     REASSIGNMENT_REJECTED = 'Reassignment Rejected',
     REASSIGNMENT = 'Reassignment',
+    PULLBACK = 'Pullback'
   }
   
 

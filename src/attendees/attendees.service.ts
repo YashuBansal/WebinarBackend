@@ -682,6 +682,43 @@ export class AttendeesService {
                 ...(filters.location && {
                   location: { $regex: filters.location, $options: 'i' },
                 }),
+                //// Assume 'filters' is an object containing your filter criteria
+// Assume 'queryObject' is what you'll pass to Model.find()
+
+// const queryObject = { user: userId }; // Example base query
+
+// // ... other filter conditions ...
+
+// if (filters.location && typeof filters.location === 'string' && filters.location.trim() !== '') {
+//     const locationsArray = filters.location
+//         .split(',')
+//         .map(loc => loc.trim()) // Trim whitespace from each location
+//         .filter(loc => loc.length > 0); // Remove any empty strings if there were,, or trailing,
+
+//     if (locationsArray.length > 0) {
+//         // Function to escape special characters for regex
+//         const escapeRegex = (string) => {
+//             return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+//         };
+
+//         // Create a regex pattern like "escapedLoc1|escapedLoc2|escapedLoc3"
+//         const regexPattern = locationsArray
+//             .map(loc => escapeRegex(loc)) // Escape each location term
+//             .join('|');                  // Join with OR operator
+
+//         // Now, use this pattern in your query
+//         // This will match if the 'location' field contains any of the provided locations.
+//         // For example, if regexPattern is "New York|London", it will match:
+//         // - "Office in New York"
+//         // - "London HQ"
+//         // - "New York and London"
+//         queryObject.location = { $regex: regexPattern, $options: 'i' };
+//     }
+// }
+
+// ...
+// const results = await YourModel.find(queryObject);
+// ...
                 ...(filters.source && {
                   source: { $regex: filters.source, $options: 'i' },
                 }),
