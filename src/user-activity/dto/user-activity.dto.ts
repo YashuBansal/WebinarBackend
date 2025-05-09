@@ -22,7 +22,11 @@ export class InactiviUserDTO {
   @IsNotEmpty()
   @IsString()
   email: string;
-
+  
+  @IsNotEmpty()
+  @IsString()
+  role: string;
+  
   @IsMongoId()
   userId: string;
 

@@ -80,6 +80,8 @@ export class UserActivityService {
         userId: body.userId,
         email: body.email,
         userName: body.userName,
+        role: body.role,
+
       },
     };
 

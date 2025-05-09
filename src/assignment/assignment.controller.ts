@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -190,6 +191,24 @@ export class AssignmentController {
       body.assignments,
       body.webinarId,
       body.requestReason,
+      role,
+      body.attendeeEmails
+    );
+  }
+
+  @Put('reassign')
+  async cancelReassignAssignment(
+    @Body() body: RequestReAssignmentsDTO,
+    @AdminId() adminId: string,
+    @Id() userId: string,
+    @Role() role: string,
+  ) {
+
+    return await this.assignmentService.cancelRequestReAssignements(
+      userId,
+      adminId,
+      body.assignments,
+      body.webinarId,
       role,
       body.attendeeEmails
     );

@@ -48,7 +48,12 @@ export class AssignmentModule {
     consumer.apply(GetAdminIdForUserActivityMiddleware).forRoutes({
       path: 'assignment/reassign',
       method: RequestMethod.PATCH,
-    });
+    },
+    {
+      path: 'assignment/reassign',
+      method: RequestMethod.PUT,
+    },
+  );
 
     consumer.apply(GetAdminIdMiddleware).forRoutes({
       path: 'assignment/data/:empId',
@@ -66,6 +71,10 @@ export class AssignmentModule {
         {
           path: 'assignment/reassign',
           method: RequestMethod.PATCH,
+        },
+        {
+          path: 'assignment/reassign',
+          method: RequestMethod.PUT,
         },
         {
           path: 'assignment/reassign/fetch',
