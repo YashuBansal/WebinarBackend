@@ -313,6 +313,7 @@ export class SubscriptionService {
     if (!subscription) {
       throw new NotFoundException('Subscription not found');
     }
+    console.log(subscription);
     subscription.contactCount = subscription.contactCount + count;
     await subscription.save();
     return subscription;
@@ -525,6 +526,63 @@ export class SubscriptionService {
         $lookup: {
           from: 'attendees',
           let: { adminId: '$admin' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: ['$adminId', '$$adminId'],
+                },
+              },
+            },
+            {
+              $group: {
+                _id: '$email',
+              },
+            },
+            {
+              $count: 'total',
+            },
+          ],
+          as: 'attendeeCount',
+        },
+      },
+      {
+        $unwind: {
+          path: '$attendeeCount',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $set: {
+          contactCount: {
+            $ifNull: ['$attendeeCount.total', 0],
+          },
+        },
+      },
+      {
+        $project: {
+          attendeeCount: 0,
+        },
+      },
+      {
+        $merge: {
+          into: 'subscriptions',
+          on: '_id',
+          whenMatched: 'merge',
+          whenNotMatched: 'discard',
+        },
+      },
+    ];
+
+    return this.SubscriptionModel.aggregate(pipeline).exec();
+  }
+
+  async revalidateUsedContactCountsOfAdmin(adminId: Types.ObjectId) {
+    const pipeline: PipelineStage[] = [
+      {
+        $lookup: {
+          from: 'attendees',
+          let: { adminId: adminId },
           pipeline: [
             {
               $match: {

@@ -71,7 +71,7 @@ export class AssignmentService {
     private readonly tagsService: TagsService,
     private readonly enrollmentService: EnrollmentsService,
     private readonly attendeeLogService: AttendeeLogService,
-  ) { }
+  ) {}
 
   async getAssignments(
     adminId: string,
@@ -171,41 +171,41 @@ export class AssignmentService {
       },
       ...(filters.leadType
         ? [
-          {
-            $lookup: {
-              from: 'attendeeassociations',
-              let: { tempMail: '$email' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                        },
-                        { $eq: ['$email', '$$tempMail'] },
-                        {
-                          $eq: [
-                            '$leadType',
-                            new Types.ObjectId(filters.leadType),
-                          ],
-                        },
-                      ],
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$email' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                          },
+                          { $eq: ['$email', '$$tempMail'] },
+                          {
+                            $eq: [
+                              '$leadType',
+                              new Types.ObjectId(filters.leadType),
+                            ],
+                          },
+                        ],
+                      },
                     },
                   },
-                },
-              ],
+                ],
 
-              as: 'attendeeAssociations',
+                as: 'attendeeAssociations',
+              },
             },
-          },
-          {
-            $unwind: {
-              path: '$attendeeAssociations',
-              preserveNullAndEmptyArrays: false,
+            {
+              $unwind: {
+                path: '$attendeeAssociations',
+                preserveNullAndEmptyArrays: false,
+              },
             },
-          },
-        ]
+          ]
         : []),
     ];
 
@@ -217,35 +217,35 @@ export class AssignmentService {
       ...(filters.leadType
         ? []
         : [
-          {
-            $lookup: {
-              from: 'attendeeassociations',
-              let: { tempMail: '$email' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        {
-                          $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
-                        },
-                        { $eq: ['$email', '$$tempMail'] },
-                      ],
+            {
+              $lookup: {
+                from: 'attendeeassociations',
+                let: { tempMail: '$email' },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                          },
+                          { $eq: ['$email', '$$tempMail'] },
+                        ],
+                      },
                     },
                   },
-                },
-              ],
+                ],
 
-              as: 'attendeeAssociations',
+                as: 'attendeeAssociations',
+              },
             },
-          },
-          {
-            $unwind: {
-              path: '$attendeeAssociations',
-              preserveNullAndEmptyArrays: true,
+            {
+              $unwind: {
+                path: '$attendeeAssociations',
+                preserveNullAndEmptyArrays: true,
+              },
             },
-          },
-        ]),
+          ]),
       {
         $addFields: {
           leadType: '$attendeeAssociations.leadType',
@@ -440,7 +440,7 @@ export class AssignmentService {
         executeFurther &&
         taggedEmployee &&
         taggedEmployee.role.toString() ===
-        this.configService.get('appRoles').EMPLOYEE_REMINDER &&
+          this.configService.get('appRoles').EMPLOYEE_REMINDER &&
         taggedEmployee.dailyContactLimit > taggedEmployee.dailyContactCount
       ) {
         const existingAssignment = await this.assignmentsModel.findOne({
@@ -619,7 +619,7 @@ export class AssignmentService {
       attendee: newAttendee.email,
       action: AttendeeAction.REGISTERED,
       item: 'Attendee',
-      details: `${newAttendee.email} registered for webinar ${webinar?.webinarName}`,
+      details: `Attendee registered by API for Reminder webinar : ${webinar?.webinarName}`,
       adminId: new Types.ObjectId(adminId),
     });
 
@@ -663,7 +663,7 @@ export class AssignmentService {
           return (
             employee._id.toString() === lastAssigned.assignedTo.toString() &&
             employee.role.toString() ===
-            this.configService.get('appRoles')['EMPLOYEE_REMINDER']
+              this.configService.get('appRoles')['EMPLOYEE_REMINDER']
           );
         },
       );
@@ -701,7 +701,7 @@ export class AssignmentService {
         (emp) =>
           emp.difference > 0 &&
           emp.role.toString() ===
-          this.configService.get('appRoles').EMPLOYEE_REMINDER, // Only employees with the correct role and capacity
+            this.configService.get('appRoles').EMPLOYEE_REMINDER, // Only employees with the correct role and capacity
       );
 
       const employees = filteredEmployee.sort(
@@ -729,6 +729,11 @@ export class AssignmentService {
         };
       }
     }
+  }
+
+
+  async randomAssignAttendees(data){
+
   }
 
   async createNewAssignmentForPreWebinar(
@@ -1022,7 +1027,6 @@ export class AssignmentService {
     }
     return result;
   }
-
 
   async cancelRequestReAssignements(
     userId: string,
@@ -1584,11 +1588,10 @@ export class AssignmentService {
           new Types.ObjectId(`${adminId}`),
         );
 
-
-
         const attendees = await this.attendeeService.getAttendeesByIds(
           new Types.ObjectId(`${adminId}`),
-          attendeeIds);
+          attendeeIds,
+        );
 
         if (attendees?.length) {
           const webinar = await this.webinarService.getWebinarById(webinarId);
@@ -1602,9 +1605,7 @@ export class AssignmentService {
             adminId: new Types.ObjectId(`${adminId}`),
           }));
 
-          await this.attendeeLogService.createAttendeeLogs(
-            logs
-          );
+          await this.attendeeLogService.createAttendeeLogs(logs);
         }
 
         return {
@@ -1796,8 +1797,8 @@ export class AssignmentService {
       ...(metaData.webinarId ? { webinar: metaData.webinarId } : {}),
       ...(metaData.attendeeIds &&
         metaData.attendeeIds.length > 0 && {
-        attendee: { $in: metaData.attendeeIds },
-      }),
+          attendee: { $in: metaData.attendeeIds },
+        }),
     };
 
     const pipeline: PipelineStage[] = [

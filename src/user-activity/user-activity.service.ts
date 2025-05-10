@@ -160,9 +160,24 @@ export class UserActivityService {
         },
       },
       {
+        $unwind: {
+          path: '$userDetails',
+          preserveNullAndEmptyArrays: false,
+        },
+      },
+      {
+        $lookup: {
+          from: 'roles',
+          localField: 'userDetails.role',
+          foreignField: '_id',
+          as: 'roleDetails',
+        },
+      },
+      {
         $project: {
           _id: 1,
-          userEmail: { $arrayElemAt: ['$userDetails.email', 0] },
+          userEmail: '$userDetails.email',
+          userRole: { $arrayElemAt: ['$roleDetails.name', 0] },
           action: '$actions.action',
           details: '$actions.details',
           createdAt: '$actions.createdAt',
