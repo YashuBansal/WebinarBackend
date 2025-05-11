@@ -8,6 +8,7 @@ import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { UsersModule } from 'src/users/users.module';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
+import { WebinarModule } from 'src/webinar/webinar.module';
 
 @Module({
   imports: [
@@ -19,7 +20,9 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
     ]),
     forwardRef(() =>ProductsModule),
     forwardRef(() =>UsersModule),
-    AttendeeLogModule
+    forwardRef(() =>WebinarModule),
+    AttendeeLogModule,
+    
   ],
   providers: [EnrollmentsService],
   controllers: [EnrollmentsController],

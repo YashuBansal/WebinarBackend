@@ -396,4 +396,8 @@ export class WebinarService {
   async getWebinarById(webinarId: string): Promise<Webinar> {
     return this.webinarModel.findById(webinarId).lean();
   }
+
+  async getAssignedProducts(webinarId: Types.ObjectId) {
+    return this.webinarModel.findById(webinarId).populate('productIds');
+  }
 }

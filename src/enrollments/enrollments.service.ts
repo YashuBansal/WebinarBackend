@@ -16,6 +16,8 @@ import {
 import { ProductsService } from 'src/products/products.service';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
+import { Products } from 'src/schemas/Products.schema';
+import { WebinarService } from 'src/webinar/webinar.service';
 
 @Injectable()
 export class EnrollmentsService {
@@ -25,7 +27,131 @@ export class EnrollmentsService {
     @Inject(forwardRef(() => ProductsService))
     private readonly productsService: ProductsService,
     private readonly attendeeLogService: AttendeeLogService,
-  ) { }
+    @Inject(forwardRef(() => WebinarService))
+    private readonly webinarService: WebinarService,
+  ) {}
+
+  async createEnrollments(
+    tagsData: {
+      email: string;
+      tags: string[];
+    }[],
+    webinarId: Types.ObjectId,
+    adminId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<any[]> {
+    // Adjust return type based on insertMany result
+
+    const webinar = await this.webinarService.getAssignedProducts(webinarId);
+    console.log(tagsData, webinar);
+
+    if (
+      !webinar ||
+      !Array.isArray(webinar.productIds) ||
+      webinar.productIds.length === 0 ||
+      tagsData.length === 0
+    )
+      return [];
+
+    const products: any[] = webinar.productIds;
+
+    const productMap = new Map(
+      products
+        .filter(
+          (product) =>
+            typeof product.tag === 'string' && product.tag.trim() !== '',
+        )
+        .map((product) => [
+          product.tag.toLowerCase(),
+          {
+            id: product._id,
+            price: product.price,
+          },
+        ]),
+    );
+
+    const potentialEnrollments = []; // Renamed for clarity
+
+    tagsData.forEach((item) => {
+      const attendeeEmail = item.email;
+      const attendeeTags = item.tags;
+      attendeeTags.forEach((tag) => {
+        const lowerCaseTag = tag.toLowerCase(); // Ensure case-insensitive matching
+        if (typeof tag === 'string' && productMap.has(lowerCaseTag)) {
+          const product = productMap.get(lowerCaseTag);
+
+          potentialEnrollments.push({
+            attendee: attendeeEmail,
+            webinar: webinarId,
+            product: product.id,
+            price: product.price,
+            adminId
+            // Add any other default fields needed for an enrollment document
+          });
+        }
+      });
+    });
+
+    if (potentialEnrollments.length === 0) {
+      console.log('No potential enrollments generated from tags.');
+      return []; // Return empty array if nothing to process
+    }
+
+    // 1. Identify the unique combinations of attendee and product from the potential list
+    // These are the combinations we need to check for existence
+    const combinationsToCheck = potentialEnrollments.map((e) => ({
+      attendee: e.attendee,
+      product: e.product, // This should be the ObjectId
+    }));
+
+    // 2. Query the database for existing enrollments matching the webinar and any of these combinations
+    // Using $or allows us to check multiple (attendee, product) pairs in one query
+    const existingEnrollments = await this.enrollmentModel
+      .find({
+        webinar: webinarId,
+        $or: combinationsToCheck, 
+      })
+      .exec(); // Add .exec() if you are using Mongoose promises
+
+    // 3. Create a Set of existing enrollment keys for quick lookup
+    // A key will be a combination of attendee email and product ID string
+    const existingEnrollmentKeys = new Set(
+      existingEnrollments.map(
+        (enrollment) =>
+          `${enrollment.attendee}_${enrollment.product.toString()}`, // Convert ObjectId to string for key
+      ),
+    );
+
+    // 4. Filter the potential enrollments list
+    // Keep only those whose (attendee, product) combination is NOT in the existing set
+    const enrollmentsToInsert = potentialEnrollments.filter((enrollment) => {
+      const key = `${enrollment.attendee}_${enrollment.product.toString()}`; // Convert ObjectId to string for key
+      return !existingEnrollmentKeys.has(key);
+    });
+
+    // 5. Insert the filtered list of new enrollments
+    if (enrollmentsToInsert.length > 0) {
+      console.log(`Inserting ${enrollmentsToInsert.length} new enrollments.`);
+      try {
+    console.log(enrollmentsToInsert);
+        // Assuming enrollmentModel is a Mongoose model with insertMany
+        const result =
+          await this.enrollmentModel.insertMany(enrollmentsToInsert, { session });
+        console.log(`Successfully inserted ${result.length} enrollments.`);
+        return result; // Return the documents that were successfully inserted
+      } catch (error) {
+        console.error('Error inserting enrollments:', error);
+        // Handle the error appropriately, perhaps re-throw or return null/empty array
+        throw error; // Re-throw the error to be handled by the caller
+      }
+    } else {
+      console.log(
+        'All potential enrollments already exist. Nothing new to insert.',
+      );
+      return []; // Return empty array if no new enrollments were inserted
+    }
+  }
+  // } // End of example class
 
   async createEnrollment(
     createEnrollmentDto: CreateEnrollmentDto,
@@ -46,16 +172,14 @@ export class EnrollmentsService {
 
     if (isExist) throw new NotAcceptableException('Enrollment already exists');
 
-
     const result = await this.enrollmentModel.create({
       ...createEnrollmentDto,
       price: product.price,
     });
 
-    
-    const {createdBy, webinarName, productName} = createEnrollmentDto;
+    const { createdBy, webinarName, productName } = createEnrollmentDto;
 
-    if ( createdBy && webinarName && productName) {
+    if (createdBy && webinarName && productName) {
       this.attendeeLogService.createSingleAttendeeLog({
         attendee: result.attendee,
         item: '',
@@ -351,7 +475,7 @@ export class EnrollmentsService {
     const limit = parseInt(productData.limit) || 10;
     const level = parseInt(productData.productLevel) || undefined;
 
-    console.log(page, limit, level, productData.productId)
+    console.log(page, limit, level, productData.productId);
     const skip = (page - 1) * limit;
 
     const basePipeline: PipelineStage[] = [
@@ -374,20 +498,20 @@ export class EnrollmentsService {
           ...(isNaN(level)
             ? {}
             : {
-              'productData.level': level,
-            }),
+                'productData.level': level,
+              }),
           ...(productData?.productId
             ? {
-              'productData._id': new Types.ObjectId(productData?.productId),
-            }
+                'productData._id': new Types.ObjectId(productData?.productId),
+              }
             : {}),
         },
       },
       {
         $sort: {
-          attendee: 1
-        }
-      }
+          attendee: 1,
+        },
+      },
     ];
     const countPipeline: PipelineStage[] = [
       ...basePipeline,
@@ -417,7 +541,7 @@ export class EnrollmentsService {
           productName: '$productData.name',
           productLevel: '$productData.level',
           createdAt: 1,
-          price: 1
+          price: 1,
         },
       },
     ];
@@ -433,7 +557,6 @@ export class EnrollmentsService {
     return { data: mainResult || [], pagination };
   }
 
-
   async deleteEnrollmentsByWebinar(
     session: ClientSession,
     adminId: Types.ObjectId,
@@ -441,13 +564,13 @@ export class EnrollmentsService {
     attendees?: string[],
   ) {
     return this.enrollmentModel
-      .deleteMany(
-        {
-          adminId: adminId,
-          webinar: webinarId,
-          ...(attendees && { attendee: { $in: attendees } })
-        }
-      ).session(session).exec();
+      .deleteMany({
+        adminId: adminId,
+        webinar: webinarId,
+        ...(attendees && { attendee: { $in: attendees } }),
+      })
+      .session(session)
+      .exec();
   }
 
   async deleteEnrollmentsByAttendeeIds(
@@ -457,11 +580,11 @@ export class EnrollmentsService {
   ) {
     console.log('enrollments -> deleted');
     return this.enrollmentModel
-      .deleteMany(
-        {
-          adminId: adminId,
-          attendee: { $in: attendees }
-        }
-      ).session(session).exec();
+      .deleteMany({
+        adminId: adminId,
+        attendee: { $in: attendees },
+      })
+      .session(session)
+      .exec();
   }
 }

@@ -53,7 +53,6 @@ export class UserActivityController {
 
   @Get('employee')
   async getUserActivityOfEmployees(@Id() id: string) {
-    console.log('ID:', id);
     if (!id || !mongoose.isValidObjectId(id)) {
       throw new BadRequestException('User ID is required.');
     }
@@ -96,8 +95,6 @@ export class UserActivityController {
     @Query('page') page: string,
     @Query('limit') limit: string,
   ) {
-    console.log('Admin ID:', adminId);
-    console.log('ID:', id);
     let admin = '';
     const clientRoleId = this.configService.get('appRoles').ADMIN;
 

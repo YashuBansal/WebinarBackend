@@ -221,10 +221,25 @@ export class AttendeesService {
         updateProgress(70);
 
         const newAttendees = await this.attendeeModel.insertMany(
-          tempAttendees,
+          tempAttendees.map((attendee) => ({
+            ...attendee,
+            tags:
+              typeof attendee.tags === 'string' ? attendee.tags.split(',') : [],
+          })),
           {
             session: currentSession,
           },
+        );
+
+        await this.enrollService.createEnrollments(
+          tempAttendees.map((attendee) => ({
+            email: attendee.email,
+            tags:
+              typeof attendee.tags === 'string' ? attendee.tags.split(',') : [],
+          })),
+          new Types.ObjectId(`${webinar}`),
+          new Types.ObjectId(`${adminId}`),
+          currentSession,
         );
 
         await this.attendeeLogService.createMultipleAttendeeLog({
