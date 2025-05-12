@@ -376,6 +376,94 @@ export class AssignmentService {
     return { success: true, message: 'Assignment created successfully' };
   }
 
+  async addRandomAssignment(data: AssignmentDto, adminId: string) {
+    const attendeeIds = data.attendees.map((a) => new Types.ObjectId(`${a}`));
+
+    const attendeeData = await this.attendeeService.fetchAssigned(attendeeIds);
+
+    if (attendeeData && attendeeData.length > 0) {
+      throw new BadRequestException('Attendee already assigned');
+    }
+
+    const webinar = await this.webinarService.getWebinar(data.webinar, adminId);
+
+    if (!webinar) {
+      throw new NotFoundException('Webinar not found');
+    }
+
+    if (
+      !Array.isArray(webinar?.assignedEmployees) ||
+      webinar.assignedEmployees.length === 0
+    ) {
+      throw new BadRequestException('No Assigned Employee Found');
+    }
+
+    const employees = webinar.assignedEmployees;
+
+    let role = '';
+    if (data.recordType === 'preWebinar') {
+      role = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
+    } else {
+      role = this.configService.get('appRoles')['EMPLOYEE_SALES'];
+    }
+
+    const roleEmps = employees.filter(
+      (emp) => String(emp?.role) === String(role),
+    );
+
+    if (!Array.isArray(roleEmps) || roleEmps.length === 0) {
+      throw new BadRequestException('No Assigned Employee Found');
+    }
+
+    const session = await this.assignmentsModel.startSession();
+    try {
+      await session.withTransaction(async (currentSession) => {
+        const updatedAttendees = await this.attendeeService.updateAttendees(
+          {
+            _id: { $in: attendeeIds },
+            adminId: new Types.ObjectId(`${adminId}`),
+          },
+          { assignedTo: new Types.ObjectId(`${data.user}`) },
+          currentSession,
+        );
+
+        if (updatedAttendees.matchedCount !== attendeeIds.length) {
+          throw new NotFoundException('Some attendees were not found');
+        }
+
+        const newAssignmentsData = attendeeIds.map((attendeeId) => ({
+          adminId: new Types.ObjectId(`${adminId}`),
+          user: new Types.ObjectId(`${data.user}`),
+          webinar: new Types.ObjectId(`${data.webinar}`),
+          attendee: attendeeId,
+          recordType: data.recordType,
+          status: AssignmentStatus.ACTIVE,
+        }));
+
+        const createdAssignments = await this.assignmentsModel.insertMany(
+          newAssignmentsData,
+          { session: currentSession },
+        );
+
+        if (
+          !createdAssignments ||
+          createdAssignments.length !== attendeeIds.length
+        ) {
+          throw new InternalServerErrorException(
+            'Failed to create all new assignments',
+          );
+        }
+
+      });
+    } catch (error) {
+      throw error;
+    } finally {
+      session.endSession();
+    }
+
+    return { success: true, message: 'Assignment created successfully' };
+  }
+
   formatPhoneNumber(phoneNumber: string) {
     if (!phoneNumber) return '';
     if (phoneNumber.includes('E')) {
@@ -731,10 +819,7 @@ export class AssignmentService {
     }
   }
 
-
-  async randomAssignAttendees(data){
-
-  }
+  async randomAssignAttendees(data) {}
 
   async createNewAssignmentForPreWebinar(
     adminId: Types.ObjectId,
