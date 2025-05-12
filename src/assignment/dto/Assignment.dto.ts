@@ -21,8 +21,9 @@ import { AssignmentStatus, RecordType } from 'src/schemas/Assignments.schema';
 
 export class AssignmentDto {
 
+  @IsOptional()
   @IsMongoId()
-  user: string;
+  user?: string;
 
   @IsMongoId()
   webinar: string;

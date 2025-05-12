@@ -1202,4 +1202,50 @@ export class UsersService {
 
     return this.userModel.bulkWrite(operations, { ordered: false, session });
   }
+
+
+
+  /**
+   * Performs a bulk write operation on the User collection, typically for
+   * updating employee-related fields like daily contact counts within a transaction.
+   *
+   * @param updates An array of Mongoose bulk write operation objects
+   *                (e.g., { updateOne: { filter, update } }, { insertOne: { document } }, etc.).
+   *                For updating dailyContactCount, this will likely contain $inc operations.
+   * @param session The Mongoose client session to use for the transaction.
+   * @returns A promise resolving to the result object from the bulk write operation (Mongoose BulkWriteResult).
+   */
+  async bulkUpdateUsersDailyContactCount(
+    updates: any[], // Using 'any' for simplicity, can be typed as (BulkWriteOptions | AnyBulkWriteOperation)[]
+    session: ClientSession // Requires a session as it's designed for use within a transaction
+  ): Promise<any> { // Return type is Mongoose BulkWriteResult, using 'any' for now
+    if (!session) {
+        // This function is designed for use within transactions, ensure a session is provided
+        throw new Error('bulkUpdateUsersDailyContactCount requires a Mongoose client session.');
+    }
+     if (!updates || updates.length === 0) {
+         console.log('bulkUpdateUsersDailyContactCount called with no updates. Returning early.');
+         // Return a result object indicating no operations were performed, similar to bulkWrite output structure
+         return { acknowledged: true, insertedCount: 0, matchedCount: 0, modifiedCount: 0, deletedCount: 0, upsertedCount: 0, upsertedIds: {} };
+     }
+
+
+    try {
+      // Use the injected Mongoose userModel to perform the bulk write operation
+      // Pass the array of update operations and the session object
+      const result = await this.userModel.bulkWrite(updates, { session });
+
+      // Log the result or perform other checks if necessary
+      // console.log('User dailyContactCount bulk write operation completed:', result);
+
+      // Mongoose's bulkWrite returns an object containing statistics about the operations performed.
+      // Example: { acknowledged: true, insertedCount: 0, matchedCount: 2, modifiedCount: 2, deletedCount: 0, upsertedCount: 0, upsertedIds: {} }
+      return result; // This is the BulkWriteResult object
+
+    } catch (error) {
+      console.error('Error during User dailyContactCount bulk write operation:', error);
+      // Re-throw the error so the calling transaction can catch and handle it
+      throw error;
+    }
+  }
 }

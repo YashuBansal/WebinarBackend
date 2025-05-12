@@ -376,15 +376,30 @@ export class AssignmentService {
     return { success: true, message: 'Assignment created successfully' };
   }
 
+
+//
   async addRandomAssignment(data: AssignmentDto, adminId: string) {
     const attendeeIds = data.attendees.map((a) => new Types.ObjectId(`${a}`));
+    const adminObjectId = new Types.ObjectId(adminId);
+    const webinarObjectId = new Types.ObjectId(data.webinar);
+    const forceAssign = data.forceAssign === true; // Explicitly check for boolean true
 
-    const attendeeData = await this.attendeeService.fetchAssigned(attendeeIds);
+    // --- 1. Initial Checks ---
 
-    if (attendeeData && attendeeData.length > 0) {
-      throw new BadRequestException('Attendee already assigned');
+    // Check if attendees are already assigned (Keep existing check)
+    const assignedAttendeesCheck =
+      await this.attendeeService.fetchAssigned(attendeeIds);
+
+    if (assignedAttendeesCheck && assignedAttendeesCheck.length > 0) {
+      const alreadyAssignedEmails = assignedAttendeesCheck
+        .map((att) => att.email)
+        .join(', ');
+      throw new BadRequestException(
+        `Some attendees are already assigned: ${alreadyAssignedEmails}`,
+      );
     }
 
+    // Get Webinar and check for assigned employees (Keep existing check)
     const webinar = await this.webinarService.getWebinar(data.webinar, adminId);
 
     if (!webinar) {
@@ -395,74 +410,298 @@ export class AssignmentService {
       !Array.isArray(webinar?.assignedEmployees) ||
       webinar.assignedEmployees.length === 0
     ) {
-      throw new BadRequestException('No Assigned Employee Found');
+      throw new BadRequestException('No Assigned Employee Found on Webinar');
     }
 
-    const employees = webinar.assignedEmployees;
+    const employees = webinar.assignedEmployees; // These are likely populated Employee documents or objects
 
-    let role = '';
+    // Determine the required role based on recordType
+    let requiredRole = '';
     if (data.recordType === 'preWebinar') {
-      role = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
+      requiredRole = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
+    } else if (data.recordType === 'postWebinar') {
+      requiredRole = this.configService.get('appRoles')['EMPLOYEE_SALES'];
     } else {
-      role = this.configService.get('appRoles')['EMPLOYEE_SALES'];
+      throw new BadRequestException(`Invalid recordType: ${data.recordType}`);
     }
 
+    // Filter employees by the required role
     const roleEmps = employees.filter(
-      (emp) => String(emp?.role) === String(role),
+      (emp) => String(emp?.role) === String(requiredRole),
     );
 
     if (!Array.isArray(roleEmps) || roleEmps.length === 0) {
-      throw new BadRequestException('No Assigned Employee Found');
+      throw new BadRequestException(
+        `No employees found with role: ${requiredRole}`,
+      );
     }
 
-    const session = await this.assignmentsModel.startSession();
+    // --- 2. Determine Employees for Assignment & Distribute Attendees ---
+
+    const assignmentsToCreate: any[] = []; // Array to hold new assignment documents
+    const attendeeBulkUpdates: any[] = []; // Array to hold attendee update operations
+    const employeeDailyCountUpdates = new Map<string, number>(); // Map<employeeId, countIncrement>
+
+    let attendeesAssignedCount = 0;
+    const totalAttendeesToAssign = attendeeIds.length;
+
+    if (forceAssign) {
+        // --- Force Assign Logic (Ignore Limits, Distribute Equally among roleEmps) ---
+
+        const employeesToDistribute = roleEmps; // Use all employees with the correct role
+
+        if (employeesToDistribute.length === 0) {
+            // This check is technically redundant due to the earlier roleEmps check, but good for clarity
+            throw new BadRequestException(
+              `No employees found with role: ${requiredRole} for forced assignment.`
+            );
+        }
+
+        let currentEmployeeIndex = 0;
+        for (const attendeeId of attendeeIds) {
+             const currentEmployee = employeesToDistribute[currentEmployeeIndex % employeesToDistribute.length];
+             const employeeIdStr = currentEmployee._id.toString();
+
+             // Create assignment
+             assignmentsToCreate.push({
+               adminId: adminObjectId,
+               user: currentEmployee._id,
+               webinar: webinarObjectId,
+               attendee: attendeeId,
+               recordType: data.recordType,
+               status: AssignmentStatus.ACTIVE,
+             });
+
+             // Prepare attendee update
+             attendeeBulkUpdates.push({
+                 updateOne: {
+                     filter: { _id: attendeeId, adminId: adminObjectId },
+                     update: { assignedTo: currentEmployee._id }
+                 }
+             });
+
+             // Track count increase for this employee (still increment daily count even if forced)
+             employeeDailyCountUpdates.set(
+                 employeeIdStr,
+                 (employeeDailyCountUpdates.get(employeeIdStr) || 0) + 1
+             );
+
+             attendeesAssignedCount++; // In force assign, all attendees are assigned if employees exist
+
+             // Move to the next employee for round-robin
+             currentEmployeeIndex++;
+        }
+
+        // All attendees were attempted assignment. attendeesAssignedCount will equal totalAttendeesToAssign
+        // unless attendeeIds was empty initially.
+        if (attendeesAssignedCount === 0 && totalAttendeesToAssign > 0) {
+             // This case should ideally not be hit if roleEmps.length > 0, but as a fallback
+             throw new InternalServerErrorException("Failed to generate assignments despite having employees and attendees.");
+        }
+
+
+    } else {
+        // --- Normal Assign Logic (Respect Limits, Distribute Among Available Employees) ---
+
+        // Filter employees who still have capacity for today
+        const availableEmployees = roleEmps.filter(
+            (emp) => (emp.dailyContactCount || 0) < (emp.dailyContactLimit || 0)
+        );
+
+        if (availableEmployees.length === 0) {
+            throw new BadRequestException(
+                `No employees with role "${requiredRole}" have available daily contact capacity.`
+            );
+        }
+
+        let currentEmployeeIndex = 0;
+        // Loop through each attendee to assign them
+        for (const attendeeId of attendeeIds) {
+            let assigned = false;
+
+            // Find the next available employee who still has capacity *in this batch*
+            const startEmployeeIndex = currentEmployeeIndex; // Track where we started searching
+
+            do {
+                 const currentEmployee = availableEmployees[currentEmployeeIndex];
+                 const employeeIdStr = currentEmployee._id.toString();
+
+                 // Calculate current capacity used in this batch for this employee
+                 const assignedInBatch = employeeDailyCountUpdates.get(employeeIdStr) || 0;
+
+                 // Check if this employee has capacity (total assigned today < limit)
+                 if ((currentEmployee.dailyContactCount || 0) + assignedInBatch < (currentEmployee.dailyContactLimit || 0)) {
+                     // Assign the attendee to this employee
+                     assignmentsToCreate.push({
+                       adminId: adminObjectId,
+                       user: currentEmployee._id, // This is the assigned employee's ID
+                       webinar: webinarObjectId,
+                       attendee: attendeeId,
+                       recordType: data.recordType,
+                       status: AssignmentStatus.ACTIVE,
+                     });
+
+                     // Prepare for attendee update
+                     attendeeBulkUpdates.push({
+                         updateOne: {
+                             filter: { _id: attendeeId, adminId: adminObjectId },
+                             update: { assignedTo: currentEmployee._id }
+                         }
+                     });
+
+                     // Track count increase for this employee in this batch
+                     employeeDailyCountUpdates.set(employeeIdStr, assignedInBatch + 1);
+
+                     attendeesAssignedCount++;
+                     assigned = true; // Mark attendee as assigned
+                     break; // Move to the next employee
+                 }
+
+                 // If employee is full for this batch, move to the next employee
+                 currentEmployeeIndex = (currentEmployeeIndex + 1) % availableEmployees.length;
+
+            } while (currentEmployeeIndex !== startEmployeeIndex); // Loop until we find an employee or cycle back
+
+            // If after checking all available employees, the attendee wasn't assigned,
+            // it means all available employees reached their daily limit with the current assignments.
+            if (!assigned) {
+                console.warn(
+                  `Attendee ${attendeeId.toString()} could not be assigned due to employee daily limits.`
+                );
+                // We stop assigning further attendees from the input list
+                break; // Stop processing remaining attendees
+            }
+
+            // Move to the next employee for the *next* attendee, maintaining the round-robin distribution
+            currentEmployeeIndex = (currentEmployeeIndex + 1) % availableEmployees.length;
+        }
+
+         // If no assignments were created despite having attendees and employees,
+         // it means the first attendee couldn't be assigned due to limits.
+         if (assignmentsToCreate.length === 0 && totalAttendeesToAssign > 0) {
+             throw new BadRequestException(
+               'Could not assign any attendees. All eligible employees may have reached their daily limit.'
+             );
+         }
+    }
+
+    // --- 3. Perform Database Operations within Transaction ---
+
+    // Check if any assignments were generated at all *after* the distribution logic
+    if (assignmentsToCreate.length === 0) {
+        // This handles the case where attendeeIds was empty or no assignable employees were found
+        // in either force or non-force mode after role filtering.
+        return { success: true, message: 'No assignable attendees or available employees found.' };
+    }
+
+
+    const session = await this.assignmentsModel.startSession(); // Start transaction session
     try {
-      await session.withTransaction(async (currentSession) => {
-        const updatedAttendees = await this.attendeeService.updateAttendees(
-          {
-            _id: { $in: attendeeIds },
-            adminId: new Types.ObjectId(`${adminId}`),
-          },
-          { assignedTo: new Types.ObjectId(`${data.user}`) },
-          currentSession,
-        );
+        await session.withTransaction(async (currentSession) => {
 
-        if (updatedAttendees.matchedCount !== attendeeIds.length) {
-          throw new NotFoundException('Some attendees were not found');
-        }
+            // 3.1. Update Attendees with assignedTo field
+            if (attendeeBulkUpdates.length > 0) {
+                 const updateAttendeesResult = await this.attendeeService.bulkUpdateAttendees(
+                     attendeeBulkUpdates, // Pass the operations array generated above
+                     currentSession // Pass the session
+                 );
 
-        const newAssignmentsData = attendeeIds.map((attendeeId) => ({
-          adminId: new Types.ObjectId(`${adminId}`),
-          user: new Types.ObjectId(`${data.user}`),
-          webinar: new Types.ObjectId(`${data.webinar}`),
-          attendee: attendeeId,
-          recordType: data.recordType,
-          status: AssignmentStatus.ACTIVE,
-        }));
+                 if (updateAttendeesResult.matchedCount !== attendeeBulkUpdates.length) {
+                      console.error('Mismatch in attendee update matched count:', updateAttendeesResult);
+                      throw new InternalServerErrorException('Failed to update all attendee assignments.');
+                 }
+            }
 
-        const createdAssignments = await this.assignmentsModel.insertMany(
-          newAssignmentsData,
-          { session: currentSession },
-        );
+            // 3.2. Create new Assignments
+            const createdAssignments = await this.assignmentsModel.insertMany(
+                assignmentsToCreate, // Pass the assignment documents generated above
+                { session: currentSession }
+            );
 
-        if (
-          !createdAssignments ||
-          createdAssignments.length !== attendeeIds.length
-        ) {
-          throw new InternalServerErrorException(
-            'Failed to create all new assignments',
-          );
-        }
+            if (
+                !createdAssignments ||
+                createdAssignments.length !== assignmentsToCreate.length
+            ) {
+                console.error(
+                  'Mismatch in created assignments count:',
+                  createdAssignments ? createdAssignments.length : 0,
+                  assignmentsToCreate.length,
+                );
+                throw new InternalServerErrorException(
+                    'Failed to create all new assignments'
+                );
+            }
 
-      });
+            // 3.3. Update Employee dailyContactCount
+            // Prepare bulkWrite operations for employees based on the map populated above
+            const employeeBulkUpdates = Array.from(
+              employeeDailyCountUpdates.entries(),
+            ).map(([empId, count]) => ({
+              updateOne: {
+                filter: { _id: new Types.ObjectId(empId) },
+                // Use $inc to atomically increment the count
+                update: { $inc: { dailyContactCount: count } },
+              },
+            }));
+
+
+            if (employeeBulkUpdates.length > 0) {
+                 // Use the userService method to perform the bulk update on users (employees)
+                const updateEmployeesResult = await this.userService.bulkUpdateUsersDailyContactCount(
+                    employeeBulkUpdates,
+                    currentSession,
+                );
+
+                 // Optional: Check employee update results
+                 if (updateEmployeesResult.matchedCount !== employeeBulkUpdates.length) {
+                     console.warn('Mismatch in employee dailyContactCount update matched count:', updateEmployeesResult);
+                 }
+            }
+
+            // If everything succeeded, the transaction will commit implicitly here
+        });
+
+        // Transaction successful
+
     } catch (error) {
-      throw error;
+        // Transaction failed
+        console.error('Transaction failed during assignment creation:', error);
+        // Re-throw the original error after logging
+        throw error;
     } finally {
-      session.endSession();
+        // Ensure the session is ended regardless of success or failure
+        await session.endSession();
     }
 
-    return { success: true, message: 'Assignment created successfully' };
+    // --- 4. Return Result ---
+    const unassignedCount = totalAttendeesToAssign - attendeesAssignedCount;
+    let message = `${attendeesAssignedCount} attendee(s) assigned successfully.`;
+    if (unassignedCount > 0) {
+      message += ` ${unassignedCount} attendee(s) could not be assigned due to employee daily limits.`;
+    }
+    // If forceAssign was true, unassignedCount will be 0 if roleEmps existed.
+    // The message logic still works correctly.
+
+
+    return {
+      success: true,
+      message: message,
+      assignedCount: attendeesAssignedCount,
+      unassignedCount: unassignedCount,
+    };
   }
+// } // End of example class
+  // } // End of example class
+
+  // NOTE: You will likely need to adjust your AttendeeService
+  // to include a method like `bulkUpdateAttendees` that accepts an array of update operations
+  /*
+// Example AttendeeService method (inside AttendeeService class)
+async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> {
+   // Assuming this.attendeeModel is your Mongoose Attendee Model
+   return this.attendeeModel.bulkWrite(updates, { session });
+}
+*/
 
   formatPhoneNumber(phoneNumber: string) {
     if (!phoneNumber) return '';

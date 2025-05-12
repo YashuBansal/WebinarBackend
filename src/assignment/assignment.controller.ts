@@ -122,7 +122,9 @@ export class AssignmentController {
     @Id() adminId: string,
   ): Promise<any> {
     // check if employee is of this admin
-    const employee = await this.usersService.getUserById(body.user);
+
+    if(body.user){
+      const employee = await this.usersService.getUserById(body.user);
 
     if (!employee)
       throw new NotFoundException('No Employee found with this ID');
@@ -154,9 +156,14 @@ export class AssignmentController {
       throw new BadRequestException('Daily Contact Limit Exceeded');
     }
 
-    const result = await this.assignmentService.addAssignment(body, adminId, employee);
+    return await this.assignmentService.addAssignment(body, adminId, employee);
+    }
+    else {
+     return await this.assignmentService.addRandomAssignment(body, adminId);
+    }
+    
 
-    return result;
+    
   }
 
   @Post('/prewebinar')
