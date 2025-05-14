@@ -34,3 +34,18 @@ export class InactiviUserDTO {
   @Min(1)
   seconds: number;
 }
+
+export class UserActivityFilterDTO {
+  @IsOptional()
+  @IsString()
+  action?: string;
+
+  @IsOptional()
+  @IsString()
+  fromDate?: string;
+
+  @IsOptional()
+  @IsString()
+  toDate?: string;
+
+}

@@ -16,6 +16,7 @@ import { AdminId, Id, Role } from 'src/decorators/custom.decorator';
 import {
   CreateUserActivityDto,
   InactiviUserDTO,
+  UserActivityFilterDTO,
 } from './dto/user-activity.dto';
 import { UserActivityService } from './user-activity.service';
 import mongoose, { Types } from 'mongoose';
@@ -50,7 +51,6 @@ export class UserActivityController {
     };
   }
 
-
   @Get('employee')
   async getUserActivityOfEmployees(@Id() id: string) {
     if (!id || !mongoose.isValidObjectId(id)) {
@@ -67,15 +67,18 @@ export class UserActivityController {
     @Param('userId') userId: string,
     @Query('page') page: string,
     @Query('limit') limit: string,
+    @Query('filters') filters?: UserActivityFilterDTO,
   ) {
     if (!userId) {
       throw new BadRequestException('User ID is required.');
     }
+    console.log();
 
     const activities = await this.userActivityService.getUserActivitiesByUser(
       new Types.ObjectId(userId),
       parseInt(page) || 1,
       parseInt(limit) || 10,
+      filters,
     );
 
     return {

@@ -15,6 +15,7 @@ import {
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.module';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
+import { UserActivityModule } from 'src/user-activity/user-activity.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middlew
     WebinarModule,
     AttendeesModule,
     CustomLeadTypeModule,
+    UserActivityModule
   ],
   controllers: [ExportExcelController],
   providers: [ExportExcelService, WebsocketGateway],
@@ -45,6 +47,7 @@ export class ExportExcelModule {
     );
     consumer.apply(AuthAdminTokenMiddleware).forRoutes(
       { path: 'export-excel/webinars', method: RequestMethod.POST },
+      { path: 'export-excel/user-activity/:userId', method: RequestMethod.POST },
       {
         path: 'export-excel/employees',
         method: RequestMethod.POST,

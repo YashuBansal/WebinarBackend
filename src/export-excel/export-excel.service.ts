@@ -22,6 +22,8 @@ import {
 } from 'src/documents/dto/user-documents.dto';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { CustomLeadTypeService } from 'src/custom-lead-type/custom-lead-type.service';
+import { UserActivityService } from 'src/user-activity/user-activity.service';
+import { UserActivityFilterDTO } from 'src/user-activity/dto/user-activity.dto';
 @Injectable()
 export class ExportExcelService {
   constructor(
@@ -32,6 +34,7 @@ export class ExportExcelService {
     private readonly webinarService: WebinarService,
     private readonly websocketGateway: WebsocketGateway,
     private readonly leadTypeService: CustomLeadTypeService,
+    private readonly userActivityService: UserActivityService
   ) {}
 
   emitProgress(socketId: null | string, value: number) {
@@ -432,6 +435,68 @@ export class ExportExcelService {
       fileName: fileName,
       fileSize: fileData.fileSize,
       filters: filterData,
+    });
+
+    updateProgress(100);
+    return fileData;
+  }
+
+  async generateExcelForUserActivities(
+    adminId: Types.ObjectId,
+    userId: Types.ObjectId,
+    limit: number,
+    columns: string[],
+    filters?: UserActivityFilterDTO,
+  ): Promise<UserDocumentResponse> {
+    const socketId = this.websocketGateway.activeUsers.get(String(adminId));
+    let lastProgress = 0;
+    const updateProgress = (current) => {
+      if (current - lastProgress >= 5) {
+        // 5% increments
+        this.emitProgress(socketId, current);
+        lastProgress = current;
+      }
+    };
+
+    updateProgress(10);
+
+    const aggregationResult = await this.userActivityService.getUserActivitiesByUser(
+      userId,
+      1,
+      limit,
+      filters
+    );
+
+    console.log(aggregationResult.data)
+    updateProgress(50);
+
+    const fileName = `UserActivities-${Date.now()}.xlsx`;
+    const userDir = this.getUserDirectory(`${adminId}`);
+    const filePath = path.join(userDir, fileName);
+
+    const payload = {
+      data: aggregationResult.data || [],
+      columns: columns.map((col) => ({
+        header: col,
+        key: col,
+        width: 20,
+      })),
+      filePath,
+      isKey: true,
+    };
+
+    const workerPath = path.resolve(
+      __dirname,
+      '../workers/generate-excel.worker.js',
+    );
+    const fileData = await this.generateExcel(payload, workerPath);
+    updateProgress(80);
+    this.createUserDocuments({
+      userId: `${adminId}`,
+      filePath: filePath,
+      fileName: fileName,
+      fileSize: fileData.fileSize,
+      filters: filters,
     });
 
     updateProgress(100);

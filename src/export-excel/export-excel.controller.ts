@@ -15,11 +15,17 @@ import { Response } from 'express';
 import * as fs from 'fs';
 import { GetClientsFilterDto } from 'src/users/dto/filters.dto';
 import { AdminId, Id } from 'src/decorators/custom.decorator';
-import { ExportGroupedAttendeesDTO, ExportWebinarAttendeesDTO, GroupedAttendeesFilterDto } from 'src/attendees/dto/attendees.dto';
+import {
+  ExportGroupedAttendeesDTO,
+  ExportWebinarAttendeesDTO,
+  GroupedAttendeesFilterDto,
+} from 'src/attendees/dto/attendees.dto';
 import { WebinarFilterDTO } from 'src/webinar/dto/webinar-filter.dto';
 import { EmployeeFilterDTO } from 'src/users/dto/employee-filter.dto';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import * as path from 'path';
+import { Types } from 'mongoose';
+import { UserActivityFilterDTO } from 'src/user-activity/dto/user-activity.dto';
 
 @Controller('export-excel')
 export class ExportExcelController {
@@ -81,10 +87,7 @@ export class ExportExcelController {
   }
 
   @Delete('/user-documents/:id')
-  async deleteUserDocument(
-    @Id() userId: string,
-    @Param('id') id: string,
-  ) {
+  async deleteUserDocument(@Id() userId: string, @Param('id') id: string) {
     if (!userId || !id)
       throw new BadRequestException(
         'User ID and Document ID are required to fetch user documents.',
@@ -99,14 +102,14 @@ export class ExportExcelController {
     @Query('limit') limit: string,
     @Query('columns') columns: string,
     @Res() res: Response,
-    @Id() superAdminId: string
+    @Id() superAdminId: string,
   ): Promise<void> {
     try {
       const filePath = await this.exportExcelService.generateExcelForClients(
         parseInt(limit),
         columns ? columns.split(',') : [],
         filters,
-        superAdminId
+        superAdminId,
       );
 
       // Stream the file to the client
@@ -144,7 +147,7 @@ export class ExportExcelController {
           adminId,
           body?.validCall,
           body?.assignmentType,
-          body.sort
+          body.sort,
         );
 
       // Stream the file to the client
@@ -206,6 +209,50 @@ export class ExportExcelController {
     }
   }
 
+  @Post('/user-activity/:userId')
+  async generateExcelForUserActivities(
+    @Body()
+    body: {
+      filters: UserActivityFilterDTO;
+      columns: string[];
+      fieldName: string;
+    },
+    @Id() adminId: string,
+    @Query('limit') limit: string,
+    @Param('userId') userId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      if (!adminId)
+        throw new BadRequestException(
+          'Admin ID is required to download webinars Excel file.',
+        );
+      const filePath =
+        await this.exportExcelService.generateExcelForUserActivities(
+          new Types.ObjectId(`${adminId}`),
+          new Types.ObjectId(`${userId}`),
+          parseInt(limit),
+          body.columns,
+          body.filters,
+        );
+
+      // Stream the file to the client
+      res.setHeader('Content-Disposition', `attachment; filename="users.xlsx"`);
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+
+      const fileStream = fs.createReadStream(filePath.filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to download Excel file. Please try again later.',
+        error: error.message,
+      });
+    }
+  }
+
   @Post('/attendees')
   async downloadAttendees(
     @Body()
@@ -223,7 +270,7 @@ export class ExportExcelController {
         body.columns,
         body.filters,
         adminId,
-        body.sort
+        body.sort,
       );
 
       // Stream the file to the client
