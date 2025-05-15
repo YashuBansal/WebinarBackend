@@ -47,9 +47,9 @@ export class AttendeeLogService {
     return await this.attendeeLogModel.insertMany(data, { session });
   }
 
-  async fetchAttendeeLogsByAttendee(email: string) {
+  async fetchAttendeeLogsByAttendee(email: string, adminId: Types.ObjectId) {
     return await this.attendeeLogModel
-      .find({ attendee: email })
+      .find({ attendee: email, adminId })
       .sort({ createdAt: -1 });
   }
 

@@ -1,5 +1,7 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { AttendeeLogService } from './attendee-log.service';
+import { AdminId } from 'src/decorators/custom.decorator';
+import { Types } from 'mongoose';
 
 @Controller('attendee-log')
 export class AttendeeLogController {
@@ -8,9 +10,13 @@ export class AttendeeLogController {
   @Get('/:email')
   async getActiveInactiveAssignments(
     @Param('email') email: string,
+    @AdminId() adminId: string
   ): Promise<any> {
     const result =
-      await this.attendeeLogService.fetchAttendeeLogsByAttendee(email);
+      await this.attendeeLogService.fetchAttendeeLogsByAttendee(email
+
+        , new Types.ObjectId(`${adminId}`)
+      );
     return result;
   }
 }

@@ -5,14 +5,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { NextFunction, Request, Response } from 'express';
+import { NextFunction, Response } from 'express';
 import { Types } from 'mongoose';
-import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class GetAdminIdMiddleware implements NestMiddleware {
   constructor(
-    private readonly usersService: UsersService,
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
   ) {}
