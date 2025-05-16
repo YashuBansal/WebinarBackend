@@ -13,6 +13,8 @@ import {
   notificationType,
 } from 'src/schemas/notification.schema';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
+import { SocketEvents } from 'src/websocket/dto/socket.dto';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class UserActivityService {
@@ -21,24 +23,41 @@ export class UserActivityService {
     private readonly userActivityModel: Model<UserActivity>,
     private readonly notificationService: NotificationService,
     private readonly socketGateway: WebsocketGateway,
+    private readonly configService: ConfigService,
   ) {}
 
   async addUserActivity(
     user: string,
     adminId: string,
     dto: CreateUserActivityDto,
+    role: string,
   ) {
     if (!user || !adminId) {
       throw new Error('User ID and Admin ID are required.');
     }
 
-    return this.userActivityModel.create({
+    const activity = await this.userActivityModel.create({
       ...dto,
       user: new Types.ObjectId(user),
       adminId: new Types.ObjectId(adminId),
       action: dto.action,
       details: dto.details || '',
     });
+    if (
+      String(role) ===
+        String(this.configService.get('appRoles')['EMPLOYEE_SALES']) ||
+      String(role) ===
+        String(this.configService.get('appRoles')['EMPLOYEE_REMINDER'])
+    ) {
+      console.log('emp event');
+      this.socketGateway.emitSocketEvent(
+        adminId,
+        SocketEvents.EMPLOYEE_ACTIVITY_LOG,
+        {
+          activity,
+        },
+      );
+    }
   }
 
   async getUserActivitiesByUser(
@@ -156,7 +175,8 @@ export class UserActivityService {
       .sort({ createdAt: -1 }) // Sort by creation date descending
       .skip(skip) // Apply skip for pagination
       .limit(limit) // Apply limit for pagination
-      .select('action details createdAt updatedAt').lean(); // Select desired fields
+      .select('action details createdAt updatedAt')
+      .lean(); // Select desired fields
 
     // 4. Get total count with the same filters
     // It's crucial to use the *same* query object for countDocuments

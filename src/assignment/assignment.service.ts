@@ -2558,6 +2558,12 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
     return this.assignmentsModel.findOne({ attendee }).exec();
   }
 
+  async getActiveAssignmentByAttendeeId(attendee: Types.ObjectId) {
+    return this.assignmentsModel
+      .findOne({ attendee, status: AssignmentStatus.ACTIVE })
+      .exec();
+  }
+
   async getEmployeeAssignments(
     startDate: Date,
     endDate: Date,

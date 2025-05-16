@@ -688,7 +688,7 @@ export class AttendeesService {
                   lastName: { $regex: filters.lastName, $options: 'i' },
                 }),
                 ...(filters.gender && {
-                  gender: { $regex: filters.gender, $options: 'i' },
+                  gender: filters.gender.trim().toLocaleLowerCase(),
                 }),
                 ...(filters.phone && {
                   phone: { $regex: filters.phone, $options: 'i' },
@@ -2307,7 +2307,9 @@ export class AttendeesService {
     });
   }
 
-
+  async getAttendeeById(attendee: string): Promise<Attendee | null> {
+    return this.attendeeModel.findById(new Types.ObjectId(`${attendee}`));
+  }
 
   /**
    * Performs a bulk write operation on the Attendee collection within a transaction session.
@@ -2321,16 +2323,29 @@ export class AttendeesService {
    */
   async bulkUpdateAttendees(
     updates: any[], // Using 'any' for simplicity, but you could type this more strictly if needed
-    session: ClientSession // Requires a session as it's designed for use within a transaction
-  ): Promise<any> { // Return type reflects Mongoose bulkWrite result object
+    session: ClientSession, // Requires a session as it's designed for use within a transaction
+  ): Promise<any> {
+    // Return type reflects Mongoose bulkWrite result object
     if (!session) {
-        // Although designed for transactions, adding a check is good practice
-        throw new Error('bulkUpdateAttendees requires a Mongoose client session.');
+      // Although designed for transactions, adding a check is good practice
+      throw new Error(
+        'bulkUpdateAttendees requires a Mongoose client session.',
+      );
     }
     if (!updates || updates.length === 0) {
-        console.log('bulkUpdateAttendees called with no updates. Returning early.');
-        // Return a result object indicating no operations were performed
-        return { acknowledged: true, insertedCount: 0, matchedCount: 0, modifiedCount: 0, deletedCount: 0, upsertedCount: 0, upsertedIds: {} };
+      console.log(
+        'bulkUpdateAttendees called with no updates. Returning early.',
+      );
+      // Return a result object indicating no operations were performed
+      return {
+        acknowledged: true,
+        insertedCount: 0,
+        matchedCount: 0,
+        modifiedCount: 0,
+        deletedCount: 0,
+        upsertedCount: 0,
+        upsertedIds: {},
+      };
     }
 
     try {
@@ -2344,7 +2359,6 @@ export class AttendeesService {
       // Mongoose's bulkWrite returns an object containing statistics about the operations performed.
       // Example: { acknowledged: true, insertedCount: 0, matchedCount: 5, modifiedCount: 5, deletedCount: 0, upsertedCount: 0, upsertedIds: {} }
       return result;
-
     } catch (error) {
       console.error('Error during Attendee bulk write operation:', error);
       // Re-throw the error so the calling transaction can catch and handle it

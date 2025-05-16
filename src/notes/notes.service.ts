@@ -15,6 +15,7 @@ import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { SocketEvents } from 'src/websocket/dto/socket.dto';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
+import { Attendee } from 'src/schemas/Attendee.schema';
 
 @Injectable()
 export class NotesService {
@@ -26,7 +27,7 @@ export class NotesService {
     @Inject(forwardRef(() => AttendeesService))
     private readonly attendeeService: AttendeesService,
     private readonly websocketGateway: WebsocketGateway,
-    private readonly attendeeLogService: AttendeeLogService
+    private readonly attendeeLogService: AttendeeLogService,
   ) {}
 
   async updateAssignmentDateOnNotes(
@@ -61,12 +62,29 @@ export class NotesService {
       }
     }
 
-    const attendee = await this.attendeeService.updateAttendee(
-      body.attendee,
-      adminId,
-      createdBy,
-      { status: body.status, ...(validCall ? { validCall } : {}) },
-    );
+    const isAssignment =
+      await this.assignService.getActiveAssignmentByAttendeeId(
+        new Types.ObjectId(`${body.attendee}`),
+      );
+
+    console.log('---- ', isAssignment);
+
+    let attendee: Attendee | null = null;
+
+    if (!isAssignment || String(isAssignment?.user) === String(createdBy)) {
+      attendee = await this.attendeeService.updateAttendee(
+        body.attendee,
+        adminId,
+        createdBy,
+        { status: body.status, ...(validCall ? { validCall } : {}) },
+      );
+    } else {
+      attendee = await this.attendeeService.getAttendeeById(body.attendee);
+    }
+
+    if (!attendee) {
+      throw new BadRequestException('Attendee does not exists');
+    }
 
     const note = await this.notesModel.create({
       ...body,
@@ -78,12 +96,12 @@ export class NotesService {
     });
 
     this.attendeeLogService.createSingleAttendeeLog({
-       attendee: attendee.email,
-       item: '',
-       action: AttendeeAction.NOTE,
-       details: `Note created by ${body.createdBy} with status: ${body.status}.`,
-       adminId: new Types.ObjectId(`${adminId}`)
-    })
+      attendee: attendee.email,
+      item: '',
+      action: AttendeeAction.NOTE,
+      details: `Note created by ${body.createdBy} with status: ${body.status}.`,
+      adminId: new Types.ObjectId(`${adminId}`),
+    });
 
     this.websocketGateway.emitSocketEvent(
       adminId,

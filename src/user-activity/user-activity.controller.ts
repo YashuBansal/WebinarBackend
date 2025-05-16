@@ -20,28 +20,27 @@ import {
 } from './dto/user-activity.dto';
 import { UserActivityService } from './user-activity.service';
 import mongoose, { Types } from 'mongoose';
-import { UsersService } from 'src/users/users.service';
 import { ConfigService } from '@nestjs/config';
 
 @Controller('user-activities')
 export class UserActivityController {
   constructor(
     private readonly userActivityService: UserActivityService,
-    private readonly userService: UsersService,
     private readonly configService: ConfigService,
   ) {}
 
   @Post()
   async addUserActivity(
     @Body() dto: CreateUserActivityDto,
-    @Req() req: Request,
     @AdminId() adminId: string,
     @Id() id: string,
+    @Role() role: string
   ) {
     const newLog = await this.userActivityService.addUserActivity(
       id,
       adminId,
       dto,
+      role
     );
 
     return {
