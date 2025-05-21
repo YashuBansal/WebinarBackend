@@ -7,6 +7,7 @@ import { GetClientsFilterDto } from 'src/users/dto/filters.dto';
 import { UsersService } from 'src/users/users.service';
 import {
   AttendeesFilterDto,
+  GroupedAttendeesFilterDto,
   GroupedAttendeesSortObject,
   WebinarAttendeesSortObject,
 } from 'src/attendees/dto/attendees.dto';
@@ -322,7 +323,7 @@ export class ExportExcelService {
   async generateExcelForAttendees(
     limit: number,
     columns: string[],
-    filterData: AttendeesFilterDto,
+    filterData: GroupedAttendeesFilterDto,
     adminId: string,
     sort?: GroupedAttendeesSortObject,
   ) {

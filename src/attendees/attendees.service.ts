@@ -70,6 +70,10 @@ export class AttendeesService {
     return result;
   }
 
+  checkLength(arr?: string[]): boolean {
+    return !!(Array.isArray(arr) && arr.length);
+  }
+
   emitProgress(socketId: null | string, value: number) {
     if (socketId) {
       this.websocketGateway.server.to(socketId).emit('import-export', {
@@ -322,7 +326,12 @@ export class AttendeesService {
 
             const updatedAttendees = await this.attendeeModel.updateMany(
               { _id: { $in: empData.attendees.map((a) => a._id) } },
-              { $set: { assignedTo: new Types.ObjectId(`${empId}`) } },
+              {
+                $set: {
+                  assignedTo: new Types.ObjectId(`${empId}`),
+                  status: null,
+                },
+              },
               { session: currentSession },
             );
 
@@ -1194,6 +1203,7 @@ export class AttendeesService {
                   ? new Types.ObjectId(assignedTo)
                   : null,
               }),
+          status: null,
         },
       },
       { new: true },
@@ -1409,6 +1419,15 @@ export class AttendeesService {
       sortOrder: SortOrder.ASC,
     },
   ) {
+    const isLastFilters =
+      this.checkLength(filters.salesAssignedTo) ||
+      this.checkLength(filters.salesLastStatus) ||
+      this.checkLength(filters.reminderAssignedTo) ||
+      this.checkLength(filters.reminderLastStatus) ||
+      this.checkLength(filters.tags);
+
+      console.log('is filters ----  > ', isLastFilters, filters)
+
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -1420,8 +1439,78 @@ export class AttendeesService {
         },
       },
       {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+      {
         $group: {
           _id: '$email',
+          salesAssignedToList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $ne: ['$assignedTo', null] },
+                  ],
+                },
+                '$assignedTo',
+                '$$REMOVE',
+              ],
+            },
+          },
+          salesLastStatusList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $ne: ['$status', null] },
+                  ],
+                },
+                '$status',
+                '$$REMOVE',
+              ],
+            },
+          },
+          reminderAssignedToList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', false] },
+                    { $ne: ['$assignedTo', null] },
+                  ],
+                },
+                '$assignedTo',
+                '$$REMOVE',
+              ],
+            },
+          },
+          reminderLastStatusList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', false] },
+                    { $ne: ['$status', null] },
+                  ],
+                },
+                '$status',
+                '$$REMOVE',
+              ],
+            },
+          },
+          tagsList: {
+            $push: {
+              $cond: [
+                { $gt: [{ $size: '$tags' }, 0] }, // Only if tags array has items
+                '$tags',
+                '$$REMOVE', // Skip empty arrays
+              ],
+            },
+          },
           adminId: {
             $first: '$adminId',
           },
@@ -1430,14 +1519,6 @@ export class AttendeesService {
           },
           attendeeId: {
             $first: '$_id',
-          },
-          records: {
-            $push: '$$ROOT',
-          },
-          attendedWebinarCount: {
-            $sum: {
-              $cond: [{ $gt: ['$timeInSession', 0] }, 1, 0],
-            },
           },
           registeredWebinarCount: {
             $sum: {
@@ -1461,7 +1542,7 @@ export class AttendeesService {
         },
       },
 
-      ...(filters.leadType
+      ...(this.checkLength(filters.leadType)
         ? [
             {
               $lookup: {
@@ -1475,9 +1556,9 @@ export class AttendeesService {
                           { $eq: ['$adminId', adminId] },
                           { $eq: ['$email', '$$tempMail'] },
                           {
-                            $eq: [
+                            $in: [
                               '$leadType',
-                              new Types.ObjectId(filters.leadType),
+                              filters.leadType.map((a) => new Types.ObjectId(a)),
                             ],
                           },
                         ],
@@ -1498,63 +1579,67 @@ export class AttendeesService {
           ]
         : []),
 
-      ...(filters.lastAssignedTo || filters.lastStatus
+      ...(isLastFilters
         ? [
             {
               $addFields: {
-                lastAssignedTo: {
-                  $getField: {
-                    field: 'assignedTo',
-                    input: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: '$records',
-                            as: 'rec',
-                            cond: {
-                              $and: [
-                                { $eq: ['$$rec.isAttended', true] },
-                                { $ne: ['$$rec.assignedTo', null] },
-                              ],
-                            },
-                          },
-                        },
-                        0,
-                      ],
-                    },
+                tags: {
+                  $reduce: {
+                    input: '$tagsList',
+                    initialValue: [],
+                    in: { $setUnion: ['$$value', '$$this'] },
                   },
                 },
-                lastStatus: {
-                  $getField: {
-                    field: 'status',
-                    input: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: '$records',
-                            as: 'rec',
-                            cond: {
-                              $and: [
-                                { $eq: ['$$rec.isAttended', true] },
-                                { $ne: ['$$rec.status', null] },
-                              ],
-                            },
-                          },
-                        },
-                        0,
-                      ],
-                    },
-                  },
+                salesAssignedTo: {
+                  $first: '$salesAssignedToList',
+                },
+                salesLastStatus: {
+                  $first: '$salesLastStatusList',
+                },
+                reminderAssignedTo: {
+                  $first: '$reminderAssignedToList',
+                },
+                reminderLastStatus: {
+                  $first: '$reminderLastStatusList',
                 },
               },
             },
             {
               $match: {
-                ...(filters.lastAssignedTo && {
-                  lastAssignedTo: new Types.ObjectId(filters.lastAssignedTo),
+                ...(this.checkLength(filters.salesAssignedTo) && {
+                  salesAssignedTo: {
+                    $in: filters.salesAssignedTo.map(
+                      (a) => new Types.ObjectId(a),
+                    ),
+                  },
                 }),
-                ...(filters.lastStatus && {
-                  lastStatus: filters.lastStatus,
+                ...(this.checkLength(filters.salesLastStatus) && {
+                  salesLastStatus: {
+                    $in: filters.salesLastStatus,
+                  },
+                }),
+                ...(this.checkLength(filters.reminderAssignedTo) && {
+                  reminderAssignedTo: {
+                    $in: filters.reminderAssignedTo.map(
+                      (a) => new Types.ObjectId(a),
+                    ),
+                  },
+                }),
+                ...(this.checkLength(filters.reminderLastStatus) && {
+                  reminderLastStatus: {
+                    $in: filters.reminderLastStatus,
+                  },
+                }),
+
+                ...(this.checkLength(filters.tags) && {
+                  $expr: {
+                    $gt: [
+                      {
+                        $size: { $setIntersection: ['$tags', filters.tags] },
+                      },
+                      0,
+                    ],
+                  },
                 }),
               },
             },
@@ -1666,67 +1751,34 @@ export class AttendeesService {
               },
             },
           ]),
-      ...(!(filters.lastAssignedTo || filters.lastStatus)
+      ...(!isLastFilters
         ? [
             {
               $addFields: {
-                lastAssignedTo: {
-                  $getField: {
-                    field: 'assignedTo',
-                    input: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: '$records',
-                            as: 'rec',
-                            cond: {
-                              $and: [
-                                { $eq: ['$$rec.isAttended', true] },
-                                { $ne: ['$$rec.assignedTo', null] },
-                              ],
-                            },
-                          },
-                        },
-                        0,
-                      ],
-                    },
+                tags: {
+                  $reduce: {
+                    input: '$tagsList',
+                    initialValue: [],
+                    in: { $setUnion: ['$$value', '$$this'] },
                   },
                 },
-                lastStatus: {
-                  $getField: {
-                    field: 'status',
-                    input: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: '$records',
-                            as: 'rec',
-                            cond: {
-                              $and: [
-                                { $eq: ['$$rec.isAttended', true] },
-                                { $ne: ['$$rec.status', null] },
-                              ],
-                            },
-                          },
-                        },
-                        0,
-                      ],
-                    },
-                  },
+                salesAssignedTo: {
+                  $first: '$salesAssignedToList',
+                },
+                salesLastStatus: {
+                  $first: '$salesLastStatusList',
+                },
+                reminderAssignedTo: {
+                  $first: '$reminderAssignedToList',
+                },
+                reminderLastStatus: {
+                  $first: '$reminderLastStatusList',
                 },
               },
             },
           ]
         : []),
 
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'lastAssignedTo',
-          foreignField: '_id',
-          as: 'lastAssignedToDetails',
-        },
-      },
       ...(filters?.enrollments?.length
         ? []
         : [
@@ -1781,11 +1833,12 @@ export class AttendeesService {
           ]),
       {
         $project: {
-          lastAssignedTo: {
-            $arrayElemAt: ['$lastAssignedToDetails.userName', 0],
-          },
+          reminderLastStatus: 1,
           enrollments: 1,
-          lastStatus: 1,
+          salesLastStatus: 1,
+          reminderAssignedTo: 1,
+          salesAssignedTo: 1,
+          tags: 1,
           leadType: '$lead.leadType',
           adminId: 1,
           timeInSession: 1,
@@ -1868,7 +1921,7 @@ export class AttendeesService {
         },
       },
 
-      ...(filters.leadType
+      ...(this.checkLength(filters.tags)
         ? [
             {
               $lookup: {
@@ -1881,12 +1934,6 @@ export class AttendeesService {
                         $and: [
                           { $eq: ['$adminId', adminId] },
                           { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $eq: [
-                              '$leadType',
-                              new Types.ObjectId(filters.leadType),
-                            ],
-                          },
                         ],
                       },
                     },
@@ -1900,69 +1947,6 @@ export class AttendeesService {
               $unwind: {
                 path: '$lead',
                 preserveNullAndEmptyArrays: false,
-              },
-            },
-          ]
-        : []),
-
-      ...(filters.lastAssignedTo || filters.lastStatus
-        ? [
-            {
-              $addFields: {
-                lastAssignedTo: {
-                  $getField: {
-                    field: 'assignedTo',
-                    input: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: '$records',
-                            as: 'rec',
-                            cond: {
-                              $and: [
-                                { $eq: ['$$rec.isAttended', true] },
-                                { $ne: ['$$rec.assignedTo', null] },
-                              ],
-                            },
-                          },
-                        },
-                        0,
-                      ],
-                    },
-                  },
-                },
-                lastStatus: {
-                  $getField: {
-                    field: 'status',
-                    input: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: '$records',
-                            as: 'rec',
-                            cond: {
-                              $and: [
-                                { $eq: ['$$rec.isAttended', true] },
-                                { $ne: ['$$rec.status', null] },
-                              ],
-                            },
-                          },
-                        },
-                        0,
-                      ],
-                    },
-                  },
-                },
-              },
-            },
-            {
-              $match: {
-                ...(filters.lastAssignedTo && {
-                  lastAssignedTo: new Types.ObjectId(filters.lastAssignedTo),
-                }),
-                ...(filters.lastStatus && {
-                  lastStatus: filters.lastStatus,
-                }),
               },
             },
           ]
@@ -2073,58 +2057,6 @@ export class AttendeesService {
               },
             },
           ]),
-      ...(!(filters.lastAssignedTo || filters.lastStatus)
-        ? [
-            {
-              $addFields: {
-                lastAssignedTo: {
-                  $getField: {
-                    field: 'assignedTo',
-                    input: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: '$records',
-                            as: 'rec',
-                            cond: {
-                              $and: [
-                                { $eq: ['$$rec.isAttended', true] },
-                                { $ne: ['$$rec.assignedTo', null] },
-                              ],
-                            },
-                          },
-                        },
-                        0,
-                      ],
-                    },
-                  },
-                },
-                lastStatus: {
-                  $getField: {
-                    field: 'status',
-                    input: {
-                      $arrayElemAt: [
-                        {
-                          $filter: {
-                            input: '$records',
-                            as: 'rec',
-                            cond: {
-                              $and: [
-                                { $eq: ['$$rec.isAttended', true] },
-                                { $ne: ['$$rec.status', null] },
-                              ],
-                            },
-                          },
-                        },
-                        0,
-                      ],
-                    },
-                  },
-                },
-              },
-            },
-          ]
-        : []),
 
       {
         $lookup: {

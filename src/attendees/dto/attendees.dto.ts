@@ -52,7 +52,6 @@ export class CreateAttendeeDto {
   @IsNotEmpty({ message: 'IsAttended is required' })
   isAttended: boolean;
 
-
   @IsOptional()
   @Transform(({ value }) => value?.toLowerCase())
   @IsEnum(['male', 'female', 'others'], {
@@ -141,7 +140,6 @@ export class UpdateAttendeeDto {
   @IsString()
   createdBy?: string;
 
-
   @IsOptional()
   @IsString()
   webinarName?: string;
@@ -204,9 +202,8 @@ export class AttendeesFilterDto {
 
   @IsOptional()
   @IsArray()
-  @IsMongoId({each: true})
+  @IsMongoId({ each: true })
   enrollments?: string[];
-
 }
 
 export class GroupedAttendeesFilterDto {
@@ -219,8 +216,9 @@ export class GroupedAttendeesFilterDto {
   timeInSession?: RangeNumberDto;
 
   @IsOptional()
-  @IsMongoId()
-  leadType?: Types.ObjectId;
+  @IsArray()
+  @IsMongoId({ each: true })
+  leadType?: string[];
 
   @IsOptional()
   @IsObject()
@@ -231,24 +229,40 @@ export class GroupedAttendeesFilterDto {
   registeredWebinarCount?: RangeNumberDto;
 
   @IsOptional()
-  @IsMongoId()
-  lastAssignedTo?: string;
-
-  @IsOptional()
-  @IsString()
-  lastStatus?: string;
+  @IsArray()
+  @IsMongoId({ each: true })
+  salesAssignedTo?: string[];
 
   @IsOptional()
   @IsArray()
-  @IsMongoId({each: true})
-  enrollments?: string[]
+  @IsString({ each: true })
+  salesLastStatus?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  reminderAssignedTo?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  reminderLastStatus?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  enrollments?: string[];
 }
 
 export enum SortOrder {
   ASC = 'asc',
   DESC = 'desc',
 }
-
 
 export enum WebinarAttendeesSortBy {
   EMAIL = 'email',
@@ -354,9 +368,7 @@ export class SwapAttendeeFieldsDTO {
   @IsOptional()
   @IsString()
   assignmentType?: string;
-
 }
-
 
 export class ExportWebinarAttendeesDTO extends GetAttendeesDTO {
   @IsArray()
@@ -369,10 +381,7 @@ export class ExportWebinarAttendeesDTO extends GetAttendeesDTO {
   limit: number;
 }
 
-
 export class ExportGroupedAttendeesDTO {
-
-
   @IsNotEmpty()
   @ValidateNested()
   @Type(() => GroupedAttendeesFilterDto)
@@ -390,26 +399,22 @@ export class ExportGroupedAttendeesDTO {
   @IsOptional()
   @ValidateNested()
   @Type(() => GroupedAttendeesSortObject)
-  sort?: GroupedAttendeesSortObject;  
+  sort?: GroupedAttendeesSortObject;
 }
 
-export class DeleteWebinarAttendeesDTO{
-
+export class DeleteWebinarAttendeesDTO {
   @IsArray()
   @IsNotEmpty()
   @IsMongoId({ each: true })
   attendees: string[];
 
   @IsMongoId()
-  webinarId: string
+  webinarId: string;
 }
 
-
-export class DeleteAllAttendeesDTO{
-
+export class DeleteAllAttendeesDTO {
   @IsArray()
   @IsNotEmpty()
   @IsEmail({}, { each: true })
   attendees: string[];
-
 }

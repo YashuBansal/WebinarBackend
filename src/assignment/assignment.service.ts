@@ -299,7 +299,7 @@ export class AssignmentService {
             _id: { $in: attendeeIds },
             adminId: new Types.ObjectId(`${adminId}`),
           },
-          { assignedTo: new Types.ObjectId(`${data.user}`) },
+          { assignedTo: new Types.ObjectId(`${data.user}`), status: null },
           currentSession,
         );
 
@@ -551,7 +551,7 @@ export class AssignmentService {
             attendeeBulkUpdates.push({
               updateOne: {
                 filter: { _id: attendeeId, adminId: adminObjectId },
-                update: { assignedTo: currentEmployee._id },
+                update: { assignedTo: currentEmployee._id, status: null },
               },
             });
 
