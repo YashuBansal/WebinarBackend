@@ -444,152 +444,92 @@ export class AssignmentService {
     let attendeesAssignedCount = 0;
     const totalAttendeesToAssign = attendeeIds.length;
 
-    if (forceAssign) {
-      // --- Force Assign Logic (Ignore Limits, Distribute Equally among roleEmps) ---
 
-      const employeesToDistribute = roleEmps; // Use all employees with the correct role
+    const availableEmployees = roleEmps.filter(
+      (emp) => (emp.dailyContactCount || 0) < (emp.dailyContactLimit || 0),
+    );
 
-      if (employeesToDistribute.length === 0) {
-        // This check is technically redundant due to the earlier roleEmps check, but good for clarity
-        throw new BadRequestException(
-          `No employees found with role: ${requiredRole} for forced assignment.`,
-        );
-      }
+    if (availableEmployees.length === 0) {
+      throw new BadRequestException(
+        `No employees with role "${requiredRole}" have available daily contact capacity.`,
+      );
+    }
 
-      let currentEmployeeIndex = 0;
-      for (const attendeeId of attendeeIds) {
-        const currentEmployee =
-          employeesToDistribute[
-            currentEmployeeIndex % employeesToDistribute.length
-          ];
+    let currentEmployeeIndex = 0;
+    // Loop through each attendee to assign them
+    for (const attendeeId of attendeeIds) {
+      let assigned = false;
+
+      // Find the next available employee who still has capacity *in this batch*
+      const startEmployeeIndex = currentEmployeeIndex; // Track where we started searching
+
+      do {
+        const currentEmployee = availableEmployees[currentEmployeeIndex];
         const employeeIdStr = currentEmployee._id.toString();
 
-        // Create assignment
-        assignmentsToCreate.push({
-          adminId: adminObjectId,
-          user: currentEmployee._id,
-          webinar: webinarObjectId,
-          attendee: attendeeId,
-          recordType: data.recordType,
-          status: AssignmentStatus.ACTIVE,
-        });
+        // Calculate current capacity used in this batch for this employee
+        const assignedInBatch =
+          employeeDailyCountUpdates.get(employeeIdStr) || 0;
 
-        // Prepare attendee update
-        attendeeBulkUpdates.push({
-          updateOne: {
-            filter: { _id: attendeeId, adminId: adminObjectId },
-            update: { assignedTo: currentEmployee._id },
-          },
-        });
+        // Check if this employee has capacity (total assigned today < limit)
+        if (
+          (currentEmployee.dailyContactCount || 0) + assignedInBatch <
+          (currentEmployee.dailyContactLimit || 0)
+        ) {
+          // Assign the attendee to this employee
+          assignmentsToCreate.push({
+            adminId: adminObjectId,
+            user: currentEmployee._id, // This is the assigned employee's ID
+            webinar: webinarObjectId,
+            attendee: attendeeId,
+            recordType: data.recordType,
+            status: AssignmentStatus.ACTIVE,
+          });
 
-        // Track count increase for this employee (still increment daily count even if forced)
-        employeeDailyCountUpdates.set(
-          employeeIdStr,
-          (employeeDailyCountUpdates.get(employeeIdStr) || 0) + 1,
-        );
+          // Prepare for attendee update
+          attendeeBulkUpdates.push({
+            updateOne: {
+              filter: { _id: attendeeId, adminId: adminObjectId },
+              update: { assignedTo: currentEmployee._id, status: null },
+            },
+          });
 
-        attendeesAssignedCount++; // In force assign, all attendees are assigned if employees exist
+          // Track count increase for this employee in this batch
+          employeeDailyCountUpdates.set(employeeIdStr, assignedInBatch + 1);
 
-        // Move to the next employee for round-robin
-        currentEmployeeIndex++;
-      }
-
-      // All attendees were attempted assignment. attendeesAssignedCount will equal totalAttendeesToAssign
-      // unless attendeeIds was empty initially.
-      if (attendeesAssignedCount === 0 && totalAttendeesToAssign > 0) {
-        // This case should ideally not be hit if roleEmps.length > 0, but as a fallback
-        throw new InternalServerErrorException(
-          'Failed to generate assignments despite having employees and attendees.',
-        );
-      }
-    } else {
-      // --- Normal Assign Logic (Respect Limits, Distribute Among Available Employees) ---
-
-      // Filter employees who still have capacity for today
-      const availableEmployees = roleEmps.filter(
-        (emp) => (emp.dailyContactCount || 0) < (emp.dailyContactLimit || 0),
-      );
-
-      if (availableEmployees.length === 0) {
-        throw new BadRequestException(
-          `No employees with role "${requiredRole}" have available daily contact capacity.`,
-        );
-      }
-
-      let currentEmployeeIndex = 0;
-      // Loop through each attendee to assign them
-      for (const attendeeId of attendeeIds) {
-        let assigned = false;
-
-        // Find the next available employee who still has capacity *in this batch*
-        const startEmployeeIndex = currentEmployeeIndex; // Track where we started searching
-
-        do {
-          const currentEmployee = availableEmployees[currentEmployeeIndex];
-          const employeeIdStr = currentEmployee._id.toString();
-
-          // Calculate current capacity used in this batch for this employee
-          const assignedInBatch =
-            employeeDailyCountUpdates.get(employeeIdStr) || 0;
-
-          // Check if this employee has capacity (total assigned today < limit)
-          if (
-            (currentEmployee.dailyContactCount || 0) + assignedInBatch <
-            (currentEmployee.dailyContactLimit || 0)
-          ) {
-            // Assign the attendee to this employee
-            assignmentsToCreate.push({
-              adminId: adminObjectId,
-              user: currentEmployee._id, // This is the assigned employee's ID
-              webinar: webinarObjectId,
-              attendee: attendeeId,
-              recordType: data.recordType,
-              status: AssignmentStatus.ACTIVE,
-            });
-
-            // Prepare for attendee update
-            attendeeBulkUpdates.push({
-              updateOne: {
-                filter: { _id: attendeeId, adminId: adminObjectId },
-                update: { assignedTo: currentEmployee._id, status: null },
-              },
-            });
-
-            // Track count increase for this employee in this batch
-            employeeDailyCountUpdates.set(employeeIdStr, assignedInBatch + 1);
-
-            attendeesAssignedCount++;
-            assigned = true; // Mark attendee as assigned
-            break; // Move to the next employee
-          }
-
-          // If employee is full for this batch, move to the next employee
-          currentEmployeeIndex =
-            (currentEmployeeIndex + 1) % availableEmployees.length;
-        } while (currentEmployeeIndex !== startEmployeeIndex); // Loop until we find an employee or cycle back
-
-        // If after checking all available employees, the attendee wasn't assigned,
-        // it means all available employees reached their daily limit with the current assignments.
-        if (!assigned) {
-          console.warn(
-            `Attendee ${attendeeId.toString()} could not be assigned due to employee daily limits.`,
-          );
-          // We stop assigning further attendees from the input list
-          break; // Stop processing remaining attendees
+          attendeesAssignedCount++;
+          assigned = true; // Mark attendee as assigned
+          break; // Move to the next employee
         }
 
-        // Move to the next employee for the *next* attendee, maintaining the round-robin distribution
+        // If employee is full for this batch, move to the next employee
         currentEmployeeIndex =
           (currentEmployeeIndex + 1) % availableEmployees.length;
+      } while (currentEmployeeIndex !== startEmployeeIndex); // Loop until we find an employee or cycle back
+
+      // If after checking all available employees, the attendee wasn't assigned,
+      // it means all available employees reached their daily limit with the current assignments.
+      if (!assigned && !forceAssign) {
+        console.warn(
+          `Attendee ${attendeeId.toString()} could not be assigned due to employee daily limits.`,
+        );
+        // We stop assigning further attendees from the input list
+        break; // Stop processing remaining attendees
+      }else if (!assigned && forceAssign) {
+        // write logic to 
       }
 
-      // If no assignments were created despite having attendees and employees,
-      // it means the first attendee couldn't be assigned due to limits.
-      if (assignmentsToCreate.length === 0 && totalAttendeesToAssign > 0) {
-        throw new BadRequestException(
-          'Could not assign any attendees. All eligible employees may have reached their daily limit.',
-        );
-      }
+      // Move to the next employee for the *next* attendee, maintaining the round-robin distribution
+      currentEmployeeIndex =
+        (currentEmployeeIndex + 1) % availableEmployees.length;
+    }
+
+    // If no assignments were created despite having attendees and employees,
+    // it means the first attendee couldn't be assigned due to limits.
+    if (assignmentsToCreate.length === 0 && totalAttendeesToAssign > 0) {
+      throw new BadRequestException(
+        'Could not assign any attendees. All eligible employees may have reached their daily limit.',
+      );
     }
 
     // --- 3. Perform Database Operations within Transaction ---
@@ -699,7 +639,6 @@ export class AssignmentService {
     if (unassignedCount > 0) {
       message += ` ${unassignedCount} attendee(s) could not be assigned due to employee daily limits.`;
     }
-    // If forceAssign was true, unassignedCount will be 0 if roleEmps existed.
     // The message logic still works correctly.
 
     return {
