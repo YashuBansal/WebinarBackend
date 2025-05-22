@@ -431,12 +431,13 @@ export class AssignmentService {
 
     if (!Array.isArray(roleEmps) || roleEmps.length === 0) {
       throw new BadRequestException(
-        `No employees found with role: ${requiredRole}`,
+        `No employees found with role: "${requiredRole}"`,
       );
     }
 
     // --- 2. Determine Employees for Assignment & Distribute Attendees ---
 
+    const attendeeLogsToCreate: any[] = []; // Array to hold new attendee log documents
     const assignmentsToCreate: any[] = []; // Array to hold new assignment documents
     const attendeeBulkUpdates: any[] = []; // Array to hold attendee update operations
     const employeeDailyCountUpdates = new Map<string, number>(); // Map<employeeId, countIncrement>
@@ -444,91 +445,198 @@ export class AssignmentService {
     let attendeesAssignedCount = 0;
     const totalAttendeesToAssign = attendeeIds.length;
 
-
+    // Filter for employees who initially have capacity (for the standard pass)
     const availableEmployees = roleEmps.filter(
       (emp) => (emp.dailyContactCount || 0) < (emp.dailyContactLimit || 0),
     );
 
-    if (availableEmployees.length === 0) {
-      throw new BadRequestException(
-        `No employees with role "${requiredRole}" have available daily contact capacity.`,
-      );
+    const attendeesData = await this.attendeeService.getAttendeesByIds(
+      new Types.ObjectId(`${adminId}`),
+      attendeeIds,
+    );
+    if (!attendeesData) {
+      throw new NotFoundException('Attendee not found');
     }
 
-    let currentEmployeeIndex = 0;
+    const attendeeIdToEmailMap = new Map<string, string>();
+    attendeesData.forEach((attendee) => {
+      attendeeIdToEmailMap.set(attendee._id.toString(), attendee.email);
+    });
+
+    const employeeIdTOUserNameMap = new Map<string, string>();
+
+    roleEmps.forEach((employee) => {
+      employeeIdTOUserNameMap.set(employee._id.toString(), employee.userName);
+    });
+
+    // NOTE: Even if availableEmployees is empty, if forceAssign is true, we proceed
+    // as force assign uses *all* roleEmps. If forceAssign is false and availableEmployees is empty,
+    // no standard assignments are possible, and the !assigned check will handle it.
+
+    let currentEmployeeIndex = 0; // Index for the standard round-robin among *available* employees
+
     // Loop through each attendee to assign them
     for (const attendeeId of attendeeIds) {
       let assigned = false;
+      let assignedEmployeeId: Types.ObjectId | null = null; // To store the ID of the employee ultimately assigned
 
-      // Find the next available employee who still has capacity *in this batch*
-      const startEmployeeIndex = currentEmployeeIndex; // Track where we started searching
+      // --- Attempt Standard Assignment (Round Robin among Initially Available Employees) ---
+      // This loop iterates through the `availableEmployees` array
+      if (availableEmployees.length > 0) {
+        const startEmployeeIndex = currentEmployeeIndex; // Track where we started searching
 
-      do {
-        const currentEmployee = availableEmployees[currentEmployeeIndex];
-        const employeeIdStr = currentEmployee._id.toString();
+        do {
+          const currentEmployee = availableEmployees[currentEmployeeIndex];
+          const employeeIdStr = currentEmployee._id.toString();
 
-        // Calculate current capacity used in this batch for this employee
-        const assignedInBatch =
-          employeeDailyCountUpdates.get(employeeIdStr) || 0;
+          // Calculate current capacity used in this batch for this employee
+          const assignedInBatch =
+            employeeDailyCountUpdates.get(employeeIdStr) || 0;
 
-        // Check if this employee has capacity (total assigned today < limit)
-        if (
-          (currentEmployee.dailyContactCount || 0) + assignedInBatch <
-          (currentEmployee.dailyContactLimit || 0)
-        ) {
-          // Assign the attendee to this employee
-          assignmentsToCreate.push({
-            adminId: adminObjectId,
-            user: currentEmployee._id, // This is the assigned employee's ID
-            webinar: webinarObjectId,
-            attendee: attendeeId,
-            recordType: data.recordType,
-            status: AssignmentStatus.ACTIVE,
-          });
+          // Check if this employee *still* has capacity based on their original limit + assignments *in this batch*
+          if (
+            (currentEmployee.dailyContactCount || 0) + assignedInBatch <
+            (currentEmployee.dailyContactLimit || 0)
+          ) {
+            // --- Standard Assignment Successful ---
+            assignedEmployeeId = currentEmployee._id;
+            assigned = true;
 
-          // Prepare for attendee update
-          attendeeBulkUpdates.push({
-            updateOne: {
-              filter: { _id: attendeeId, adminId: adminObjectId },
-              update: { assignedTo: currentEmployee._id, status: null },
-            },
-          });
+            // Move to the next employee for the *next* attendee (standard round-robin)
+            currentEmployeeIndex =
+              (currentEmployeeIndex + 1) % availableEmployees.length;
 
-          // Track count increase for this employee in this batch
-          employeeDailyCountUpdates.set(employeeIdStr, assignedInBatch + 1);
+            break; // Found an employee, break the inner do/while loop
+          }
 
-          attendeesAssignedCount++;
-          assigned = true; // Mark attendee as assigned
-          break; // Move to the next employee
-        }
-
-        // If employee is full for this batch, move to the next employee
-        currentEmployeeIndex =
-          (currentEmployeeIndex + 1) % availableEmployees.length;
-      } while (currentEmployeeIndex !== startEmployeeIndex); // Loop until we find an employee or cycle back
-
-      // If after checking all available employees, the attendee wasn't assigned,
-      // it means all available employees reached their daily limit with the current assignments.
-      if (!assigned && !forceAssign) {
-        console.warn(
-          `Attendee ${attendeeId.toString()} could not be assigned due to employee daily limits.`,
-        );
-        // We stop assigning further attendees from the input list
-        break; // Stop processing remaining attendees
-      }else if (!assigned && forceAssign) {
-        // write logic to 
+          // If employee is full for this batch (in the context of standard limits), move to the next employee *within the do/while*
+          currentEmployeeIndex =
+            (currentEmployeeIndex + 1) % availableEmployees.length;
+        } while (!assigned && currentEmployeeIndex !== startEmployeeIndex); // Loop until we find an employee or cycle back through available
       }
 
-      // Move to the next employee for the *next* attendee, maintaining the round-robin distribution
-      currentEmployeeIndex =
-        (currentEmployeeIndex + 1) % availableEmployees.length;
-    }
+      // --- Handle Case Where Standard Assignment Failed ---
+      if (!assigned) {
+        // If after checking all available employees in the do/while loop (or if availableEmployees was empty),
+        // the attendee wasn't assigned within standard limits.
+
+        if (forceAssign) {
+          // --- FORCE ASSIGNMENT LOGIC: Assign to Employee with Least Current Daily Count ---
+          console.log(
+            `Force assigning attendee ${attendeeId.toString()} as standard assignment failed.`,
+          );
+
+          let minCount = Infinity;
+          let leastCountEmployee = null;
+
+          // Iterate through ALL employees with the required role (`roleEmps`)
+          for (const currentEmp of roleEmps) {
+            const employeeIdStr = currentEmp._id.toString();
+            // Get the count of assignments already made to this employee *in this batch*
+            const assignedInBatch =
+              employeeDailyCountUpdates.get(employeeIdStr) || 0;
+            // Calculate their effective total count for the day (existing + in this batch)
+            const effectiveCount =
+              (currentEmp.dailyContactCount || 0) + assignedInBatch;
+
+            // Find the minimum effective count and the corresponding employee
+            if (effectiveCount < minCount) {
+              minCount = effectiveCount;
+              leastCountEmployee = currentEmp;
+            }
+          }
+
+          // Assign to the least count employee if one was found (should always be true if roleEmps is not empty, which is checked earlier)
+          if (leastCountEmployee) {
+            assignedEmployeeId = leastCountEmployee._id;
+            assigned = true;
+            console.log(
+              `Force assigned attendee ${attendeeId.toString()} to employee ${assignedEmployeeId.toString()} (effective count: ${minCount})`,
+            );
+            // Note: Force assignment doesn't change the `currentEmployeeIndex` which is used
+            // for the *next* attendee's *standard* assignment attempt.
+          } else {
+            // This case should ideally not happen given the roleEmps check earlier, but added for robustness.
+            console.error(
+              `Could not find a least count employee for attendee ${attendeeId.toString()} even with forceAssign (roleEmps empty?).`,
+            );
+            // Attendee remains unassigned in this scenario
+          }
+        } else {
+          // Not force assign, and standard assignment failed
+          console.warn(
+            `Attendee ${attendeeId.toString()} could not be assigned due to employee daily limits (forceAssign is false).`,
+          );
+          // Attendee remains unassigned. Do not increment attendeesAssignedCount.
+          // The original code included a 'break;' here to stop processing remaining attendees.
+          // Removing 'break' means we attempt to assign *all* attendees from the input list,
+          // but some might be skipped if forceAssign is false and limits are hit.
+          // Let's remove the break to process the whole list.
+          // break; // Removed break to process all input attendees
+        }
+      } // End if (!assigned) after standard attempt
+
+      // --- If Assigned (Either Standard or Force), Prepare Database Operations ---
+      if (assigned && assignedEmployeeId) {
+        const employeeIdStr = assignedEmployeeId.toString();
+
+        // Prepare assignment document
+        assignmentsToCreate.push({
+          adminId: adminObjectId,
+          user: assignedEmployeeId, // This is the assigned employee's ID
+          webinar: webinarObjectId,
+          attendee: attendeeId,
+          recordType: data.recordType,
+          status: AssignmentStatus.ACTIVE,
+        });
+
+        // Prepare attendee update operation
+        attendeeBulkUpdates.push({
+          updateOne: {
+            filter: { _id: attendeeId, adminId: adminObjectId },
+            update: { assignedTo: assignedEmployeeId, status: null },
+          },
+        });
+
+        const webinarName = webinar?.webinarName || 'Webinar';
+        const webinarType =
+          data.recordType === 'preWebinar' ? 'Reminder' : 'Sales';
+        const email =
+          attendeeIdToEmailMap.get(attendeeId.toString()) || 'Unknown';
+        const userName =
+          employeeIdTOUserNameMap.get(employeeIdStr) || 'Unknown';
+
+        attendeeLogsToCreate.push({
+          attendee: email,
+          action: AttendeeAction.ASSIGNMENT,
+          item: webinarName,
+          details: `Attendee has been assigned to ${userName} in the ${webinarType} webinar : ${webinarName}`,
+          adminId: new Types.ObjectId(`${adminId}`),
+        });
+
+        // Track count increase for this employee in this batch
+        const currentAssignedInBatch =
+          employeeDailyCountUpdates.get(employeeIdStr) || 0;
+        employeeDailyCountUpdates.set(
+          employeeIdStr,
+          currentAssignedInBatch + 1,
+        );
+
+        attendeesAssignedCount++; // Increment total count of successfully assigned attendees
+      }
+    } // End for (const attendeeId of attendeeIds)
 
     // If no assignments were created despite having attendees and employees,
-    // it means the first attendee couldn't be assigned due to limits.
+    // it means either attendeeIds was empty, or no assignable employees were found
+    // even in force mode (e.g., roleEmps was empty, though checked earlier).
+    // The check `assignmentsToCreate.length === 0` handles the end result correctly.
     if (assignmentsToCreate.length === 0 && totalAttendeesToAssign > 0) {
-      throw new BadRequestException(
-        'Could not assign any attendees. All eligible employees may have reached their daily limit.',
+      // If totalAttendeesToAssign > 0 but no assignments were created, something prevented it.
+      // This might happen if roleEmps was somehow empty or if there's another unexpected issue.
+      // The check `assignmentsToCreate.length === 0` below is more reliable before the transaction.
+      console.warn(
+        'No assignments created despite input attendees and available employees:',
+        { totalAttendeesToAssign, assignedCount: attendeesAssignedCount },
       );
     }
 
@@ -541,6 +649,8 @@ export class AssignmentService {
       return {
         success: true,
         message: 'No assignable attendees or available employees found.',
+        assignedCount: 0,
+        unassignedCount: totalAttendeesToAssign,
       };
     }
 
@@ -549,21 +659,25 @@ export class AssignmentService {
       await session.withTransaction(async (currentSession) => {
         // 3.1. Update Attendees with assignedTo field
         if (attendeeBulkUpdates.length > 0) {
+          // Note: We only update attendees that were successfully assigned.
           const updateAttendeesResult =
             await this.attendeeService.bulkUpdateAttendees(
               attendeeBulkUpdates, // Pass the operations array generated above
               currentSession, // Pass the session
             );
 
+          // We expect matchedCount to equal the number of update operations we prepared
           if (
             updateAttendeesResult.matchedCount !== attendeeBulkUpdates.length
           ) {
             console.error(
               'Mismatch in attendee update matched count:',
               updateAttendeesResult,
+              `Expected: ${attendeeBulkUpdates.length}, Matched: ${updateAttendeesResult.matchedCount}`,
             );
+            // Consider whether to throw here or just log a warning. Throwing is safer in a transaction.
             throw new InternalServerErrorException(
-              'Failed to update all attendee assignments.',
+              'Failed to update all attendee assignments during transaction.',
             );
           }
         }
@@ -584,7 +698,7 @@ export class AssignmentService {
             assignmentsToCreate.length,
           );
           throw new InternalServerErrorException(
-            'Failed to create all new assignments',
+            'Failed to create all new assignments during transaction',
           );
         }
 
@@ -602,21 +716,32 @@ export class AssignmentService {
 
         if (employeeBulkUpdates.length > 0) {
           // Use the userService method to perform the bulk update on users (employees)
+          // Note: Ensure userService.bulkUpdateUsersDailyContactCount exists and uses the session
           const updateEmployeesResult =
             await this.userService.bulkUpdateUsersDailyContactCount(
               employeeBulkUpdates,
               currentSession,
             );
 
-          // Optional: Check employee update results
+          // Optional: Check employee update results. A mismatch here might mean an employee ID was invalid.
+          // We don't necessarily need to fail the transaction for this, but it's worth logging.
           if (
             updateEmployeesResult.matchedCount !== employeeBulkUpdates.length
           ) {
             console.warn(
               'Mismatch in employee dailyContactCount update matched count:',
               updateEmployeesResult,
+              `Expected: ${employeeBulkUpdates.length}, Matched: ${updateEmployeesResult.matchedCount}`,
             );
+            // Decide if this is a critical error or just a warning. Log as warning for now.
           }
+        }
+
+        if (attendeeLogsToCreate.length > 0) {
+          await this.attendeeLogService.createAttendeeLogs(
+            attendeeLogsToCreate,
+            currentSession,
+          );
         }
 
         // If everything succeeded, the transaction will commit implicitly here
@@ -633,13 +758,42 @@ export class AssignmentService {
       await session.endSession();
     }
 
+    const webinarKaName = webinar?.webinarName || 'Webinar';
+
+    const employeeeNotifications = Array.from(
+      employeeDailyCountUpdates.entries(),
+    ).map(([empId, count]) => {
+      if (count > 0) {
+        return {
+          recipient: empId,
+          title: 'New Tasks Assigned',
+          message: `You have been assigned ${count} new tasks in ${webinarKaName}. Please check your task list for details.`,
+          type: notificationType.INFO,
+          actionType: notificationActionType.ASSIGNMENT,
+          metadata: {
+            webinarId: data.webinar,
+          },
+        };
+      }
+    });
+
+    for (const notification of employeeeNotifications) {
+      if (notification) {
+        await this.notificationService.createNotification(notification);
+      }
+    }
+
     // --- 4. Return Result ---
     const unassignedCount = totalAttendeesToAssign - attendeesAssignedCount;
     let message = `${attendeesAssignedCount} attendee(s) assigned successfully.`;
     if (unassignedCount > 0) {
-      message += ` ${unassignedCount} attendee(s) could not be assigned due to employee daily limits.`;
+      // Provide more context on why some weren't assigned
+      if (forceAssign) {
+        message += ` ${unassignedCount} attendee(s) could not be assigned. This is unexpected in force assign mode (maybe no eligible employees found?).`;
+      } else {
+        message += ` ${unassignedCount} attendee(s) could not be assigned due to employee daily limits.`;
+      }
     }
-    // The message logic still works correctly.
 
     return {
       success: true,

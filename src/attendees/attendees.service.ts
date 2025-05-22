@@ -355,7 +355,7 @@ export class AttendeesService {
               throw new Error('Consistency check failed: mismatch in counts.');
             }
 
-            const notification = {
+            const notification = { // put it outside the session
               recipient: empId,
               title: 'New Tasks Assigned',
               message: `You have been assigned ${empData.contactCount} new tasks. Please check your task list for details.`,
