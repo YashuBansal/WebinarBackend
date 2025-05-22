@@ -3,11 +3,7 @@ import { Document, Types } from 'mongoose';
 import { User } from './User.schema';
 
 export enum AttendeeAction {
-    REGISTERED = 'REGISTERED',
-    JOINED = 'JOINED',
-    LEFT = 'LEFT',
-    CANCELLED = 'CANCELLED',
-    COMPLETED = 'COMPLETED',
+    REGISTERED = 'Registered',
     NOTE = 'Note',
     LEAD_TYPE = 'Lead Type',
     ALARM = 'Alarm',

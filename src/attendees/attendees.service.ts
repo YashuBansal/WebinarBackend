@@ -1139,48 +1139,116 @@ export class AttendeesService {
 
   async updateAttendee(
     id: string,
-    adminId: string,
-    userId: string,
+    adminId: string, // Consider if adminId is truly needed here for permission check vs update filter
+    userId: string, // The user performing the action
     updateAttendeeDto: UpdateAttendeeDto,
   ): Promise<Attendee> {
-    const attendee = await this.attendeeModel.findOne({
-      _id: new Types.ObjectId(`${id}`),
+    // 1. Fetch the attendee *before* the update for permission check and comparison
+    const attendeeBeforeUpdate = await this.attendeeModel.findOne({
+      _id: new Types.ObjectId(id), // Use new without backticks for string id
     });
 
-    if (
-      String(userId) === String(attendee.assignedTo) ||
-      String(userId) === String(attendee.tempAssignedTo) ||
-      String(userId) === String(attendee.adminId)
-    ) {
-      const result = await this.attendeeModel.findOneAndUpdate(
-        {
-          _id: new Types.ObjectId(`${id}`),
-          adminId: new Types.ObjectId(`${adminId}`),
-        },
-        updateAttendeeDto,
-        { new: true },
-      );
-      if (!result)
-        throw new NotFoundException('No record found to be updated.');
+    if (!attendeeBeforeUpdate) {
+      throw new NotFoundException('Attendee not found.');
+    }
 
-      if (
-        adminId &&
-        updateAttendeeDto.createdBy &&
-        updateAttendeeDto.webinarName
-      ) {
-        this.attendeeLogService.createSingleAttendeeLog({
-          attendee: result.email,
-          item: '',
-          action: AttendeeAction.UPDATE_ATTENDEE,
-          details: `Attendee Updated by ${updateAttendeeDto.createdBy} from the webinar : ${updateAttendeeDto.webinarName}.`,
-          adminId: new Types.ObjectId(`${adminId}`),
-        });
-      }
-      return result;
-    } else
+    // Permission check: Allow if userId is the assignedTo, tempAssignedTo, or adminId of the *existing* attendee
+    if (
+      String(userId) !== String(attendeeBeforeUpdate.assignedTo) &&
+      String(userId) !== String(attendeeBeforeUpdate.tempAssignedTo) &&
+      String(userId) !== String(attendeeBeforeUpdate.adminId)
+    ) {
       throw new UnauthorizedException(
-        'Only Admin or assigned attendee is allowed to update attendee data.',
+        'Only Admin or assigned user is allowed to update attendee data.',
       );
+    }
+
+    // Example with adminId filter:
+    const resultWithAdminFilter = await this.attendeeModel.findOneAndUpdate(
+      {
+        _id: new Types.ObjectId(id),
+        // This assumes the 'adminId' field on the Attendee document MUST match the 'adminId' passed into the function.
+        // This is a valid approach if attendees are strictly scoped under an admin.
+        adminId: new Types.ObjectId(adminId),
+      },
+      updateAttendeeDto,
+      { new: true },
+    );
+
+    if (!resultWithAdminFilter) {
+      // This could happen if the initial findOne was successful but the findOneAndUpdate filter (like adminId) failed,
+      // or if the document was deleted concurrently.
+      throw new NotFoundException(
+        'No record found or authorized to be updated.',
+      );
+    }
+
+    // 3. Build the detailed log message
+    let logDetails = `Attendee Updated`;
+    const changes: string[] = [];
+
+    // Iterate through the fields provided in the update DTO
+    // and compare the 'before' and 'after' values
+    for (const key in updateAttendeeDto) {
+      // Check if the key exists in the DTO and the original document (or could potentially exist)
+      // We only log changes for fields present in the DTO
+      if (updateAttendeeDto.hasOwnProperty(key)) {
+        const oldValue = attendeeBeforeUpdate[key];
+        const newValue = resultWithAdminFilter[key]; // Use the result document
+
+        // Compare values. Handle ObjectIds and potential null/undefined values carefully.
+        // Converting to String() is a simple way to compare many types for logging purposes.
+        const oldValueString =
+          oldValue === null || oldValue === undefined
+            ? 'N/A'
+            : oldValue instanceof Types.ObjectId
+              ? oldValue.toString()
+              : String(oldValue);
+        const newValueString =
+          newValue === null || newValue === undefined
+            ? 'N/A'
+            : newValue instanceof Types.ObjectId
+              ? newValue.toString()
+              : String(newValue);
+
+        if (oldValueString !== newValueString) {
+          // Log the change only if the string representation is different
+          changes.push(
+            `"${key}" from "${oldValueString}" to "${newValueString}"`,
+          );
+        }
+      }
+    }
+
+    // Add context from DTO and the detected changes to the log details
+    const updatedBy = updateAttendeeDto.createdBy || 'N/A';
+    const webinarName = updateAttendeeDto.webinarName || 'N/A';
+
+    if (changes.length > 0) {
+      logDetails += ` by ${updatedBy} from the webinar : ${webinarName}. Changes: ${changes.join(', ')}.`;
+    } else {
+      // If no actual changes were detected (e.g., DTO had same values as current)
+      logDetails += ` by ${updatedBy} from the webinar : ${webinarName}. No actual changes detected.`;
+    }
+
+    // 4. Create the log entry
+    // Check if adminId is available as it's required by createSingleAttendeeLog
+    if (adminId) {
+      this.attendeeLogService.createSingleAttendeeLog({
+        // Use email from the updated document
+        attendee: resultWithAdminFilter.email,
+        item: '', // As per original code
+        action: AttendeeAction.UPDATE_ATTENDEE,
+        details: logDetails,
+        adminId: new Types.ObjectId(adminId),
+      });
+    } else {
+      // Optional: Log a warning or error if adminId is missing but logging was intended
+      console.warn('AdminId is missing, skipping attendee log creation.');
+    }
+
+    // 5. Return the updated document
+    return resultWithAdminFilter;
   }
 
   async updateAttendeeAssign(
