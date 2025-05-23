@@ -175,7 +175,7 @@ export class UserActivityService {
       .sort({ createdAt: -1 }) // Sort by creation date descending
       .skip(skip) // Apply skip for pagination
       .limit(limit) // Apply limit for pagination
-      .select('action details createdAt updatedAt')
+      .select('action details createdAt updatedAt item')
       .lean(); // Select desired fields
 
     // 4. Get total count with the same filters

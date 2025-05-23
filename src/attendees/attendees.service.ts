@@ -355,18 +355,21 @@ export class AttendeesService {
               throw new Error('Consistency check failed: mismatch in counts.');
             }
 
-            const notification = { // put it outside the session
-              recipient: empId,
-              title: 'New Tasks Assigned',
-              message: `You have been assigned ${empData.contactCount} new tasks. Please check your task list for details.`,
-              type: notificationType.INFO,
-              actionType: notificationActionType.ASSIGNMENT,
-              metadata: {
-                webinarId: webinar,
-              },
-            };
+            if (empData.contactCount) {
+              const notification = {
+                // put it outside the session
+                recipient: empId,
+                title: 'New Tasks Assigned',
+                message: `You have been assigned ${empData.contactCount} new tasks in the webinar: ${webinarName}. Please check your task list for details.`,
+                type: notificationType.INFO,
+                actionType: notificationActionType.ASSIGNMENT,
+                metadata: {
+                  webinarId: webinar,
+                },
+              };
 
-            await this.notificationService.createNotification(notification);
+              await this.notificationService.createNotification(notification);
+            }
           },
         );
         updateProgress(90);
@@ -1494,7 +1497,7 @@ export class AttendeesService {
       this.checkLength(filters.reminderLastStatus) ||
       this.checkLength(filters.tags);
 
-      console.log('is filters ----  > ', isLastFilters, filters)
+    console.log('is filters ----  > ', isLastFilters, filters);
 
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
@@ -1626,7 +1629,9 @@ export class AttendeesService {
                           {
                             $in: [
                               '$leadType',
-                              filters.leadType.map((a) => new Types.ObjectId(a)),
+                              filters.leadType.map(
+                                (a) => new Types.ObjectId(a),
+                              ),
                             ],
                           },
                         ],
