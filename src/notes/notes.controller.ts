@@ -18,7 +18,7 @@ import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { unlinkSync } from 'fs';
 import { AdminId, Id, Role } from 'src/decorators/custom.decorator';
 import { ConfigService } from '@nestjs/config';
-import { Model, Types } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 import { Attendee } from 'src/schemas/Attendee.schema';
 import { UsersService } from 'src/users/users.service';
@@ -138,5 +138,25 @@ export class NotesController {
       );
       return notes;
     }
+  }
+
+    @Get('/dashboard/admin')
+  async getAdminDashboardData(
+    @Id() userId: string,
+    @Query() query: { startDate: string; endDate: string; webinarId?: undefined | string },
+  ) {
+
+
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      throw new BadRequestException('UserID is required.');
+    }
+
+    return await this.notesService.fetchNotesForAdmin(
+      new Types.ObjectId(`${userId}`),
+      query.startDate,
+      query.endDate,
+query.webinarId
+    )
+    
   }
 }

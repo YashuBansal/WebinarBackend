@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model, PipelineStage, Types } from 'mongoose';
+import mongoose, { ClientSession, Model, PipelineStage, Types } from 'mongoose';
 import { Notes } from 'src/schemas/Notes.schema';
 import { CreateNoteDto } from './dto/notes.dto';
 import { UsersService } from 'src/users/users.service';
@@ -16,6 +16,7 @@ import { SocketEvents } from 'src/websocket/dto/socket.dto';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { Attendee } from 'src/schemas/Attendee.schema';
+import { create } from 'domain';
 
 @Injectable()
 export class NotesService {
@@ -750,5 +751,58 @@ export class NotesService {
       },
     ];
     return this.notesModel.aggregate(pipeline).exec();
+  }
+
+  async fetchNotesForAdmin(
+    adminId: Types.ObjectId,
+    startDate: string,
+    endDate: string,
+    webinarId?: string,
+  ) {
+    const endDatePlusOneDay = new Date(endDate);
+
+    let query = {};
+    if (webinarId && mongoose.isValidObjectId(webinarId)) {
+      const webinarAttendees =
+        await this.attendeeService.fetchAttendeesByWebinar(webinarId);
+
+      query = {
+        attendee: { $in: webinarAttendees.map((attendee) => attendee._id) },
+      };
+    } else {
+      query = {
+        createdBy: adminId,
+      };
+    }
+    const startDatenew = new Date(startDate);
+    console.log(query, 'query', startDatenew, endDatePlusOneDay);
+
+    const pipeline = [
+      {
+        $match: {
+          ...query,
+          createdAt: {
+            $gte: startDatenew,
+            $lte: endDatePlusOneDay, // Use $lt to include the entire end date
+          },
+        },
+      },
+      {
+        $group: {
+          _id: '$attendee',
+          status: {
+            $push: '$status',
+          },
+        },
+      },
+    ];
+
+    const data = await this.notesModel.aggregate(pipeline).exec();
+
+    return {
+      data,
+      success: true,
+      message: 'Notes fetched successfully',
+    };
   }
 }

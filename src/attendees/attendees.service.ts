@@ -2298,6 +2298,12 @@ export class AttendeesService {
     });
   }
 
+    async fetchAttendeesByWebinar(webinarId: string): Promise<Attendee[]> {
+    return this.attendeeModel.find({
+      webinar: new Types.ObjectId(webinarId),
+    });
+  }
+
   async fetchAttendeeById(id: Types.ObjectId) {
     return this.attendeeModel.findById(id);
   }
