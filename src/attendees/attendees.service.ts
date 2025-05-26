@@ -42,6 +42,7 @@ import { NotesService } from 'src/notes/notes.service';
 import { AttendeeAssociationService } from 'src/attendee-association/attendee-association.service';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
+import { CustomLeadTypeService } from 'src/custom-lead-type/custom-lead-type.service';
 
 @Injectable()
 export class AttendeesService {
@@ -63,6 +64,7 @@ export class AttendeesService {
     private readonly notesService: NotesService,
     private readonly attendeeAssociationService: AttendeeAssociationService,
     private readonly attendeeLogService: AttendeeLogService,
+    private readonly customLeadTypeService: CustomLeadTypeService,
   ) {}
 
   async addAttendees(attendees: [CreateAttendeeDto]): Promise<any> {
@@ -635,16 +637,27 @@ export class AttendeesService {
     isAttended: boolean,
     page: number,
     limit: number,
-    filters: AttendeesFilterDto,
-    validCall?: string,
-    assignmentType?: string,
-    sort: WebinarAttendeesSortObject = {
-      sortBy: WebinarAttendeesSortBy.EMAIL,
-      sortOrder: SortOrder.ASC,
+    obj: {
+      filters: AttendeesFilterDto;
+      validCall?: string;
+      assignmentType?: string;
+      sort?: WebinarAttendeesSortObject;
+      leadType?: boolean;
     },
+
     usePagination: boolean = true,
   ): Promise<any> {
     const skip = (page - 1) * limit;
+
+    const {
+      filters,
+      validCall,
+      assignmentType,
+      sort = {
+        sortBy: WebinarAttendeesSortBy.EMAIL,
+        sortOrder: SortOrder.ASC,
+      },
+    } = obj;
 
     const hasFilters = Object.keys(filters).some(
       (key) => filters[key] !== null && filters[key] !== undefined,
@@ -1015,6 +1028,28 @@ export class AttendeesService {
       ]);
       const total = totalResult[0]?.total || 0;
 
+      if (obj.leadType) {
+        const leadTypes =
+          await this.customLeadTypeService.getLeadTypes(AdminId);
+        if (Array.isArray(leadTypes) && leadTypes.length > 0) {
+          const leadTypeMap = new Map();
+          leadTypes.forEach((lead) => {
+            leadTypeMap.set(lead._id.toString(), lead.label);
+          });
+
+          result.forEach((attendee) => {
+            if (
+              attendee.leadType &&
+              leadTypeMap.has(attendee.leadType.toString())
+            ) {
+              attendee.leadType = leadTypeMap.get(attendee.leadType.toString());
+            } else {
+              attendee.leadType = null;
+            }
+          });
+        }
+      }
+
       const pagination = {
         total,
         totalPages: Math.ceil(total / limit),
@@ -1092,9 +1127,11 @@ export class AttendeesService {
         isAttended,
         1,
         0,
-        filters,
-        validCall,
-        assignmentType,
+        {
+          filters,
+          validCall,
+          assignmentType,
+        },
       );
       attendees = result.result;
     }
@@ -2298,7 +2335,7 @@ export class AttendeesService {
     });
   }
 
-    async fetchAttendeesByWebinar(webinarId: string): Promise<Attendee[]> {
+  async fetchAttendeesByWebinar(webinarId: string): Promise<Attendee[]> {
     return this.attendeeModel.find({
       webinar: new Types.ObjectId(webinarId),
     });

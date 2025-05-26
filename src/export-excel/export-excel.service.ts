@@ -35,7 +35,7 @@ export class ExportExcelService {
     private readonly webinarService: WebinarService,
     private readonly websocketGateway: WebsocketGateway,
     private readonly leadTypeService: CustomLeadTypeService,
-    private readonly userActivityService: UserActivityService
+    private readonly userActivityService: UserActivityService,
   ) {}
 
   emitProgress(socketId: null | string, value: number) {
@@ -261,10 +261,13 @@ export class ExportExcelService {
       isAttended,
       1,
       limit,
-      filterData,
-      validCall,
-      assignmentType,
-      sort,
+      {
+        filters: filterData,
+        validCall: validCall,
+        assignmentType: assignmentType,
+        sort: sort,
+      },
+
       false,
     );
     const leadTypes = await this.leadTypeService.getLeadTypes(adminId);
@@ -461,14 +464,15 @@ export class ExportExcelService {
 
     updateProgress(10);
 
-    const aggregationResult = await this.userActivityService.getUserActivitiesByUser(
-      userId,
-      1,
-      limit,
-      filters
-    );
+    const aggregationResult =
+      await this.userActivityService.getUserActivitiesByUser(
+        userId,
+        1,
+        limit,
+        filters,
+      );
 
-    console.log(aggregationResult.data)
+    console.log(aggregationResult.data);
     updateProgress(50);
 
     const fileName = `UserActivities-${Date.now()}.xlsx`;

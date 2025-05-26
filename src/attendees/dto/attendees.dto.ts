@@ -14,6 +14,8 @@ import {
   ValidateNested,
   IsArray,
   Min,
+  IsNumberString,
+  IsBooleanString,
 } from 'class-validator';
 import { Types } from 'mongoose';
 import { RangeNumberDto } from 'src/users/dto/filters.dto';
@@ -314,8 +316,8 @@ export class GetAttendeesDTO {
   @IsMongoId()
   webinarId: string;
 
-  @IsBoolean()
-  isAttended: boolean;
+  @IsBooleanString()
+  isAttended: string;
 
   @IsOptional()
   @IsString()
@@ -334,6 +336,17 @@ export class GetAttendeesDTO {
   @ValidateNested()
   @Type(() => WebinarAttendeesSortObject)
   sort?: WebinarAttendeesSortObject;
+
+  @IsOptional()
+  @IsNumberString()
+  page?: string;
+
+  @IsOptional()
+  @IsString()
+  leadType?: string;
+
+  @IsNumberString()
+  limit: string;
 }
 
 export class SwapAttendeeFieldsDTO {
@@ -370,7 +383,31 @@ export class SwapAttendeeFieldsDTO {
   assignmentType?: string;
 }
 
-export class ExportWebinarAttendeesDTO extends GetAttendeesDTO {
+export class ExportWebinarAttendeesDTO {
+  @IsMongoId()
+  webinarId: string;
+
+  @IsBoolean()
+  isAttended: boolean;
+
+  @IsOptional()
+  @IsString()
+  validCall?: string;
+
+  @IsOptional()
+  @IsString()
+  assignmentType?: string;
+
+  @IsNotEmpty()
+  @ValidateNested()
+  @Type(() => AttendeesFilterDto)
+  filters: AttendeesFilterDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WebinarAttendeesSortObject)
+  sort?: WebinarAttendeesSortObject;
+
   @IsArray()
   @IsNotEmpty()
   @IsString({ each: true })

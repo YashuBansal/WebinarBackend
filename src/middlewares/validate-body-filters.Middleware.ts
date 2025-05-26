@@ -4,14 +4,46 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 
 @Injectable()
 export class ValidateBodyFilters implements NestMiddleware {
   constructor(private readonly subService: SubscriptionService) {}
   async use(req: Request, res: Response, next: NextFunction) {
-    const { filters = {}, columns = [], fieldName = '' } = req.body;
+    let { filters = {}, columns = [], fieldName = '' } = req.body;
+
+    let isBody = true;
+
     const userId = req.id;
+    if (!fieldName) {
+      const {
+        filters: queryFilters = {},
+        columns: queryColumns = [],
+        fieldName: queryFieldname = '',
+      } = req.query;
+
+      filters = queryFilters;
+      columns = queryColumns;
+      fieldName = queryFieldname;
+      isBody = false;
+    }
+
+
+    if (!fieldName) {
+      throw new BadRequestException(
+        'Field name is required in the request body or query parameters.',
+      );
+    }
+
+    if (
+      userId === undefined ||
+      userId === null ||
+      mongoose.isValidObjectId(userId) === false
+    ) {
+      throw new BadRequestException('User ID is required in the request.');
+    }
+
     const subscription = await this.subService.getSubscription(userId);
 
     if (!subscription) {
@@ -38,13 +70,20 @@ export class ValidateBodyFilters implements NestMiddleware {
 
       return false;
     });
-
     // Replace the original body with the filtered one
-    req.body = {
-      ...req.body,
-      filters: allowedFilters,
-      columns: allowedColumns,
-    };
+    if (isBody) {
+      req.body = {
+        ...req.body,
+        filters: allowedFilters,
+        columns: allowedColumns,
+      };
+    } else {
+      req.query = {
+        ...req.query,
+        filters: allowedFilters,
+        columns: allowedColumns,
+      };
+    }
 
     // Proceed to the next middleware or route handler
     next();

@@ -12,7 +12,6 @@ import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
-    forwardRef(() => UsersModule),
     MongooseModule.forFeature([
       {
         name: CustomLeadType.name,

@@ -37,6 +37,31 @@ export class AttendeesController {
     private readonly webinarService: WebinarService,
   ) {}
 
+  @Get('webinar')
+  async getAttendees(@Id() adminId: string, @Query() query: GetAttendeesDTO) {
+    const start = Date.now();
+    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    const result = await this.attendeesService.getAttendees(
+      query.webinarId || '',
+      adminId,
+      query.isAttended === 'true',
+      page,
+      limit,
+      {
+        filters: query.filters,
+        validCall: query?.validCall,
+        assignmentType: query?.assignmentType,
+        sort: query?.sort,
+        leadType: query?.leadType === 'true',
+      },
+    );
+
+    const processingTime = Date.now() - start;
+    console.log(`Processing time: ${processingTime} milliseconds`);
+    return result ? { ...result, processingTime } : result;
+  }
+
   @Get(':email')
   async getAttendee(
     @Param('email') email: string,
@@ -44,33 +69,6 @@ export class AttendeesController {
   ): Promise<any> {
     const result = await this.attendeesService.getAttendee(adminId, email);
     return result;
-  }
-
-  @Post('webinar')
-  async getAttendees(
-    @Query() query: { page?: string; limit?: string },
-    @Id() adminId: string,
-    @Body() body: GetAttendeesDTO,
-  ) {
-    const start = Date.now();
-    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
-    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
-
-    const result = await this.attendeesService.getAttendees(
-      body.webinarId || '',
-      adminId,
-      body.isAttended,
-      page,
-      limit,
-      body.filters,
-      body?.validCall,
-      body?.assignmentType,
-      body?.sort,
-    );
-
-    const processingTime = Date.now() - start;
-    console.log(`Processing time: ${processingTime} milliseconds`);
-    return result ? { ...result, processingTime } : result;
   }
 
   @Post('grouped')
@@ -98,7 +96,7 @@ export class AttendeesController {
   async addPostAttendees(
     @Id() adminId: string,
     @Body()
-    body: { data: [CreateAttendeeDto]; webinarId: string; isAttended: boolean; },
+    body: { data: [CreateAttendeeDto]; webinarId: string; isAttended: boolean },
   ): Promise<any> {
     const webinar = await this.webinarService.getWebinar(
       body.webinarId,
@@ -170,34 +168,32 @@ export class AttendeesController {
     @Id() adminId: string,
     @Body() body: DeleteWebinarAttendeesDTO,
   ) {
-    if(!adminId){
-      throw new NotFoundException("Admin Id is Required");
+    if (!adminId) {
+      throw new NotFoundException('Admin Id is Required');
     }
-     const result = await this.attendeesService.hideAttendees(
+    const result = await this.attendeesService.hideAttendees(
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(body.webinarId),
       body.attendees,
     );
     return {
       success: true,
-      message: "Webinar Attendees has been deleted Successfully.",
-      data: result
-    }
+      message: 'Webinar Attendees has been deleted Successfully.',
+      data: result,
+    };
   }
-
 
   @Delete('/all')
   async deleteAllAttendeeData(
     @Id() adminId: string,
     @Body() body: DeleteAllAttendeesDTO,
   ) {
-    if(!adminId){
-      throw new NotFoundException("Admin Id is Required");
+    if (!adminId) {
+      throw new NotFoundException('Admin Id is Required');
     }
-     return await this.attendeesService.deleteAllAttendeeData(
+    return await this.attendeesService.deleteAllAttendeeData(
       new Types.ObjectId(`${adminId}`),
-      body.attendees
-     );
-  
+      body.attendees,
+    );
   }
 }

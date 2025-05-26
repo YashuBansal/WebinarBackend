@@ -25,6 +25,7 @@ import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
 import { NotesModule } from 'src/notes/notes.module';
 import { AttendeeAssociationModule } from 'src/attendee-association/attendee-association.module';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
+import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.module';
 
 @Module({
   imports: [
@@ -43,7 +44,8 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
     EnrollmentsModule,
     NotesModule,
     AttendeeAssociationModule,
-    AttendeeLogModule
+    AttendeeLogModule,
+    CustomLeadTypeModule
   ],
   controllers: [AttendeesController],
   providers: [AttendeesService,WebsocketGateway],
@@ -61,12 +63,13 @@ export class AttendeesModule {
       );
 
     consumer.apply(CompressionMiddleware).forRoutes(
-      { path: 'attendees/webinar', method: RequestMethod.POST },
+      { path: 'attendees/webinar', method: RequestMethod.GET },
       { path: 'attendees/grouped', method: RequestMethod.POST },
     );
 
     consumer
       .apply(AuthTokenMiddleware, GetAdminIdMiddleware)
+      .exclude({ path: 'attendees/webinar', method: RequestMethod.GET },)
       .forRoutes(
         { path: 'attendees', method: RequestMethod.GET },
         { path: 'attendees/:email', method: RequestMethod.GET },
@@ -77,7 +80,7 @@ export class AttendeesModule {
     consumer
       .apply(AuthAdminTokenMiddleware, ValidateBodyFilters)
       .forRoutes(
-        { path: 'attendees/webinar', method: RequestMethod.POST },
+        { path: 'attendees/webinar', method: RequestMethod.GET },
         { path: 'attendees/grouped', method: RequestMethod.POST },
       );
   }
