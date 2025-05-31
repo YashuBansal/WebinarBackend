@@ -398,6 +398,10 @@ export class ExportWebinarAttendeesDTO {
   @IsString()
   assignmentType?: string;
 
+  @IsString()
+  @IsNotEmpty()
+  fileName: string;
+
   @IsNotEmpty()
   @ValidateNested()
   @Type(() => AttendeesFilterDto)
@@ -428,6 +432,10 @@ export class ExportGroupedAttendeesDTO {
   @IsNotEmpty()
   @IsString({ each: true })
   columns: string[];
+
+  @IsString()
+  @IsNotEmpty()
+  fileName: string;
 
   @IsNumber()
   @Min(0, { message: 'Export limit must be a non-negative integer.' })

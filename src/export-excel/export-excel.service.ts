@@ -162,31 +162,8 @@ export class ExportExcelService {
     columns: string[],
     filterData: GetClientsFilterDto,
     adminId: string,
+    fileName: string = `Clients-${Date.now()}.xlsx`,
   ): Promise<UserDocumentResponse> {
-    const defaultColumns = [
-      { header: 'Email', key: 'email', width: 50 },
-      { header: 'Company Name', key: 'companyName', width: 30 },
-      { header: 'User Name', key: 'userName', width: 20 },
-      { header: 'Phone', key: 'phone', width: 15 },
-      { header: 'Is Active', key: 'isActive', width: 10 },
-      { header: 'Plan Name', key: 'planName', width: 20 },
-      { header: 'Plan Start Date', key: 'planStartDate', width: 20 },
-      { header: 'Plan Expiry', key: 'planExpiry', width: 20 },
-      { header: 'Contacts Limit', key: 'contactsLimit', width: 15 },
-      { header: 'Total Employees', key: 'totalEmployees', width: 15 },
-      { header: 'Employee Sales Count', key: 'employeeSalesCount', width: 15 },
-      {
-        header: 'Employee Reminder Count',
-        key: 'employeeReminderCount',
-        width: 15,
-      },
-      { header: 'Toggle Limit', key: 'toggleLimit', width: 15 },
-    ];
-
-    const selectedColumns = columns.length
-      ? defaultColumns.filter((col) => columns.includes(col.key))
-      : defaultColumns;
-
     const socketId = this.websocketGateway.activeUsers.get(String(adminId));
     let lastProgress = 0;
     const updateProgress = (current) => {
@@ -205,7 +182,6 @@ export class ExportExcelService {
       false,
     );
 
-    const fileName = `Clients-${Date.now()}.xlsx`;
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
 
@@ -216,7 +192,17 @@ export class ExportExcelService {
     updateProgress(50);
 
     const fileData = await this.generateExcel(
-      { data, columns: selectedColumns, filePath },
+      {
+        data,
+        columns: columns.map((col) => ({
+          header: col,
+          key: col,
+          width: 20,
+        })),
+        filePath,
+        isKey: true,
+
+      },
       workerPath,
     );
 
@@ -240,10 +226,15 @@ export class ExportExcelService {
     webinarId: string,
     isAttended: boolean,
     adminId: string,
-    validCall?: string | undefined,
-    assignmentType?: string | undefined,
-    sort?: WebinarAttendeesSortObject,
+    optionalData: {
+      validCall?: string | undefined;
+      assignmentType?: string | undefined;
+      sort?: WebinarAttendeesSortObject;
+    },
+    fileName: string = `webinar-attendees-${Date.now()}.xlsx`,
   ) {
+    const { validCall, assignmentType, sort } = optionalData || {};
+
     const socketId = this.websocketGateway.activeUsers.get(String(adminId));
     let lastProgress = 0;
     const updateProgress = (current) => {
@@ -289,7 +280,6 @@ export class ExportExcelService {
         : ' - ',
     }));
 
-    const fileName = `webinar-attendees-${webinarId}-${Date.now()}.xlsx`;
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
 
@@ -328,6 +318,7 @@ export class ExportExcelService {
     columns: string[],
     filterData: GroupedAttendeesFilterDto,
     adminId: string,
+    fileName: string = `attendees-${Date.now()}.xlsx`,
     sort?: GroupedAttendeesSortObject,
   ) {
     const socketId = this.websocketGateway.activeUsers.get(String(adminId));
@@ -349,8 +340,8 @@ export class ExportExcelService {
         filterData,
         sort,
       );
+    console.log(aggregationResult);
 
-    const fileName = `attendees-${Date.now()}.xlsx`;
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
 
@@ -389,6 +380,7 @@ export class ExportExcelService {
     columns: string[],
     filterData: WebinarFilterDTO,
     adminId: string,
+    fileName: string = `webinars-${Date.now()}.xlsx`,
   ): Promise<UserDocumentResponse> {
     const socketId = this.websocketGateway.activeUsers.get(String(adminId));
     let lastProgress = 0;
@@ -412,7 +404,6 @@ export class ExportExcelService {
 
     updateProgress(50);
 
-    const fileName = `webinars-${Date.now()}.xlsx`;
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
 
@@ -513,6 +504,7 @@ export class ExportExcelService {
     columns: string[],
     filterData: EmployeeFilterDTO,
     adminId: string,
+    fileName: string = `Employees-${Date.now()}.xlsx`,
   ): Promise<UserDocumentResponse> {
     const socketId = this.websocketGateway.activeUsers.get(String(adminId));
     let lastProgress = 0;
@@ -534,7 +526,6 @@ export class ExportExcelService {
     );
     updateProgress(50);
 
-    const fileName = `Employees-${Date.now()}.xlsx`;
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
 

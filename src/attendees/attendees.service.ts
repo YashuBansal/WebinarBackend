@@ -1050,6 +1050,10 @@ export class AttendeesService {
         }
       }
 
+      const webinar = await this.webinarService.getWebinarById(webinarId);
+
+      const webinarName = webinar?.webinarName || 'Webinar';
+
       const pagination = {
         total,
         totalPages: Math.ceil(total / limit),
@@ -1057,7 +1061,11 @@ export class AttendeesService {
         limit,
       };
 
-      return { pagination, result };
+      return {
+        pagination,
+        result,
+        webinarName,
+      };
     } else {
       return this.attendeeModel
         .aggregate([
@@ -1979,6 +1987,15 @@ export class AttendeesService {
       sortOrder: SortOrder.ASC,
     },
   ) {
+    const isLastFilters =
+      this.checkLength(filters.salesAssignedTo) ||
+      this.checkLength(filters.salesLastStatus) ||
+      this.checkLength(filters.reminderAssignedTo) ||
+      this.checkLength(filters.reminderLastStatus) ||
+      this.checkLength(filters.tags);
+
+    console.log('is filters ----  > ', isLastFilters, filters);
+
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -1990,8 +2007,78 @@ export class AttendeesService {
         },
       },
       {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+      {
         $group: {
           _id: '$email',
+          salesAssignedToList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $ne: ['$assignedTo', null] },
+                  ],
+                },
+                '$assignedTo',
+                '$$REMOVE',
+              ],
+            },
+          },
+          salesLastStatusList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $ne: ['$status', null] },
+                  ],
+                },
+                '$status',
+                '$$REMOVE',
+              ],
+            },
+          },
+          reminderAssignedToList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', false] },
+                    { $ne: ['$assignedTo', null] },
+                  ],
+                },
+                '$assignedTo',
+                '$$REMOVE',
+              ],
+            },
+          },
+          reminderLastStatusList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', false] },
+                    { $ne: ['$status', null] },
+                  ],
+                },
+                '$status',
+                '$$REMOVE',
+              ],
+            },
+          },
+          tagsList: {
+            $push: {
+              $cond: [
+                { $gt: [{ $size: '$tags' }, 0] }, // Only if tags array has items
+                '$tags',
+                '$$REMOVE', // Skip empty arrays
+              ],
+            },
+          },
           adminId: {
             $first: '$adminId',
           },
@@ -2000,14 +2087,6 @@ export class AttendeesService {
           },
           attendeeId: {
             $first: '$_id',
-          },
-          records: {
-            $push: '$$ROOT',
-          },
-          attendedWebinarCount: {
-            $sum: {
-              $cond: [{ $gt: ['$timeInSession', 0] }, 1, 0],
-            },
           },
           registeredWebinarCount: {
             $sum: {
@@ -2031,7 +2110,7 @@ export class AttendeesService {
         },
       },
 
-      ...(this.checkLength(filters.tags)
+      ...(this.checkLength(filters.leadType)
         ? [
             {
               $lookup: {
@@ -2044,6 +2123,14 @@ export class AttendeesService {
                         $and: [
                           { $eq: ['$adminId', adminId] },
                           { $eq: ['$email', '$$tempMail'] },
+                          {
+                            $in: [
+                              '$leadType',
+                              filters.leadType.map(
+                                (a) => new Types.ObjectId(a),
+                              ),
+                            ],
+                          },
                         ],
                       },
                     },
@@ -2057,6 +2144,73 @@ export class AttendeesService {
               $unwind: {
                 path: '$lead',
                 preserveNullAndEmptyArrays: false,
+              },
+            },
+          ]
+        : []),
+
+      ...(isLastFilters
+        ? [
+            {
+              $addFields: {
+                tags: {
+                  $reduce: {
+                    input: '$tagsList',
+                    initialValue: [],
+                    in: { $setUnion: ['$$value', '$$this'] },
+                  },
+                },
+                salesAssignedTo: {
+                  $first: '$salesAssignedToList',
+                },
+                salesLastStatus: {
+                  $first: '$salesLastStatusList',
+                },
+                reminderAssignedTo: {
+                  $first: '$reminderAssignedToList',
+                },
+                reminderLastStatus: {
+                  $first: '$reminderLastStatusList',
+                },
+              },
+            },
+            {
+              $match: {
+                ...(this.checkLength(filters.salesAssignedTo) && {
+                  salesAssignedTo: {
+                    $in: filters.salesAssignedTo.map(
+                      (a) => new Types.ObjectId(a),
+                    ),
+                  },
+                }),
+                ...(this.checkLength(filters.salesLastStatus) && {
+                  salesLastStatus: {
+                    $in: filters.salesLastStatus,
+                  },
+                }),
+                ...(this.checkLength(filters.reminderAssignedTo) && {
+                  reminderAssignedTo: {
+                    $in: filters.reminderAssignedTo.map(
+                      (a) => new Types.ObjectId(a),
+                    ),
+                  },
+                }),
+                ...(this.checkLength(filters.reminderLastStatus) && {
+                  reminderLastStatus: {
+                    $in: filters.reminderLastStatus,
+                  },
+                }),
+
+                ...(this.checkLength(filters.tags) && {
+                  $expr: {
+                    $gt: [
+                      {
+                        $size: { $setIntersection: ['$tags', filters.tags] },
+                      },
+                      0,
+                    ],
+                  },
+                }),
               },
             },
           ]
@@ -2137,7 +2291,7 @@ export class AttendeesService {
       },
       { $skip: skip },
       ...(limit ? [{ $limit: limit }] : []),
-      ...(filters.leadType
+      ...(this.checkLength(filters.leadType)
         ? []
         : [
             {
@@ -2167,15 +2321,34 @@ export class AttendeesService {
               },
             },
           ]),
+      ...(!isLastFilters
+        ? [
+            {
+              $addFields: {
+                tags: {
+                  $reduce: {
+                    input: '$tagsList',
+                    initialValue: [],
+                    in: { $setUnion: ['$$value', '$$this'] },
+                  },
+                },
+                salesAssignedTo: {
+                  $first: '$salesAssignedToList',
+                },
+                salesLastStatus: {
+                  $first: '$salesLastStatusList',
+                },
+                reminderAssignedTo: {
+                  $first: '$reminderAssignedToList',
+                },
+                reminderLastStatus: {
+                  $first: '$reminderLastStatusList',
+                },
+              },
+            },
+          ]
+        : []),
 
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'lastAssignedTo',
-          foreignField: '_id',
-          as: 'lastAssignedToDetails',
-        },
-      },
       ...(filters?.enrollments?.length
         ? []
         : [
@@ -2228,14 +2401,58 @@ export class AttendeesService {
               },
             },
           ]),
+
+      {
+        $lookup: {
+          from: 'customleadtypes',
+          localField: 'lead.leadType',
+          foreignField: '_id',
+          as: 'leadTypeDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$leadTypeDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+            {
+        $lookup: {
+          from: 'users',
+          localField: 'reminderAssignedTo',
+          foreignField: '_id',
+          as: 'reminderAssignedToDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$reminderAssignedToDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+            {
+        $lookup: {
+          from: 'users',
+          localField: 'salesAssignedTo',
+          foreignField: '_id',
+          as: 'salesAssignedToDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$salesAssignedToDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
       {
         $project: {
-          lastAssignedTo: {
-            $arrayElemAt: ['$lastAssignedToDetails.userName', 0],
-          },
+          reminderLastStatus: 1,
           enrollments: 1,
-          lastStatus: 1,
-          leadType: '$lead.leadType',
+          salesLastStatus: 1,
+          reminderAssignedTo: '$reminderAssignedToDetails.userName',
+          salesAssignedTo: '$salesAssignedToDetails.userName',
+          tags: 1,
+          leadType: '$leadTypeDetails.label',
           adminId: 1,
           timeInSession: 1,
           attendeeId: 1,

@@ -101,6 +101,7 @@ export class ExportExcelController {
     @Body() filters: GetClientsFilterDto,
     @Query('limit') limit: string,
     @Query('columns') columns: string,
+    @Query('fileName') fileName: string,
     @Res() res: Response,
     @Id() superAdminId: string,
   ): Promise<void> {
@@ -110,6 +111,7 @@ export class ExportExcelController {
         columns ? columns.split(',') : [],
         filters,
         superAdminId,
+        fileName
       );
 
       // Stream the file to the client
@@ -145,9 +147,12 @@ export class ExportExcelController {
           body.webinarId,
           body.isAttended,
           adminId,
-          body?.validCall,
-          body?.assignmentType,
-          body.sort,
+          {
+            validCall: body?.validCall,
+            assignmentType: body?.assignmentType,
+            sort: body.sort,
+          },
+          body.fileName,
         );
 
       // Stream the file to the client
@@ -175,7 +180,7 @@ export class ExportExcelController {
   @Post('/webinars')
   async downloadWebinars(
     @Body()
-    body: { filters: WebinarFilterDTO; columns: string[]; fieldName: string },
+    body: { filters: WebinarFilterDTO; columns: string[]; fileName: string },
     @Id() adminId: string,
     @Query('limit') limit: string,
     @Res() res: Response,
@@ -190,6 +195,7 @@ export class ExportExcelController {
         body.columns,
         body.filters,
         adminId,
+        body.fileName
       );
 
       // Stream the file to the client
@@ -270,6 +276,7 @@ export class ExportExcelController {
         body.columns,
         body.filters,
         adminId,
+        body.fileName,
         body.sort,
       );
 
@@ -293,7 +300,7 @@ export class ExportExcelController {
   @Post('/employees')
   async downloadEmployees(
     @Body()
-    body: { filters: EmployeeFilterDTO; columns: string[]; fieldName: string },
+    body: { filters: EmployeeFilterDTO; columns: string[]; fileName: string },
     @Id() adminId: string,
     @Query('limit') limit: string,
     @Res() res: Response,
@@ -308,6 +315,7 @@ export class ExportExcelController {
         body.columns,
         body.filters,
         adminId,
+        body.fileName,
       );
 
       // Stream the file to the client
