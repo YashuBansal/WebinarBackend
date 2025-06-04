@@ -8,7 +8,7 @@ export class CreateTagDto {
   @IsNotEmpty()
   name: string;
 
-  @IsString()
-  @IsEnum(Usecase)
-  usecase: string;
+  // @IsString()
+  // @IsEnum(Usecase)
+  // usecase: string;
 }

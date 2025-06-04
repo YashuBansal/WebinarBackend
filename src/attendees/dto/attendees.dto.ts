@@ -18,7 +18,7 @@ import {
   IsBooleanString,
 } from 'class-validator';
 import { Types } from 'mongoose';
-import { RangeNumberDto } from 'src/users/dto/filters.dto';
+import { RangeNumberDto, RangeStringDto } from 'src/users/dto/filters.dto';
 
 export class CreateAttendeeDto {
   @IsEmail({}, { message: 'Invalid email format' })
@@ -206,6 +206,10 @@ export class AttendeesFilterDto {
   @IsArray()
   @IsMongoId({ each: true })
   enrollments?: string[];
+
+  @IsOptional()
+  @IsObject()
+  createdAt?: RangeStringDto;
 }
 
 export class GroupedAttendeesFilterDto {

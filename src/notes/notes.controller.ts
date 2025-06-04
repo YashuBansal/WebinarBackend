@@ -47,11 +47,6 @@ export class NotesController {
     }
 
     const attendee = await this.attendeeService.fetchAttendeeById(new Types.ObjectId(`${body.attendee}`));
-    console.log(attendee, 'attendee', createdBy, 'createdBy', [
-      String(attendee.assignedTo),
-      String(attendee.adminId),
-      String(attendee.tempAssignedTo)
-    ]);
 
     if (
       !attendee ||

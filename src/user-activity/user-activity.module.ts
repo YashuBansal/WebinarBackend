@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
       global: true,
     }),
     NotificationModule,
+    UsersModule
   ],
   controllers: [UserActivityController],
   providers: [UserActivityService, ConfigService, WebsocketGateway],

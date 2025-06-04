@@ -27,7 +27,7 @@ export class TagsService {
 
     const tag = new this.tagModel({
       name: sanitizedName,
-      usecase: createTagDto.usecase,
+      // usecase: createTagDto.usecase,
       adminId,
     });
 

@@ -22,7 +22,7 @@ export class Tag extends Document {
 
   @Prop({
     type: String,
-    required: [true, 'usecase is required'],
+    // required: [true, 'usecase is required'],
     enum: Object.values(Usecase),
   })
   usecase: Usecase;

@@ -93,8 +93,19 @@ export class AssignmentService {
         $match: {
           adminId: new Types.ObjectId(adminId),
           ...(id && { user: new Types.ObjectId(id) }),
-          ...(webinarId && { webinar: new Types.ObjectId(webinarId) }),
+          ...(webinarId &&
+            webinarId !== 'all' && { webinar: new Types.ObjectId(webinarId) }),
           status: assignmentStatus,
+          ...(filters.createdAt && {
+            createdAt: {
+              ...(filters.createdAt.$gte && {
+                $gte: new Date(filters.createdAt.$gte),
+              }),
+              ...(filters.createdAt.$lte && {
+                $lte: new Date(filters.createdAt.$lte),
+              }),
+            },
+          }),
         },
       },
       {

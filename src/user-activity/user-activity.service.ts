@@ -15,6 +15,7 @@ import {
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { SocketEvents } from 'src/websocket/dto/socket.dto';
 import { ConfigService } from '@nestjs/config';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class UserActivityService {
@@ -24,6 +25,7 @@ export class UserActivityService {
     private readonly notificationService: NotificationService,
     private readonly socketGateway: WebsocketGateway,
     private readonly configService: ConfigService,
+    private readonly userService: UsersService
   ) {}
 
   async addUserActivity(
@@ -57,6 +59,37 @@ export class UserActivityService {
           activity,
         },
       );
+
+      if (dto.action === 'reActive') {
+        console.log('reActive event',activity);
+
+        const employee = await this.userService.getUserById(user);
+
+        if(employee) {
+
+          // replace 'User' with employee.userName
+          const details = activity.details.replace (
+            'User',
+            employee.userName,
+          );
+
+
+        this.notificationService.createNotification({
+          recipient: adminId,
+          title: 'User Reactivated',
+          message: details,
+          type: notificationType.INFO,
+          actionType: notificationActionType.USER_ACTIVITY,
+          metadata: {
+            userId: user,
+            email: activity.item,
+            userName: activity.item,
+            role,
+          },
+        });
+
+      }
+      }
     }
   }
 

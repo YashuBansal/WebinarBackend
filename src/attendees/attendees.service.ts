@@ -1641,6 +1641,20 @@ export class AttendeesService {
               $cond: [{ $eq: ['$isAttended', false] }, 1, 0],
             },
           },
+                    attendedWebinarCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $gt: ['$timeInSession', 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
         },
       },
 
@@ -2093,6 +2107,20 @@ export class AttendeesService {
               $cond: [{ $eq: ['$isAttended', false] }, 1, 0],
             },
           },
+          attendedWebinarCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $gt: ['$timeInSession', 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
         },
       },
 
@@ -2416,7 +2444,7 @@ export class AttendeesService {
           preserveNullAndEmptyArrays: true,
         },
       },
-            {
+      {
         $lookup: {
           from: 'users',
           localField: 'reminderAssignedTo',
@@ -2430,7 +2458,7 @@ export class AttendeesService {
           preserveNullAndEmptyArrays: true,
         },
       },
-            {
+      {
         $lookup: {
           from: 'users',
           localField: 'salesAssignedTo',
