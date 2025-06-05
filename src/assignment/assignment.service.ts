@@ -621,7 +621,7 @@ export class AssignmentService {
           attendee: email,
           action: AttendeeAction.ASSIGNMENT,
           item: webinarName,
-          details: `Attendee has been assigned to ${userName} in the ${webinarType} webinar : ${webinarName}`,
+          details: `<span>Attendee has been assigned to <strong>${userName}</strong> in the <strong>${webinarType}</strong> webinar : <strong>${webinarName}</strong></span>`,
           adminId: new Types.ObjectId(`${adminId}`),
         });
 
@@ -1069,7 +1069,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
       attendee: newAttendee.email,
       action: AttendeeAction.REGISTERED,
       item: 'Attendee',
-      details: `Attendee registered by API for Reminder webinar : ${webinar?.webinarName}`,
+      details: `<span>Attendee registered by API for <strong>Reminder</strong> webinar : <strong>${webinar?.webinarName}</strong></span>`,
       adminId: new Types.ObjectId(adminId),
     });
 
@@ -1451,7 +1451,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
         attendee: email,
         action: AttendeeAction.REASSIGNMENT_REQUEST,
         item: webinarName,
-        details: `${userName} requested reassignment in webinar : ${webinarName}`,
+        details: `<span><strong>${userName}</strong> requested reassignment in webinar : <strong>${webinarName}</strong></span>`,
         adminId: new Types.ObjectId(`${adminId}`),
       }));
 
@@ -1515,7 +1515,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
         attendee: email,
         action: AttendeeAction.REASSIGNMENT_REQUEST,
         item: webinarName,
-        details: `${userName} cancelled the request for reassignment in ${recordType === 'preWebinar' ? 'Reminder' : 'Sales'} webinar : ${webinarName}`,
+        details: `<span><strong>${userName}</strong> cancelled the request for reassignment in <strong>${recordType === 'preWebinar' ? 'Reminder' : 'Sales'}</strong> webinar : <strong>${webinarName}</strong></span>`,
         adminId: new Types.ObjectId(`${adminId}`),
       }));
 
@@ -1753,7 +1753,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
             attendee: email,
             action: AttendeeAction.REASSIGNMENT_APPROVED,
             item: webinarName,
-            details: `Reassignment request approved in webinar : ${webinarName}`,
+            details: `<span>Reassignment request approved in webinar : <strong>${webinarName}</strong></span>`,
             adminId: new Types.ObjectId(`${adminId}`),
           }));
 
@@ -1800,7 +1800,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
           attendee: email,
           action: AttendeeAction.REASSIGNMENT_REJECTED,
           item: webinarName,
-          details: `Reassignment request Rejected in webinar : ${webinarName}`,
+          details: `<span>Reassignment request Rejected in webinar : <strong>${webinarName}</strong></span>`,
           adminId: new Types.ObjectId(`${adminId}`),
         }));
 
@@ -1935,7 +1935,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
               attendee: attendee.email,
               action: AttendeeAction.REASSIGNMENT,
               item: webinarName,
-              details: ` Attendee Reassigned to ${employee.userName} ${data.isTemp ? 'temporarily' : ''} in webinar : ${webinarName}`,
+              details: `<span>Attendee Reassigned to <strong>${employee.userName}</strong> <strong>${data.isTemp ? 'temporarily' : ''}</strong> in webinar : <strong>${webinarName}</strong></span>`,
               adminId: new Types.ObjectId(`${adminId}`),
             }));
 
@@ -2053,7 +2053,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
             attendee: attendee.email,
             action: AttendeeAction.PULLBACK,
             item: webinarName,
-            details: ` Attendee has been Pulled back in webinar : ${webinarName}`,
+            details: `<span>Attendee has been Pulled back in webinar : <strong>${webinarName}</strong></span>`,
             adminId: new Types.ObjectId(`${adminId}`),
           }));
 

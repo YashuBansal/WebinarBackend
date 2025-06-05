@@ -157,6 +157,42 @@ export class AttendeesService {
       }
     }
 
+    if(isAttended){
+
+      const similarPreWebinarAttendees = await this.attendeeModel.find({
+        webinar: new Types.ObjectId(`${webinar}`),
+        adminId: new Types.ObjectId(`${adminId}`),
+        isAttended: false,
+        email: { $in: tempAttendees.map((a) => a.email) },
+      });
+
+
+      const similarPreWebinarAttendeesMap = new Map();
+      similarPreWebinarAttendees.forEach((attendee) => {
+        similarPreWebinarAttendeesMap.set(attendee.email, attendee);
+      })
+
+      tempAttendees = tempAttendees.map((attendee) => {
+        let location = attendee.location || null;
+        let source = attendee.source || null;
+        let gender = attendee.gender || null;
+        if (similarPreWebinarAttendeesMap.has(attendee.email)) {
+          const preWebinarAttendee = similarPreWebinarAttendeesMap.get(attendee.email);
+          location = location || preWebinarAttendee.location || null;
+          source = source || preWebinarAttendee.source || null;
+          gender = gender || preWebinarAttendee.gender || null;
+        }
+
+        return {
+          ...attendee,
+          location,
+          source,
+          gender,
+        }
+      })
+
+    }
+
     if (isAttended && !postWebinarExists) {
       const unattendedAttendees: CreateAttendeeDto[] =
         await this.getPreWebinarUnattendedData(
@@ -1232,7 +1268,7 @@ export class AttendeesService {
     }
 
     // 3. Build the detailed log message
-    let logDetails = `Attendee Updated`;
+    let logDetails = `<span>Attendee Updated`;
     const changes: string[] = [];
 
     // Iterate through the fields provided in the update DTO
@@ -1273,10 +1309,10 @@ export class AttendeesService {
     const webinarName = updateAttendeeDto.webinarName || 'N/A';
 
     if (changes.length > 0) {
-      logDetails += ` by ${updatedBy} from the webinar : ${webinarName}. Changes: ${changes.join(', ')}.`;
+      logDetails += ` by <strong>${updatedBy}</strong> from the webinar : <strong>${webinarName}</strong>. Changes: <strong>${changes.join(', ')}</strong>.</span>`;
     } else {
       // If no actual changes were detected (e.g., DTO had same values as current)
-      logDetails += ` by ${updatedBy} from the webinar : ${webinarName}. No actual changes detected.`;
+      logDetails += ` by <strong>${updatedBy}</strong> from the webinar : <strong>${webinarName}</strong>. No actual changes detected.</span>`;
     }
 
     // 4. Create the log entry

@@ -196,7 +196,7 @@ export class AlarmService {
         attendee: createAlarmDto.email,
         item: '',
         action: AttendeeAction.ALARM,
-        details: `Alarm created by ${createAlarmDto.createdBy} for Date/Time : ${this.formatDateTime(createAlarmDto.date)}.`,
+        details: `<span>Alarm created by <strong>${createAlarmDto.createdBy}</strong> for Date/Time : <strong>${this.formatDateTime(createAlarmDto.date)}</strong>.</span>`,
         adminId: new Types.ObjectId(`${createAlarmDto.adminId}`),
       });
     }
@@ -260,12 +260,13 @@ export class AlarmService {
       { new: true },
     );
 
+    console.log('deleteAlarm', deleteAlarm);
     if (adminId && createdBy && deleteAlarm) {
       this.attendeeLogService.createSingleAttendeeLog({
         attendee: deleteAlarm.email,
         item: '',
         action: AttendeeAction.ALARM_CANCELLED,
-        details: `Alarm cancelled by ${createdBy} for Date/Time : ${this.formatDateTime(deleteAlarm.date)}.`,
+        details: `<span>Alarm cancelled by <strong>${createdBy}</strong> for Date/Time : <strong>${this.formatDateTime(deleteAlarm.date)}</strong>.</span>`,
         adminId: new Types.ObjectId(`${adminId}`),
       });
     }

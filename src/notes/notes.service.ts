@@ -100,7 +100,7 @@ export class NotesService {
       attendee: attendee.email,
       item: '',
       action: AttendeeAction.NOTE,
-      details: `Note created by ${body.createdBy} with status: ${body.status}.`,
+      details: `<span>Note created by <strong>${body.createdBy}</strong> with status: <strong>${body.status}</strong>.</span>`,
       adminId: new Types.ObjectId(`${adminId}`),
     });
 

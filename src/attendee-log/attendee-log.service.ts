@@ -129,7 +129,7 @@ export class AttendeeLogService {
       attendee: attendee.email,
       action: AttendeeAction.ADDED,
       item: webinarName,
-      details: `Attendee has been added to the ${webinarType} webinar : ${webinarName}`,
+      details: `<span>Attendee has been added to the <strong>${webinarType}</strong> webinar : <strong>${webinarName}</strong></span>`,
       adminId,
     }));
 
@@ -155,7 +155,7 @@ export class AttendeeLogService {
       attendee: attendee.email,
       action: AttendeeAction.ASSIGNMENT,
       item: webinarName,
-      details: `Attendee has been assigned to ${empData.userName} in the ${webinarType} webinar : ${webinarName}`,
+      details: `<span>Attendee has been assigned to <strong>${empData.userName}</strong> in the <strong>${webinarType}</strong> webinar : <strong>${webinarName}</strong></span>`,
       adminId,
     }));
 
@@ -177,7 +177,7 @@ export class AttendeeLogService {
       attendee: email,
       action: AttendeeAction.ASSIGNMENT,
       item: webinarName,
-      details: `Attendee has been assigned to ${userName} in the ${webinarType} webinar : ${webinarName}`,
+      details: `<span>Attendee has been assigned to <strong>${userName}</strong> in the <strong>${webinarType}</strong> webinar : <strong>${webinarName}</strong></span>`,
       adminId,
     });
   }

@@ -40,7 +40,7 @@ export class AttendeeAssociationService {
         attendee: email,
         item: '',
         action: AttendeeAction.LEAD_TYPE,
-        details: `Lead Type Updated by ${createdBy} : ${leadTypeLabel}.`,
+        details: `<span>Lead Type Updated by <strong>${createdBy}</strong> : <strong>${leadTypeLabel}</strong>.</span>`,
         adminId: new Types.ObjectId(`${adminId}`)
      })
     }

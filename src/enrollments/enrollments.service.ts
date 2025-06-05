@@ -184,7 +184,7 @@ export class EnrollmentsService {
         attendee: result.attendee,
         item: '',
         action: AttendeeAction.Enrollment_CREATED,
-        details: `Enrollment created by ${createdBy} for the webinar : ${webinarName} and product : ${productName}.`,
+        details: `<span>Enrollment created by <strong>${createdBy}</strong> for the webinar : <strong>${webinarName}</strong> and product : <strong>${productName}</strong>.</span>`,
         adminId: new Types.ObjectId(`${createEnrollmentDto.adminId}`),
       });
     }
