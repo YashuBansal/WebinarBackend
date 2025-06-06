@@ -16,7 +16,6 @@ import { SocketEvents } from 'src/websocket/dto/socket.dto';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { Attendee } from 'src/schemas/Attendee.schema';
-import { create } from 'domain';
 
 @Injectable()
 export class NotesService {

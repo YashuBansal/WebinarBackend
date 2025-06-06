@@ -67,6 +67,10 @@ export class GetAssignmentDTO {
   @IsMongoId()
   webinarId?: string;
 
+  @IsOptional()
+  @IsString()
+  validCallFlag?: string;
+
   @IsEnum(AssignmentStatus, {
     message: 'assignmentStatus must be a valid value',
   })

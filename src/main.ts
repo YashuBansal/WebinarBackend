@@ -13,6 +13,7 @@ async function bootstrap() {
       'http://localhost:5173',
       'http://localhost:5174',
       'https://saas.rittikbansal.com',
+      'https://dashboard.webinarleadshub.com',
     ],
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
     credentials: true,

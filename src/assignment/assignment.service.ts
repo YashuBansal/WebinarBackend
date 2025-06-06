@@ -51,6 +51,7 @@ import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { User } from 'src/schemas/User.schema';
 import { Webinar } from 'src/schemas/Webinar.schema';
+import mongoose from 'mongoose';
 
 @Injectable()
 export class AssignmentService {
@@ -79,14 +80,58 @@ export class AssignmentService {
     page: number,
     limit: number,
     filters: AttendeesFilterDto = {},
-    webinarId: string = '',
-    validCall: string = '',
-    assignmentStatus: AssignmentStatus,
-    sort: WebinarAttendeesSortObject = {
-      sortBy: WebinarAttendeesSortBy.EMAIL,
-      sortOrder: SortOrder.ASC,
+    obj: {
+      webinarId: string;
+      validCall?: string;
+      assignmentStatus?: AssignmentStatus;
+      sort?: WebinarAttendeesSortObject;
+      validCallFlag?: string;
     },
   ): Promise<any> {
+    const {
+      webinarId = '',
+      validCall = '',
+      assignmentStatus = {
+        sortBy: WebinarAttendeesSortBy.EMAIL,
+        sortOrder: SortOrder.ASC,
+      },
+      sort,
+      validCallFlag = 'all',
+    } = obj;
+
+    let validCallTime = 0;
+    if (validCallFlag !== 'all' && validCall === 'Worked') {
+      const emp = await this.userService.getUserById(id);
+      if (!emp) {
+        throw new NotFoundException('Employee not found');
+      }
+      if (emp.validCallTime) {
+        validCallTime = emp.validCallTime;
+      }
+    }
+
+    let notesMatchCondition;
+
+    if (validCallFlag === 'valid') {
+      notesMatchCondition = {
+        $elemMatch: {
+          callDuration: { $gte: validCallTime },
+        },
+      };
+    } else {
+      // If validCallFlag is not 'valid', we want *every* callDuration to be < validCallTime.
+      // This means there should be *no* note where callDuration is >= validCallTime.
+      notesMatchCondition = {
+        $not: {
+          // Negate the condition that follows
+          $elemMatch: {
+            // Check if there's any element that violates the rule
+            callDuration: { $gte: validCallTime }, // A note with callDuration >= validCallTime would violate "every is smaller"
+          },
+        },
+      };
+    }
+
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -108,6 +153,47 @@ export class AssignmentService {
           }),
         },
       },
+      ...(validCallFlag !== 'all' && validCall === 'Worked' && mongoose.isValidObjectId(id)
+        ? [
+            {
+              $lookup: {
+                from: 'notes',
+                let: {
+                  tempAttendee: '$attendee',
+                  tempUser: new Types.ObjectId(`${id}`),
+                },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          {
+                            $eq: ['$attendee', '$$tempAttendee'],
+                          },
+                          {
+                            $eq: ['$createdBy', '$$tempUser'],
+                          },
+                        ],
+                      },
+                    },
+                  },
+                  {
+                    $project: {
+                      callDuration: 1,
+                    },
+                  },
+                ],
+                as: 'notes',
+              },
+            },
+            {
+              $match: {
+                notes: notesMatchCondition,
+              },
+            },
+          ]
+        : []),
+
       {
         $lookup: {
           from: 'attendees',
@@ -2648,6 +2734,9 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
           },
           userEmail: {
             $arrayElemAt: ['$userData.email', 0],
+          },
+          userName: {
+            $arrayElemAt: ['$userData.userName', 0],
           },
         },
       },

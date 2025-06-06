@@ -75,10 +75,13 @@ export class AssignmentController {
       page,
       limit,
       body.filters,
-      query.webinarId,
-      body.validCall,
-      body.assignmentStatus,
-      body.sort
+      {
+       webinarId: query.webinarId,
+      validCall: body.validCall,
+      assignmentStatus: body.assignmentStatus,
+      sort: body.sort,
+      validCallFlag: body.validCallFlag,
+      }
     );
     return result;
   }
@@ -97,9 +100,10 @@ export class AssignmentController {
       page,
       limit,
       body.filters,
-      body.webinarId,
-      null,
-      AssignmentStatus.REASSIGN_REQUESTED,
+     {
+       webinarId: body.webinarId,
+      assignmentStatus: AssignmentStatus.REASSIGN_REQUESTED,
+     }
     );
     return result;
   }

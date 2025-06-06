@@ -82,8 +82,8 @@ export class UserActivityService {
           actionType: notificationActionType.USER_ACTIVITY,
           metadata: {
             userId: user,
-            email: activity.item,
-            userName: activity.item,
+            email: employee.email,
+            userName: employee.userName,
             role,
           },
         });
@@ -333,6 +333,7 @@ export class UserActivityService {
         $project: {
           _id: 1,
           userEmail: '$userDetails.email',
+          userName: '$userDetails.userName',
           userRole: { $arrayElemAt: ['$roleDetails.name', 0] },
           action: '$actions.action',
           details: '$actions.details',

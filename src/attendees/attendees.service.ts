@@ -157,8 +157,7 @@ export class AttendeesService {
       }
     }
 
-    if(isAttended){
-
+    if (isAttended) {
       const similarPreWebinarAttendees = await this.attendeeModel.find({
         webinar: new Types.ObjectId(`${webinar}`),
         adminId: new Types.ObjectId(`${adminId}`),
@@ -166,21 +165,30 @@ export class AttendeesService {
         email: { $in: tempAttendees.map((a) => a.email) },
       });
 
-
       const similarPreWebinarAttendeesMap = new Map();
       similarPreWebinarAttendees.forEach((attendee) => {
         similarPreWebinarAttendeesMap.set(attendee.email, attendee);
-      })
+      });
 
       tempAttendees = tempAttendees.map((attendee) => {
         let location = attendee.location || null;
         let source = attendee.source || null;
         let gender = attendee.gender || null;
+        let tags = attendee.tags || '';
         if (similarPreWebinarAttendeesMap.has(attendee.email)) {
-          const preWebinarAttendee = similarPreWebinarAttendeesMap.get(attendee.email);
+          const preWebinarAttendee = similarPreWebinarAttendeesMap.get(
+            attendee.email,
+          );
           location = location || preWebinarAttendee.location || null;
           source = source || preWebinarAttendee.source || null;
           gender = gender || preWebinarAttendee.gender || null;
+          const preWebinarTags = Array.isArray(preWebinarAttendee.tags)
+            ? preWebinarAttendee.tags
+            : [];
+          const newTags = tags.split(',').map((tag) => tag.trim());
+          tags = Array.from(new Set([...preWebinarTags, ...newTags]))
+            .filter((tag) => tag.trim() !== '') // Remove empty tags
+            .join(',');
         }
 
         return {
@@ -188,9 +196,9 @@ export class AttendeesService {
           location,
           source,
           gender,
-        }
-      })
-
+          tags,
+        };
+      });
     }
 
     if (isAttended && !postWebinarExists) {
@@ -680,7 +688,6 @@ export class AttendeesService {
       sort?: WebinarAttendeesSortObject;
       leadType?: boolean;
     },
-
     usePagination: boolean = true,
   ): Promise<any> {
     const skip = (page - 1) * limit;
@@ -1677,7 +1684,7 @@ export class AttendeesService {
               $cond: [{ $eq: ['$isAttended', false] }, 1, 0],
             },
           },
-                    attendedWebinarCount: {
+          attendedWebinarCount: {
             $sum: {
               $cond: [
                 {
@@ -1690,6 +1697,12 @@ export class AttendeesService {
                 0,
               ],
             },
+          },
+          locations: {
+            $addToSet: '$location',
+          },
+          sources: {
+            $addToSet: '$source',
           },
         },
       },
@@ -2013,6 +2026,8 @@ export class AttendeesService {
           attendeeId: 1,
           attendedWebinarCount: 1,
           registeredWebinarCount: 1,
+          locations: 1,
+          sources: 1,
         },
       },
     ];
@@ -2156,6 +2171,12 @@ export class AttendeesService {
                 0,
               ],
             },
+          },
+          locations: {
+            $addToSet: '$location',
+          },
+          sources: {
+            $addToSet: '$source',
           },
         },
       },
@@ -2522,6 +2543,8 @@ export class AttendeesService {
           attendeeId: 1,
           attendedWebinarCount: 1,
           registeredWebinarCount: 1,
+          locations: 1,
+          sources: 1,
         },
       },
       {
