@@ -99,7 +99,7 @@ export class UserActivityService {
     limit: number,
     filters?: UserActivityFilterDTO,
   ): Promise<{
-    data: UserActivity[];
+    data: any[];
     pagination: {
       totalActivities: number;
       totalPages: number;

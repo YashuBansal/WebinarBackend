@@ -68,13 +68,13 @@ export class UserActivityController {
     @Query('limit') limit: string,
     @Query('filters') filters?: UserActivityFilterDTO,
   ) {
-    if (!userId) {
+    if (!userId || !mongoose.isValidObjectId(userId)) {
       throw new BadRequestException('User ID is required.');
     }
     console.log();
 
     const activities = await this.userActivityService.getUserActivitiesByUser(
-      new Types.ObjectId(userId),
+      new Types.ObjectId(`${userId}`),
       parseInt(page) || 1,
       parseInt(limit) || 10,
       filters,

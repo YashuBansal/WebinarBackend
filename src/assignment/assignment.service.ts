@@ -153,7 +153,9 @@ export class AssignmentService {
           }),
         },
       },
-      ...(validCallFlag !== 'all' && validCall === 'Worked' && mongoose.isValidObjectId(id)
+      ...(validCallFlag !== 'all' &&
+      validCall === 'Worked' &&
+      mongoose.isValidObjectId(id)
         ? [
             {
               $lookup: {
@@ -2168,6 +2170,30 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
         );
       }
 
+      const webinar = await this.webinarService.getWebinarById(webinarId);
+
+      if (!webinar) {
+        throw new NotFoundException('Webinar does not exist.');
+      }
+
+      let tempEmployees = [];
+      const assignedEmployees = webinar.assignedEmployees || [];
+
+      const isPresent = assignedEmployees.some(
+        (item) => `${item}` === `${employeeId}`, // Ensure type-safe comparison
+      );
+
+      if (!isPresent) {
+        // Add the new employeeId to the list
+        tempEmployees = [...assignedEmployees, employeeId];
+
+        // Optionally, update the webinar document with new assignedEmployees
+        this.webinarService.updateAssignedEmployees(
+          webinar._id as Types.ObjectId,
+          tempEmployees,
+        );
+      }
+
       return await this.changeAssignment(
         {
           assignments: assignments.map((assignment) => ({
@@ -2187,6 +2213,19 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
 
   async createManyAssignments(assignments: any, session: ClientSession) {
     return this.assignmentsModel.insertMany(assignments, { session });
+  }
+
+  async checkAssignmentExists(
+    employees: Types.ObjectId[],
+    webinarId: Types.ObjectId,
+  ) {
+    const result = await this.assignmentsModel.find({
+      user: {
+        $in: employees,
+      },
+      webinar: webinarId,
+    });
+    return Array.isArray(result) && result.length > 0;
   }
 
   async fetchTotalAssignmentsForNotes(

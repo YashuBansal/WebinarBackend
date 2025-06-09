@@ -267,19 +267,49 @@ export class WebinarService {
     adminId: string,
     updateWebinarDto: UpdateWebinarDto,
   ): Promise<any> {
-    //update webinar
-    console.log(updateWebinarDto);
+    const webinar = await this.webinarModel.findById(id);
+
+    if (!webinar) {
+      throw new NotFoundException('Webinar not found');
+    }
+
+    const previousAssigned = webinar.assignedEmployees || [];
+    const updatedAssigned: any = updateWebinarDto.assignedEmployees || [];
+
+    // Identify removed employees
+    const removedEmployees = previousAssigned.filter(
+      (empId: Types.ObjectId) => !updatedAssigned.includes(`${empId}`),
+    );
+
+    // If there are removed employees, check if they're assigned elsewhere
+    if (removedEmployees.length > 0) {
+      const isAssignmentExists =
+        await this.assignmentService.checkAssignmentExists(
+          removedEmployees,
+          new Types.ObjectId(`${id}`),
+        );
+
+      if (isAssignmentExists) {
+        throw new BadRequestException(
+          'One or more removed employees are still assigned to another task',
+        );
+      }
+    }
+
+    // Proceed with the update
     const result = await this.webinarModel.findOneAndUpdate(
       {
-        _id: new Types.ObjectId(`${id}`),
-        adminId: new Types.ObjectId(`${adminId}`),
+        _id: new Types.ObjectId(id),
+        adminId: new Types.ObjectId(adminId),
       },
       {
         $set: {
           ...updateWebinarDto,
         },
       },
+      { new: true }, // return the updated document
     );
+
     return result;
   }
 
@@ -394,10 +424,21 @@ export class WebinarService {
   }
 
   async getWebinarById(webinarId: string): Promise<Webinar> {
-    return this.webinarModel.findById(webinarId).lean();
+    return this.webinarModel.findById(webinarId);
   }
 
   async getAssignedProducts(webinarId: Types.ObjectId) {
     return this.webinarModel.findById(webinarId).populate('productIds');
+  }
+
+  async updateAssignedEmployees(
+    webinarId: Types.ObjectId,
+    tempEmployees: Types.ObjectId[],
+  ) {
+    await this.webinarModel.findByIdAndUpdate(
+      webinarId,
+      { $set: { assignedEmployees: tempEmployees } },
+      { new: true },
+    );
   }
 }

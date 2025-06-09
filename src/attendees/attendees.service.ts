@@ -201,6 +201,24 @@ export class AttendeesService {
       });
     }
 
+    const allLastNamesBlank = tempAttendees.every(
+      (attendee) => !attendee.lastName || attendee.lastName.trim() === '',
+    );
+
+    const someFirstNamePresent = tempAttendees.some(
+      (attendee) => attendee.firstName && attendee.firstName.trim() !== '',
+    );
+
+    if (allLastNamesBlank && someFirstNamePresent) {
+      tempAttendees.forEach((attendee) => {
+        if (attendee.firstName && attendee.firstName.trim() !== '') {
+          const parts = attendee.firstName.trim().split(' ');
+          attendee.firstName = parts[0];
+          attendee.lastName = parts.slice(1).join(' ') || '';
+        }
+      });
+    }
+
     if (isAttended && !postWebinarExists) {
       const unattendedAttendees: CreateAttendeeDto[] =
         await this.getPreWebinarUnattendedData(
@@ -1233,6 +1251,7 @@ export class AttendeesService {
     adminId: string, // Consider if adminId is truly needed here for permission check vs update filter
     userId: string, // The user performing the action
     updateAttendeeDto: UpdateAttendeeDto,
+    attendeeLogFlag: boolean = true,
   ): Promise<Attendee> {
     // 1. Fetch the attendee *before* the update for permission check and comparison
     const attendeeBeforeUpdate = await this.attendeeModel.findOne({
@@ -1274,68 +1293,70 @@ export class AttendeesService {
       );
     }
 
-    // 3. Build the detailed log message
-    let logDetails = `<span>Attendee Updated`;
-    const changes: string[] = [];
+    if (attendeeLogFlag) {
+      // 3. Build the detailed log message
+      let logDetails = `<span>Attendee Updated`;
+      const changes: string[] = [];
 
-    // Iterate through the fields provided in the update DTO
-    // and compare the 'before' and 'after' values
-    for (const key in updateAttendeeDto) {
-      // Check if the key exists in the DTO and the original document (or could potentially exist)
-      // We only log changes for fields present in the DTO
-      if (updateAttendeeDto.hasOwnProperty(key)) {
-        const oldValue = attendeeBeforeUpdate[key];
-        const newValue = resultWithAdminFilter[key]; // Use the result document
+      // Iterate through the fields provided in the update DTO
+      // and compare the 'before' and 'after' values
+      for (const key in updateAttendeeDto) {
+        // Check if the key exists in the DTO and the original document (or could potentially exist)
+        // We only log changes for fields present in the DTO
+        if (updateAttendeeDto.hasOwnProperty(key)) {
+          const oldValue = attendeeBeforeUpdate[key];
+          const newValue = resultWithAdminFilter[key]; // Use the result document
 
-        // Compare values. Handle ObjectIds and potential null/undefined values carefully.
-        // Converting to String() is a simple way to compare many types for logging purposes.
-        const oldValueString =
-          oldValue === null || oldValue === undefined
-            ? 'N/A'
-            : oldValue instanceof Types.ObjectId
-              ? oldValue.toString()
-              : String(oldValue);
-        const newValueString =
-          newValue === null || newValue === undefined
-            ? 'N/A'
-            : newValue instanceof Types.ObjectId
-              ? newValue.toString()
-              : String(newValue);
+          // Compare values. Handle ObjectIds and potential null/undefined values carefully.
+          // Converting to String() is a simple way to compare many types for logging purposes.
+          const oldValueString =
+            oldValue === null || oldValue === undefined
+              ? 'N/A'
+              : oldValue instanceof Types.ObjectId
+                ? oldValue.toString()
+                : String(oldValue);
+          const newValueString =
+            newValue === null || newValue === undefined
+              ? 'N/A'
+              : newValue instanceof Types.ObjectId
+                ? newValue.toString()
+                : String(newValue);
 
-        if (oldValueString !== newValueString) {
-          // Log the change only if the string representation is different
-          changes.push(
-            `"${key}" from "${oldValueString}" to "${newValueString}"`,
-          );
+          if (oldValueString !== newValueString) {
+            // Log the change only if the string representation is different
+            changes.push(
+              `"${key}" from "${oldValueString}" to "${newValueString}"`,
+            );
+          }
         }
       }
-    }
 
-    // Add context from DTO and the detected changes to the log details
-    const updatedBy = updateAttendeeDto.createdBy || 'N/A';
-    const webinarName = updateAttendeeDto.webinarName || 'N/A';
+      // Add context from DTO and the detected changes to the log details
+      const updatedBy = updateAttendeeDto.createdBy || 'N/A';
+      const webinarName = updateAttendeeDto.webinarName || 'N/A';
 
-    if (changes.length > 0) {
-      logDetails += ` by <strong>${updatedBy}</strong> from the webinar : <strong>${webinarName}</strong>. Changes: <strong>${changes.join(', ')}</strong>.</span>`;
-    } else {
-      // If no actual changes were detected (e.g., DTO had same values as current)
-      logDetails += ` by <strong>${updatedBy}</strong> from the webinar : <strong>${webinarName}</strong>. No actual changes detected.</span>`;
-    }
+      if (changes.length > 0) {
+        logDetails += ` by <strong>${updatedBy}</strong> from the webinar : <strong>${webinarName}</strong>. Changes: <strong>${changes.join(', ')}</strong>.</span>`;
+      } else {
+        // If no actual changes were detected (e.g., DTO had same values as current)
+        logDetails += ` by <strong>${updatedBy}</strong> from the webinar : <strong>${webinarName}</strong>. No actual changes detected.</span>`;
+      }
 
-    // 4. Create the log entry
-    // Check if adminId is available as it's required by createSingleAttendeeLog
-    if (adminId) {
-      this.attendeeLogService.createSingleAttendeeLog({
-        // Use email from the updated document
-        attendee: resultWithAdminFilter.email,
-        item: '', // As per original code
-        action: AttendeeAction.UPDATE_ATTENDEE,
-        details: logDetails,
-        adminId: new Types.ObjectId(adminId),
-      });
-    } else {
-      // Optional: Log a warning or error if adminId is missing but logging was intended
-      console.warn('AdminId is missing, skipping attendee log creation.');
+      // 4. Create the log entry
+      // Check if adminId is available as it's required by createSingleAttendeeLog
+      if (adminId) {
+        this.attendeeLogService.createSingleAttendeeLog({
+          // Use email from the updated document
+          attendee: resultWithAdminFilter.email,
+          item: '', // As per original code
+          action: AttendeeAction.UPDATE_ATTENDEE,
+          details: logDetails,
+          adminId: new Types.ObjectId(adminId),
+        });
+      } else {
+        // Optional: Log a warning or error if adminId is missing but logging was intended
+        console.warn('AdminId is missing, skipping attendee log creation.');
+      }
     }
 
     // 5. Return the updated document

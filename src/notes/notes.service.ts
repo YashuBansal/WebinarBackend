@@ -77,6 +77,7 @@ export class NotesService {
         adminId,
         createdBy,
         { status: body.status, ...(validCall ? { validCall } : {}) },
+        false,
       );
     } else {
       attendee = await this.attendeeService.getAttendeeById(body.attendee);
