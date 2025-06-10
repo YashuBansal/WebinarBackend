@@ -109,7 +109,7 @@ export class EnrollmentsService {
     const existingEnrollments = await this.enrollmentModel
       .find({
         webinar: webinarId,
-        $or: combinationsToCheck,
+        $or: combinationsToCheck, 
       })
       .exec(); // Add .exec() if you are using Mongoose promises
 
@@ -133,12 +133,10 @@ export class EnrollmentsService {
     if (enrollmentsToInsert.length > 0) {
       console.log(`Inserting ${enrollmentsToInsert.length} new enrollments.`);
       try {
-        console.log(enrollmentsToInsert);
+    console.log(enrollmentsToInsert);
         // Assuming enrollmentModel is a Mongoose model with insertMany
-        const result = await this.enrollmentModel.insertMany(
-          enrollmentsToInsert,
-          { session },
-        );
+        const result =
+          await this.enrollmentModel.insertMany(enrollmentsToInsert, { session });
         console.log(`Successfully inserted ${result.length} enrollments.`);
         return result; // Return the documents that were successfully inserted
       } catch (error) {
@@ -378,21 +376,14 @@ export class EnrollmentsService {
           path: '$product',
         },
       },
-      {
-        $group: {
-          _id: '$product.level',
-          count: {
-            $sum: 1,
-          },
-        },
-      },
+      
     ];
 
     const result = await this.enrollmentModel.aggregate(pipeline);
     return result;
   }
 
-  async getEnrollmentsByProductLevel(
+    async getEnrollmentsByProductLevel(
     adminId: string,
     email: string,
     productLevel: number,
@@ -445,6 +436,81 @@ export class EnrollmentsService {
           productName: '$product.name',
           productLevel: '$product.level',
           productPrice: '$product.price',
+          enrollmentDate: '$createdAt',
+        },
+      },
+      {
+        $sort: {
+          enrollmentDate: -1,
+        },
+      },
+    ];
+
+    const result = await this.enrollmentModel.aggregate(pipeline);
+    return result;
+  }
+
+  async getEnrollmentsByEmail(
+    adminId: string,
+    email: string,
+  ) {
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          adminId: new Types.ObjectId(`${adminId}`),
+          attendee: email,
+        },
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'product',
+          foreignField: '_id',
+          as: 'product',
+        },
+      },
+      {
+        $unwind: {
+          path: '$product',
+        },
+      },
+      {
+        $lookup: {
+          from: 'webinars',
+          localField: 'webinar',
+          foreignField: '_id',
+          as: 'webinar',
+        },
+      },
+      {
+        $unwind: {
+          path: '$webinar',
+        },
+      },
+     {
+      $lookup: {
+        from: 'users',
+        localField: 'assignedBy',
+        foreignField: '_id',
+        as: 'assignedByUser', // ✅ avoid name conflict
+      },
+    },
+    {
+      $unwind: {
+        path: '$assignedByUser',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+      {
+        $project: {
+          _id: 1,
+          webinarName: '$webinar.webinarName',
+          webinarDate: '$webinar.webinarDate',
+          productName: '$product.name',
+          productLevel: '$product.level',
+          productPrice: '$price',
+          assignedBy: '$assignedByUser.userName',
+          assignType : '$assignType',
           enrollmentDate: '$createdAt',
         },
       },

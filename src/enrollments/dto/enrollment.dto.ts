@@ -49,6 +49,11 @@ export class GetEnrollmentsByProductLevelDto {
   @IsNotEmpty()
   productLevel: string;
 }
+export class GetEnrollmentsByEmailDto {
+  @IsString()
+  @IsNotEmpty()
+  email: string;
+}
 
 export class EnrollmentsByLevelOrProductDTO{
   @IsOptional()
