@@ -1,5 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { User } from './User.schema';
+import { Products } from './Products.schema';
+import { Webinar } from './Webinar.schema';
+
+export enum AssignType {
+  AUTO = 'auto',
+  MANUAL = 'manual',
+}
 
 @Schema({ timestamps: true })
 export class Enrollment extends Document {
@@ -11,21 +19,21 @@ export class Enrollment extends Document {
 
   @Prop({
     type: Types.ObjectId,
-    ref: 'Webinar',
+    ref: Webinar.name,
     required: [true, 'Webinar Id is required.'],
   })
   webinar: Types.ObjectId;
 
   @Prop({
     type: Types.ObjectId,
-    ref: 'Products',
+    ref: Products.name,
     require: [true, 'Product ID is required.'],
   })
   product: Types.ObjectId;
 
   @Prop({
     type: Number,
-    min:0,
+    min: 0,
     default: 0,
     required: [true, 'Product price is required'],
   })
@@ -33,10 +41,23 @@ export class Enrollment extends Document {
 
   @Prop({
     type: Types.ObjectId,
-    ref: 'User',
+    ref: User.name,
     required: [true, 'Admin Id is required'],
   })
   adminId: Types.ObjectId;
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: User.name,
+  })
+  assignedBy: Types.ObjectId;
+
+  @Prop({
+    type: String,
+    enum: Object.values(AssignType),
+    default: AssignType.AUTO,
+  })
+  assignType: AssignType;
 }
 
 const EnrollmentSchema = SchemaFactory.createForClass(Enrollment);
@@ -54,6 +75,6 @@ EnrollmentSchema.pre('save', function (next) {
   next();
 });
 
-EnrollmentSchema.index({  adminId: 1, attendee: 1 });
+EnrollmentSchema.index({ adminId: 1, attendee: 1 });
 
 export { EnrollmentSchema };

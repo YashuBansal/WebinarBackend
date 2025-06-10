@@ -6,8 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model, PipelineStage, Types } from 'mongoose';
-import { Enrollment } from 'src/schemas/Enrollments.schema';
+import mongoose, { ClientSession, Model, PipelineStage, Types } from 'mongoose';
+import { AssignType, Enrollment } from 'src/schemas/Enrollments.schema';
 import {
   CreateEnrollmentDto,
   EnrollmentsByLevelOrProductDTO,
@@ -38,7 +38,7 @@ export class EnrollmentsService {
     }[],
     webinarId: Types.ObjectId,
     adminId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<any[]> {
     // Adjust return type based on insertMany result
 
@@ -85,7 +85,7 @@ export class EnrollmentsService {
             webinar: webinarId,
             product: product.id,
             price: product.price,
-            adminId
+            adminId,
             // Add any other default fields needed for an enrollment document
           });
         }
@@ -109,7 +109,7 @@ export class EnrollmentsService {
     const existingEnrollments = await this.enrollmentModel
       .find({
         webinar: webinarId,
-        $or: combinationsToCheck, 
+        $or: combinationsToCheck,
       })
       .exec(); // Add .exec() if you are using Mongoose promises
 
@@ -133,10 +133,12 @@ export class EnrollmentsService {
     if (enrollmentsToInsert.length > 0) {
       console.log(`Inserting ${enrollmentsToInsert.length} new enrollments.`);
       try {
-    console.log(enrollmentsToInsert);
+        console.log(enrollmentsToInsert);
         // Assuming enrollmentModel is a Mongoose model with insertMany
-        const result =
-          await this.enrollmentModel.insertMany(enrollmentsToInsert, { session });
+        const result = await this.enrollmentModel.insertMany(
+          enrollmentsToInsert,
+          { session },
+        );
         console.log(`Successfully inserted ${result.length} enrollments.`);
         return result; // Return the documents that were successfully inserted
       } catch (error) {
@@ -155,6 +157,7 @@ export class EnrollmentsService {
 
   async createEnrollment(
     createEnrollmentDto: CreateEnrollmentDto,
+    assignedBy?: string,
   ): Promise<any> {
     const product = await this.productsService.getProduct(
       new Types.ObjectId(`${createEnrollmentDto.product}`),
@@ -175,6 +178,10 @@ export class EnrollmentsService {
     const result = await this.enrollmentModel.create({
       ...createEnrollmentDto,
       price: product.price,
+      assignedBy: mongoose.isValidObjectId(assignedBy)
+        ? new Types.ObjectId(`${assignedBy}`)
+        : undefined,
+      assignType: assignedBy ? AssignType.MANUAL : AssignType.AUTO,
     });
 
     const { createdBy, webinarName, productName } = createEnrollmentDto;

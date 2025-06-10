@@ -24,11 +24,12 @@ export class EnrollmentsController {
   @Post()
   async createEnrollment(
     @AdminId() adminId: string,
+    @Id() userId: string,
     @Body() createEnrollmentDto: CreateEnrollmentDto,
   ): Promise<any> {
     createEnrollmentDto.adminId = adminId;
     const enrollment =
-      await this.enrollmentsService.createEnrollment(createEnrollmentDto);
+      await this.enrollmentsService.createEnrollment(createEnrollmentDto, userId);
     return enrollment;
   }
 

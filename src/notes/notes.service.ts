@@ -48,7 +48,6 @@ export class NotesService {
     createdBy: string,
     adminId: string,
   ): Promise<Notes | null> {
-    //check if note's callduration >= user's validCallTime to add validCall: true in attendee
 
     const user = await this.usersService.getUserById(createdBy);
     let validCall = false;
@@ -66,8 +65,6 @@ export class NotesService {
       await this.assignService.getActiveAssignmentByAttendeeId(
         new Types.ObjectId(`${body.attendee}`),
       );
-
-    console.log('---- ', isAssignment);
 
     let attendee: Attendee | null = null;
 
