@@ -76,5 +76,6 @@ EnrollmentSchema.pre('save', function (next) {
 });
 
 EnrollmentSchema.index({ adminId: 1, attendee: 1 });
+EnrollmentSchema.index({ adminId: 1, product: 1 });
 
 export { EnrollmentSchema };
