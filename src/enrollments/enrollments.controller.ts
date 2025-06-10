@@ -12,6 +12,7 @@ import { AdminId, Id } from 'src/decorators/custom.decorator';
 import {
   CreateEnrollmentDto,
   EnrollmentsByLevelOrProductDTO,
+  GetEnrollmentsByEmailDto,
   GetEnrollmentsByProductLevelDto,
   UpdateEnrollmentDto,
 } from './dto/enrollment.dto';
@@ -99,6 +100,19 @@ export class EnrollmentsController {
       adminId,
       query.email,
       productLevel,
+    );
+    return result;
+  }
+
+  @Get('product-email-enrollments')
+  async getEnrollmentsByEmail(
+    @AdminId() adminId: string,
+    @Query() query: GetEnrollmentsByEmailDto,
+  ): Promise<any> {
+ 
+    const result = await this.enrollmentsService.getEnrollmentsByEmail(
+      adminId,
+      query.email
     );
     return result;
   }
