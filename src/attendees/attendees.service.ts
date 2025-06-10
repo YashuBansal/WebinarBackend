@@ -902,7 +902,10 @@ export class AttendeesService {
                   },
                   {
                     $group: {
-                      _id: '$product',
+                      _id: {
+                        product: '$product',
+                        price: '$price',
+                      },
                       count: {
                         $sum: 1,
                       },
@@ -911,18 +914,35 @@ export class AttendeesService {
                   {
                     $lookup: {
                       from: 'products',
-                      localField: '_id',
+                      localField: '_id.product',
                       foreignField: '_id',
                       as: 'product',
                     },
                   },
                   {
-                    $project: {
-                      _id: 1,
-                      count: 1,
-                      productName: {
-                        $arrayElemAt: ['$product.name', 0],
+                    $unwind: {
+                      path: '$product',
+                      preserveNullAndEmptyArrays: true,
+                    },
+                  },
+                  {
+                    $addFields: {
+                      label: {
+                        $concat: [
+                          '$product.name',
+                          ' (',
+                          { $toString: '$count' },
+                          ') - ',
+                          { $toString: '$_id.price' },
+                        ],
                       },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      labels: { $push: '$label' },
+                      ids: { $push: '$_id.product' },
                     },
                   },
                 ],
@@ -930,8 +950,14 @@ export class AttendeesService {
               },
             },
             {
+              $unwind: {
+                path: '$enrollments',
+                preserveNullAndEmptyArrays: false,
+              },
+            },
+            {
               $match: {
-                'enrollments._id': {
+                'enrollments.ids': {
                   $in: filters.enrollments.map((id) => new Types.ObjectId(id)),
                 },
               },
@@ -1031,7 +1057,10 @@ export class AttendeesService {
                   },
                   {
                     $group: {
-                      _id: '$product',
+                      _id: {
+                        product: '$product',
+                        price: '$price',
+                      },
                       count: {
                         $sum: 1,
                       },
@@ -1040,22 +1069,50 @@ export class AttendeesService {
                   {
                     $lookup: {
                       from: 'products',
-                      localField: '_id',
+                      localField: '_id.product',
                       foreignField: '_id',
                       as: 'product',
                     },
                   },
                   {
-                    $project: {
-                      _id: 1,
-                      count: 1,
-                      productName: {
-                        $arrayElemAt: ['$product.name', 0],
+                    $unwind: {
+                      path: '$product',
+                      preserveNullAndEmptyArrays: true,
+                    },
+                  },
+                  {
+                    $addFields: {
+                      label: {
+                        $concat: [
+                          '$product.name',
+                          ' (',
+                          { $toString: '$count' },
+                          ') - ',
+                          { $toString: '$_id.price' },
+                        ],
                       },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      labels: { $push: '$label' },
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 0,
+                      labels: 1,
                     },
                   },
                 ],
                 as: 'enrollments',
+              },
+            },
+            {
+              $unwind: {
+                path: '$enrollments',
+                preserveNullAndEmptyArrays: true,
               },
             },
           ]),
@@ -1075,7 +1132,7 @@ export class AttendeesService {
           source: 1,
           createdAt: 1,
           tags: 1,
-          enrollments: 1,
+          enrollments: '$enrollments.labels',
         },
       },
     ];
@@ -1853,7 +1910,10 @@ export class AttendeesService {
             {
               $lookup: {
                 from: 'enrollments',
-                let: { tempMail: '$_id' },
+                let: {
+                  tempMail: '$_id',
+                  tempAdminId: new Types.ObjectId(`${adminId}`),
+                },
                 pipeline: [
                   {
                     $match: {
@@ -1863,7 +1923,7 @@ export class AttendeesService {
                             $eq: ['$attendee', '$$tempMail'],
                           },
                           {
-                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                            $eq: ['$adminId', '$$tempAdminId'],
                           },
                         ],
                       },
@@ -1871,7 +1931,10 @@ export class AttendeesService {
                   },
                   {
                     $group: {
-                      _id: '$product',
+                      _id: {
+                        product: '$product',
+                        price: '$price',
+                      },
                       count: {
                         $sum: 1,
                       },
@@ -1880,18 +1943,35 @@ export class AttendeesService {
                   {
                     $lookup: {
                       from: 'products',
-                      localField: '_id',
+                      localField: '_id.product',
                       foreignField: '_id',
                       as: 'product',
                     },
                   },
                   {
-                    $project: {
-                      _id: 1,
-                      count: 1,
-                      productName: {
-                        $arrayElemAt: ['$product.name', 0],
+                    $unwind: {
+                      path: '$product',
+                      preserveNullAndEmptyArrays: true,
+                    },
+                  },
+                  {
+                    $addFields: {
+                      label: {
+                        $concat: [
+                          '$product.name',
+                          ' (',
+                          { $toString: '$count' },
+                          ') - ',
+                          { $toString: '$_id.price' },
+                        ],
                       },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      labels: { $push: '$label' },
+                      ids: { $push: '$_id.product' },
                     },
                   },
                 ],
@@ -1899,8 +1979,14 @@ export class AttendeesService {
               },
             },
             {
+              $unwind: {
+                path: '$enrollments',
+                preserveNullAndEmptyArrays: false,
+              },
+            },
+            {
               $match: {
-                'enrollments._id': {
+                'enrollments.ids': {
                   $in: filters.enrollments.map((id) => new Types.ObjectId(id)),
                 },
               },
@@ -2005,7 +2091,10 @@ export class AttendeesService {
                   },
                   {
                     $group: {
-                      _id: '$product',
+                      _id: {
+                        product: '$product',
+                        price: '$price',
+                      },
                       count: {
                         $sum: 1,
                       },
@@ -2014,29 +2103,57 @@ export class AttendeesService {
                   {
                     $lookup: {
                       from: 'products',
-                      localField: '_id',
+                      localField: '_id.product',
                       foreignField: '_id',
                       as: 'product',
                     },
                   },
                   {
-                    $project: {
-                      _id: 1,
-                      count: 1,
-                      productName: {
-                        $arrayElemAt: ['$product.name', 0],
+                    $unwind: {
+                      path: '$product',
+                      preserveNullAndEmptyArrays: true,
+                    },
+                  },
+                  {
+                    $addFields: {
+                      label: {
+                        $concat: [
+                          '$product.name',
+                          ' (',
+                          { $toString: '$count' },
+                          ') - ',
+                          { $toString: '$_id.price' },
+                        ],
                       },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      labels: { $push: '$label' },
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 0,
+                      labels: 1,
                     },
                   },
                 ],
                 as: 'enrollments',
               },
             },
+            {
+              $unwind: {
+                path: '$enrollments',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
           ]),
       {
         $project: {
           reminderLastStatus: 1,
-          enrollments: 1,
+          enrollments: '$enrollments.labels',
           salesLastStatus: 1,
           reminderAssignedTo: 1,
           salesAssignedTo: 1,
@@ -2327,7 +2444,10 @@ export class AttendeesService {
             {
               $lookup: {
                 from: 'enrollments',
-                let: { tempMail: '$_id' },
+                let: {
+                  tempMail: '$_id',
+                  tempAdminId: new Types.ObjectId(`${adminId}`),
+                },
                 pipeline: [
                   {
                     $match: {
@@ -2337,7 +2457,7 @@ export class AttendeesService {
                             $eq: ['$attendee', '$$tempMail'],
                           },
                           {
-                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                            $eq: ['$adminId', '$$tempAdminId'],
                           },
                         ],
                       },
@@ -2345,7 +2465,10 @@ export class AttendeesService {
                   },
                   {
                     $group: {
-                      _id: '$product',
+                      _id: {
+                        product: '$product',
+                        price: '$price',
+                      },
                       count: {
                         $sum: 1,
                       },
@@ -2354,18 +2477,35 @@ export class AttendeesService {
                   {
                     $lookup: {
                       from: 'products',
-                      localField: '_id',
+                      localField: '_id.product',
                       foreignField: '_id',
                       as: 'product',
                     },
                   },
                   {
-                    $project: {
-                      _id: 1,
-                      count: 1,
-                      productName: {
-                        $arrayElemAt: ['$product.name', 0],
+                    $unwind: {
+                      path: '$product',
+                      preserveNullAndEmptyArrays: true,
+                    },
+                  },
+                  {
+                    $addFields: {
+                      label: {
+                        $concat: [
+                          '$product.name',
+                          ' (',
+                          { $toString: '$count' },
+                          ') - ',
+                          { $toString: '$_id.price' },
+                        ],
                       },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      labels: { $push: '$label' },
+                      ids: { $push: '$_id.product' },
                     },
                   },
                 ],
@@ -2373,8 +2513,14 @@ export class AttendeesService {
               },
             },
             {
+              $unwind: {
+                path: '$enrollments',
+                preserveNullAndEmptyArrays: false,
+              },
+            },
+            {
               $match: {
-                'enrollments._id': {
+                'enrollments.ids': {
                   $in: filters.enrollments.map((id) => new Types.ObjectId(id)),
                 },
               },
@@ -2479,7 +2625,10 @@ export class AttendeesService {
                   },
                   {
                     $group: {
-                      _id: '$product',
+                      _id: {
+                        product: '$product',
+                        price: '$price',
+                      },
                       count: {
                         $sum: 1,
                       },
@@ -2488,72 +2637,57 @@ export class AttendeesService {
                   {
                     $lookup: {
                       from: 'products',
-                      localField: '_id',
+                      localField: '_id.product',
                       foreignField: '_id',
                       as: 'product',
                     },
                   },
                   {
-                    $project: {
-                      _id: 1,
-                      count: 1,
-                      productName: {
-                        $arrayElemAt: ['$product.name', 0],
+                    $unwind: {
+                      path: '$product',
+                      preserveNullAndEmptyArrays: true,
+                    },
+                  },
+                  {
+                    $addFields: {
+                      label: {
+                        $concat: [
+                          '$product.name',
+                          ' (',
+                          { $toString: '$count' },
+                          ') - ',
+                          { $toString: '$_id.price' },
+                        ],
                       },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      labels: { $push: '$label' },
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 0,
+                      labels: 1,
                     },
                   },
                 ],
                 as: 'enrollments',
               },
             },
+            {
+              $unwind: {
+                path: '$enrollments',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
           ]),
-
-      {
-        $lookup: {
-          from: 'customleadtypes',
-          localField: 'lead.leadType',
-          foreignField: '_id',
-          as: 'leadTypeDetails',
-        },
-      },
-      {
-        $unwind: {
-          path: '$leadTypeDetails',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'reminderAssignedTo',
-          foreignField: '_id',
-          as: 'reminderAssignedToDetails',
-        },
-      },
-      {
-        $unwind: {
-          path: '$reminderAssignedToDetails',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'salesAssignedTo',
-          foreignField: '_id',
-          as: 'salesAssignedToDetails',
-        },
-      },
-      {
-        $unwind: {
-          path: '$salesAssignedToDetails',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
       {
         $project: {
           reminderLastStatus: 1,
-          enrollments: 1,
+          enrollments: '$enrollments.labels',
           salesLastStatus: 1,
           reminderAssignedTo: '$reminderAssignedToDetails.userName',
           salesAssignedTo: '$salesAssignedToDetails.userName',
@@ -2607,13 +2741,7 @@ export class AttendeesService {
       email: item._id,
       ...item,
       enrollments: Array.isArray(item.enrollments)
-        ? item.enrollments
-            .map((enrollment) =>
-              enrollment?.productName
-                ? `${enrollment.productName}-${enrollment.count}`
-                : '-',
-            )
-            .join(',')
+        ? item.enrollments.join(',')
         : ' - ',
     }));
 

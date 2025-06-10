@@ -201,7 +201,6 @@ export class ExportExcelService {
         })),
         filePath,
         isKey: true,
-
       },
       workerPath,
     );
@@ -270,13 +269,7 @@ export class ExportExcelService {
           ?.label || ' - ',
       tags: Array.isArray(attendee.tags) ? attendee.tags.join(' , ') : ' - ',
       enrollments: Array.isArray(attendee.enrollments)
-        ? attendee.enrollments
-            .map((enrollment) =>
-              enrollment?.productName
-                ? `${enrollment.productName}-${enrollment.count}`
-                : '-',
-            )
-            .join(',')
+        ? attendee.enrollments.join(',')
         : ' - ',
     }));
 
