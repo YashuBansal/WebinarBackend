@@ -705,6 +705,7 @@ export class AttendeesService {
       assignmentType?: string;
       sort?: WebinarAttendeesSortObject;
       leadType?: boolean;
+      fields?: string;
     },
     usePagination: boolean = true,
   ): Promise<any> {
@@ -714,11 +715,61 @@ export class AttendeesService {
       filters,
       validCall,
       assignmentType,
+      fields = '',
       sort = {
         sortBy: WebinarAttendeesSortBy.EMAIL,
         sortOrder: SortOrder.ASC,
       },
     } = obj;
+
+    const queryFields = fields.split(',').map(a => a.trim())
+    console.log(queryFields)
+
+    const allFields = {
+      email: 1,
+      firstName: 1,
+      gender: 1,
+      isAssigned: 1,
+      isAttended: 1,
+      lastName: 1,
+      leadType: 1,
+      location: 1,
+      phone: 1,
+      status: 1,
+      timeInSession: 1,
+      source: 1,
+      createdAt: 1,
+      tags: 1,
+      enrollments: '$enrollments.labels',
+    };
+
+    const projectStage = {
+      $project: {},
+    };
+
+    if (fields.length === 0) {
+      projectStage.$project = allFields;
+    } else {
+      queryFields.forEach((field) => {
+        if (field === 'enrollments') {
+          projectStage.$project['enrollments'] = '$enrollments.labels';
+        } else if (field === 'firstname') {
+          projectStage.$project['firstName'] = 1;
+        } else if (field === 'isassigned') {
+          projectStage.$project['isAssigned'] = 1;
+        } else if (field === 'isattended') {
+          projectStage.$project['isAttended'] = 1;
+        } else if (field === 'lastname') {
+          projectStage.$project['lastName'] = 1;
+        } else if (field === 'timeinsession') {
+          projectStage.$project['timeInSession'] = 1;
+        } else if (field === 'createdat') {
+          projectStage.$project['createdAt'] = 1;
+        } else {
+          projectStage.$project[field] = 1;
+        }
+      });
+    }
 
     const hasFilters = Object.keys(filters).some(
       (key) => filters[key] !== null && filters[key] !== undefined,
@@ -1116,25 +1167,7 @@ export class AttendeesService {
               },
             },
           ]),
-      {
-        $project: {
-          email: 1,
-          firstName: 1,
-          gender: 1,
-          isAssigned: 1,
-          isAttended: 1,
-          lastName: 1,
-          leadType: 1,
-          location: 1,
-          phone: 1,
-          status: 1,
-          timeInSession: 1,
-          source: 1,
-          createdAt: 1,
-          tags: 1,
-          enrollments: '$enrollments.labels',
-        },
-      },
+      projectStage,
     ];
 
     if (usePagination) {
@@ -1161,8 +1194,6 @@ export class AttendeesService {
               leadTypeMap.has(attendee.leadType.toString())
             ) {
               attendee.leadType = leadTypeMap.get(attendee.leadType.toString());
-            } else {
-              attendee.leadType = null;
             }
           });
         }

@@ -1,8 +1,6 @@
 import {
   Body,
   Controller,
-  Get,
-  NotAcceptableException,
   Post,
   Query,
   Redirect,
@@ -26,11 +24,13 @@ export class RazorpayController {
   ) {}
 
   @Post('/checkout')
-  async createOrder(@Body() body: RazorPayCheckoutPlanDTO, @Id() adminId: string): Promise<any> {
+  async createOrder(
+    @Body() body: RazorPayCheckoutPlanDTO,
+    @Id() adminId: string,
+  ): Promise<any> {
     const { plan, durationType } = body;
     return this.razorpayService.createPlanOrder(plan, durationType, adminId);
   }
-
 
   @Post('/payment-success')
   @Redirect()
@@ -45,7 +45,6 @@ export class RazorpayController {
       .update(`${body.razorpay_order_id}|${body.razorpay_payment_id}`)
       .digest('hex');
 
-
     if (generatedSignature !== body.razorpay_signature) {
       return { url: 'http://localhost:5173/failed' };
     }
@@ -56,20 +55,32 @@ export class RazorpayController {
       query.durationType,
     );
     const env = this.configService.get('NEST_ENV');
+    const frontendProductionUrl = this.configService.get(
+      'FRONTEND_MAIN_PRODUCTION',
+    );
+
     if (planUpdate) {
       return {
         url:
           env === 'development'
             ? 'http://localhost:5173/plans'
-            : 'https://saas.rittikbansal.com/plans',
+            : `${frontendProductionUrl}/plans`,
       };
     } else {
-      return { url: 'http://localhost:5173/failed' };
+      return {
+        url:
+          env === 'development'
+            ? 'http://localhost:5173/failed'
+            : `${frontendProductionUrl}/failed`,
+      };
     }
   }
 
   @Post('/addon/checkout')
-  async createAddonOrder(@Body('addon') addon: string, @Id() adminId: string): Promise<any> {
+  async createAddonOrder(
+    @Body('addon') addon: string,
+    @Id() adminId: string,
+  ): Promise<any> {
     return this.razorpayService.createAddonOrder(addon, adminId);
   }
 
@@ -85,15 +96,23 @@ export class RazorpayController {
     );
 
     const env = this.configService.get('NEST_ENV');
+    const frontendProductionUrl = this.configService.get(
+      'FRONTEND_MAIN_PRODUCTION',
+    );
     if (addonUpdate) {
       return {
         url:
           env === 'development'
             ? `http://localhost:5173/addons/${query.adminId}`
-            : `https://saas.rittikbansal.com/addons/${query.adminId}`,
+            : `${frontendProductionUrl}/addons/${query.adminId}`,
       };
     } else {
-      return { url: 'http://localhost:5173/failed' };
+      return {
+        url:
+          env === 'development'
+            ? 'http://localhost:5173/failed'
+            : `${frontendProductionUrl}/failed`,
+      };
     }
   }
 }

@@ -15,11 +15,14 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
   ) {}
 
   async use(req, res: Response, next: NextFunction) {
+    console.log(' ----seomtid---- > ', req.query);
+
+    const queryAccessToken = req?.query?.accessToken;
     const access_token =
       req.cookies[this.configService.get('ACCESS_TOKEN_NAME')];
-
     const pabbly_access_token = this.extractTokenFromHeader(req);
-    if (!access_token && !pabbly_access_token) {
+
+    if (!access_token && !pabbly_access_token && !queryAccessToken) {
       throw new UnauthorizedException('Access token not found.');
     }
 
@@ -70,6 +73,29 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
           next();
         } else {
           throw new UnauthorizedException('Unauthorized access token.');
+        }
+      } else if (queryAccessToken) {
+        const decodeOptions = {
+          secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
+        };
+
+        const decodedToken = this.jwtService.verify(
+          queryAccessToken,
+          decodeOptions,
+        );
+
+        if (
+          decodedToken &&
+          decodedToken.role === this.configService.get('appRoles').ADMIN
+        ) {
+          req.id = decodedToken.id;
+          req.role = decodedToken.role;
+          req.plan = decodedToken.plan;
+          next();
+        } else {
+          throw new UnauthorizedException(
+            'Unauthorized, Invalid Pabbly access token.',
+          );
         }
       }
     } catch (error) {

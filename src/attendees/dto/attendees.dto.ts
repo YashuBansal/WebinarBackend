@@ -347,6 +347,10 @@ export class GetAttendeesDTO {
 
   @IsOptional()
   @IsString()
+  fields?: string;
+
+  @IsOptional()
+  @IsString()
   leadType?: string;
 
   @IsNumberString()

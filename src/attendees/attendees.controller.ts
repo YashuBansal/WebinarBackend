@@ -54,6 +54,7 @@ export class AttendeesController {
         assignmentType: query?.assignmentType,
         sort: query?.sort,
         leadType: query?.leadType === 'true',
+        fields: query.fields
       },
     );
 

@@ -95,7 +95,10 @@ export class AssignmentService {
         sortBy: WebinarAttendeesSortBy.EMAIL,
         sortOrder: SortOrder.ASC,
       },
-      sort,
+      sort={
+        sortBy: WebinarAttendeesSortBy.EMAIL,
+        sortOrder: SortOrder.ASC,
+      },
       validCallFlag = 'all',
     } = obj;
 

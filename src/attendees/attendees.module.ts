@@ -14,7 +14,6 @@ import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { UsersModule } from 'src/users/users.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { ValidateBodyFilters } from 'src/middlewares/validate-body-filters.Middleware';
-import { Assignments, AssignmentsSchema } from 'src/schemas/Assignments.schema';
 import { WebinarModule } from 'src/webinar/webinar.module';
 import { NotificationModule } from 'src/notification/notification.module';
 import { CompressionMiddleware } from '@nest-middlewares/compression';
