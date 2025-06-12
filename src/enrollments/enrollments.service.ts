@@ -501,6 +501,20 @@ export class EnrollmentsService {
         preserveNullAndEmptyArrays: true,
       },
     },
+    {
+      $lookup: {
+        from: 'roles',
+        localField: 'assignedByUser.role',
+        foreignField: '_id',
+        as: 'userRole'
+      },
+    },
+    {
+      $unwind: {
+        path: '$userRole',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
       {
         $project: {
           _id: 1,
@@ -512,6 +526,7 @@ export class EnrollmentsService {
           assignedBy: '$assignedByUser.userName',
           assignType : '$assignType',
           enrollmentDate: '$createdAt',
+          userRole : "$userRole.name"
         },
       },
       {
