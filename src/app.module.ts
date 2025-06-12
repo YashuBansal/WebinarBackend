@@ -86,21 +86,19 @@ import { AttendeeLogModule } from './attendee-log/attendee-log.module';
     ProductsModule,
     MailerModule.forRoot({
       transport: {
-        host: 'smtp.gmail.com',
+        host: 'smtp.hostinger.com',
         port: 465,
-        service: 'gmail',
-        ignoreTLS: true,
-        secure: false,
+        secure: true, // true for 465
         auth: {
           user: process.env.MAILDEV_INCOMING_USER,
           pass: process.env.MAILDEV_INCOMING_PASS,
         },
       },
       defaults: {
-        from: 'App Name <noreply@app.com>',
+        from: 'Webinar Leads Hub <no-reply@webinarleadshub.com>',
       },
-    
     }),
+
     NotesModule,
     CloudinaryModule,
     EnrollmentsModule,

@@ -26,6 +26,10 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import * as path from 'path';
 import { Types } from 'mongoose';
 import { UserActivityFilterDTO } from 'src/user-activity/dto/user-activity.dto';
+import {
+  ExportEmployeeAssignmentDTO,
+  GetAssignmentDTO,
+} from 'src/assignment/dto/Assignment.dto';
 
 @Controller('export-excel')
 export class ExportExcelController {
@@ -111,7 +115,7 @@ export class ExportExcelController {
         columns ? columns.split(',') : [],
         filters,
         superAdminId,
-        fileName
+        fileName,
       );
 
       // Stream the file to the client
@@ -177,6 +181,55 @@ export class ExportExcelController {
     }
   }
 
+  @Post('/employee-assignments/:empId')
+  async downloadEmployeeAssignments(
+    @Param('empId') employee: string,
+    @Body() body: ExportEmployeeAssignmentDTO,
+    @Query() query: { page?: string; limit?: string; webinarId?: string },
+    @Id() adminId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+      const filePath =
+        await this.exportExcelService.generateExcelForEmployeeAssignments(
+          limit,
+          body.columns,
+          body.filters,
+          adminId,
+          employee,
+          body.fileName,
+          {
+            webinarId: query.webinarId,
+            validCall: body.validCall,
+            assignmentStatus: body.assignmentStatus,
+            sort: body.sort,
+            validCallFlag: body.validCallFlag,
+          },
+        );
+
+      // Stream the file to the client
+      res.setHeader('Content-Disposition', `attachment; filename="users.xlsx"`);
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+
+      const fileStream = fs.createReadStream(filePath.filePath);
+      fileStream.pipe(res);
+
+      // Delete the file after streaming
+      fileStream.on('end', () => {
+        // fs.unlinkSync(filePath);'
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to download Excel file. Please try again later.',
+        error: error.message,
+      });
+    }
+  }
+
   @Post('/webinars')
   async downloadWebinars(
     @Body()
@@ -195,7 +248,7 @@ export class ExportExcelController {
         body.columns,
         body.filters,
         adminId,
-        body.fileName
+        body.fileName,
       );
 
       // Stream the file to the client

@@ -9,6 +9,8 @@ import {
   AttendeesFilterDto,
   GroupedAttendeesFilterDto,
   GroupedAttendeesSortObject,
+  SortOrder,
+  WebinarAttendeesSortBy,
   WebinarAttendeesSortObject,
 } from 'src/attendees/dto/attendees.dto';
 import { AttendeesService } from 'src/attendees/attendees.service';
@@ -25,6 +27,8 @@ import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { CustomLeadTypeService } from 'src/custom-lead-type/custom-lead-type.service';
 import { UserActivityService } from 'src/user-activity/user-activity.service';
 import { UserActivityFilterDTO } from 'src/user-activity/dto/user-activity.dto';
+import { AssignmentService } from 'src/assignment/assignment.service';
+import { AssignmentStatus } from 'src/schemas/Assignments.schema';
 @Injectable()
 export class ExportExcelService {
   constructor(
@@ -36,6 +40,7 @@ export class ExportExcelService {
     private readonly websocketGateway: WebsocketGateway,
     private readonly leadTypeService: CustomLeadTypeService,
     private readonly userActivityService: UserActivityService,
+    private readonly assignmentService: AssignmentService,
   ) {}
 
   emitProgress(socketId: null | string, value: number) {
@@ -340,6 +345,93 @@ export class ExportExcelService {
 
     const payload = {
       data: aggregationResult?.data || [],
+      columns: columns.map((col) => ({
+        header: col,
+        key: col,
+        width: 20,
+      })),
+      filePath,
+      isKey: true,
+    };
+    updateProgress(50);
+
+    const workerPath = path.resolve(
+      __dirname,
+      '../workers/generate-excel.worker.js',
+    );
+    const fileData = await this.generateExcel(payload, workerPath);
+    updateProgress(80);
+    this.createUserDocuments({
+      userId: adminId,
+      filePath: filePath,
+      fileName: fileName,
+      fileSize: fileData.fileSize,
+      filters: filterData,
+    });
+
+    updateProgress(100);
+    return fileData;
+  }
+
+  async generateExcelForEmployeeAssignments(
+    limit: number,
+    columns: string[],
+    filterData: AttendeesFilterDto,
+    adminId: string,
+    empId: string,
+    fileName: string = `Employee_Assignments-${Date.now()}.xlsx`,
+    obj: {
+      webinarId: string;
+      validCall?: string;
+      assignmentStatus?: AssignmentStatus;
+      sort?: WebinarAttendeesSortObject;
+      validCallFlag?: string;
+    },
+  ) {
+    const socketId = this.websocketGateway.activeUsers.get(String(adminId));
+    let lastProgress = 0;
+    const updateProgress = (current) => {
+      if (current - lastProgress >= 5) {
+        // 5% increments
+        this.emitProgress(socketId, current);
+        lastProgress = current;
+      }
+    };
+
+    updateProgress(10);
+
+    const {
+      webinarId = '',
+      validCall = '',
+      assignmentStatus,
+      sort = {
+        sortBy: WebinarAttendeesSortBy.EMAIL,
+        sortOrder: SortOrder.ASC,
+      },
+      validCallFlag = 'all',
+    } = obj;
+
+    const aggregationResult = await this.assignmentService.getAssignments(
+      adminId,
+      empId,
+      1,
+      limit,
+      filterData,
+      {
+        webinarId,
+        validCall,
+        assignmentStatus,
+        sort,
+        validCallFlag,
+      },
+    );
+    console.log(aggregationResult);
+
+    const userDir = this.getUserDirectory(adminId);
+    const filePath = path.join(userDir, fileName);
+
+    const payload = {
+      data: aggregationResult?.result || [],
       columns: columns.map((col) => ({
         header: col,
         key: col,

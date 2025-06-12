@@ -20,7 +20,6 @@ import {
 import { AssignmentStatus, RecordType } from 'src/schemas/Assignments.schema';
 
 export class AssignmentDto {
-
   @IsOptional()
   @IsMongoId()
   user?: string;
@@ -30,7 +29,7 @@ export class AssignmentDto {
 
   @IsArray()
   @IsNotEmpty()
-  @IsMongoId({ each: true }) 
+  @IsMongoId({ each: true })
   attendees: string[];
 
   @IsString()
@@ -80,6 +79,44 @@ export class GetAssignmentDTO {
   @ValidateNested()
   @Type(() => WebinarAttendeesSortObject)
   sort?: WebinarAttendeesSortObject;
+}
+
+export class ExportEmployeeAssignmentDTO {
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AttendeesFilterDto)
+  filters: AttendeesFilterDto;
+
+  @IsOptional()
+  @IsString()
+  validCall?: string;
+
+  @IsOptional()
+  @IsMongoId()
+  webinarId?: string;
+
+  @IsOptional()
+  @IsString()
+  validCallFlag?: string;
+
+  @IsEnum(AssignmentStatus, {
+    message: 'assignmentStatus must be a valid value',
+  })
+  assignmentStatus: AssignmentStatus;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WebinarAttendeesSortObject)
+  sort?: WebinarAttendeesSortObject;
+
+  @IsArray()
+  @IsString({ each: true })
+  columns: string[];
+
+  @IsString()
+  @IsNotEmpty()
+  fileName: string;
 }
 
 export class RequestReAssignmentsDTO {
@@ -135,7 +172,7 @@ export class ReAssignmentDTO {
   @ValidateNested({ each: true })
   @Type(() => AssignmentAttendee)
   assignments: AssignmentAttendee[];
-  
+
   @IsOptional()
   @IsBoolean()
   forceAssign?: boolean;
@@ -180,7 +217,7 @@ export class MoveToPullbacksDTO {
 export class DateRangeDto {
   @IsDateString()
   start: string;
-  
+
   @IsDateString()
   end: string;
 

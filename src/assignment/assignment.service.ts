@@ -91,10 +91,7 @@ export class AssignmentService {
     const {
       webinarId = '',
       validCall = '',
-      assignmentStatus = {
-        sortBy: WebinarAttendeesSortBy.EMAIL,
-        sortOrder: SortOrder.ASC,
-      },
+      assignmentStatus,
       sort={
         sortBy: WebinarAttendeesSortBy.EMAIL,
         sortOrder: SortOrder.ASC,
