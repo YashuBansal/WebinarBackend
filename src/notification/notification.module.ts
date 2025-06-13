@@ -7,7 +7,7 @@ import {
   NotificationSchema,
 } from 'src/schemas/notification.schema';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
-import { WebsocketGateway } from 'src/websocket/websocket.gateway';
+import { WebsocketModule } from 'src/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -17,9 +17,10 @@ import { WebsocketGateway } from 'src/websocket/websocket.gateway';
         schema: NotificationSchema,
       },
     ]),
+    WebsocketModule
   ],
   controllers: [NotificationController],
-  providers: [NotificationService,WebsocketGateway],
+  providers: [NotificationService],
   exports: [NotificationService],
 })
 export class NotificationModule {

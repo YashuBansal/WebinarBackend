@@ -12,11 +12,11 @@ import {
   UserDocuments,
   UserDocumentsSchema,
 } from 'src/schemas/user-documents.schema';
-import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.module';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 import { UserActivityModule } from 'src/user-activity/user-activity.module';
 import { AssignmentModule } from 'src/assignment/assignment.module';
+import { WebsocketModule } from 'src/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -30,9 +30,10 @@ import { AssignmentModule } from 'src/assignment/assignment.module';
     CustomLeadTypeModule,
     UserActivityModule,
     AssignmentModule,
+    WebsocketModule
   ],
   controllers: [ExportExcelController],
-  providers: [ExportExcelService, WebsocketGateway],
+  providers: [ExportExcelService],
   exports: [ExportExcelService],
 })
 export class ExportExcelModule {

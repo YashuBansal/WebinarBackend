@@ -17,7 +17,6 @@ import { ValidateBodyFilters } from 'src/middlewares/validate-body-filters.Middl
 import { WebinarModule } from 'src/webinar/webinar.module';
 import { NotificationModule } from 'src/notification/notification.module';
 import { CompressionMiddleware } from '@nest-middlewares/compression';
-import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { AssignmentModule } from 'src/assignment/assignment.module';
 import { AlarmModule } from 'src/alarm/alarm.module';
 import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
@@ -25,6 +24,7 @@ import { NotesModule } from 'src/notes/notes.module';
 import { AttendeeAssociationModule } from 'src/attendee-association/attendee-association.module';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.module';
+import { WebsocketModule } from 'src/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -34,7 +34,7 @@ import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.modu
       {
         name: Attendee.name,
         schema: AttendeeSchema,
-      }
+      },
     ]),
     forwardRef(() => WebinarModule),
     forwardRef(() => AssignmentModule),
@@ -44,10 +44,11 @@ import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.modu
     NotesModule,
     AttendeeAssociationModule,
     AttendeeLogModule,
-    CustomLeadTypeModule
+    CustomLeadTypeModule,
+    WebsocketModule,
   ],
   controllers: [AttendeesController],
-  providers: [AttendeesService,WebsocketGateway],
+  providers: [AttendeesService],
   exports: [AttendeesService],
 })
 export class AttendeesModule {
@@ -61,14 +62,16 @@ export class AttendeesModule {
         { path: 'attendees/all', method: RequestMethod.DELETE },
       );
 
-    consumer.apply(CompressionMiddleware).forRoutes(
-      { path: 'attendees/webinar', method: RequestMethod.GET },
-      { path: 'attendees/grouped', method: RequestMethod.POST },
-    );
+    consumer
+      .apply(CompressionMiddleware)
+      .forRoutes(
+        { path: 'attendees/webinar', method: RequestMethod.GET },
+        { path: 'attendees/grouped', method: RequestMethod.POST },
+      );
 
     consumer
       .apply(AuthTokenMiddleware, GetAdminIdMiddleware)
-      .exclude({ path: 'attendees/webinar', method: RequestMethod.GET },)
+      .exclude({ path: 'attendees/webinar', method: RequestMethod.GET })
       .forRoutes(
         { path: 'attendees', method: RequestMethod.GET },
         { path: 'attendees/:email', method: RequestMethod.GET },

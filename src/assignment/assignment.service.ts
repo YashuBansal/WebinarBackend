@@ -86,13 +86,15 @@ export class AssignmentService {
       assignmentStatus?: AssignmentStatus;
       sort?: WebinarAttendeesSortObject;
       validCallFlag?: string;
+      formatLeadType?: boolean;
     },
   ): Promise<any> {
     const {
       webinarId = '',
       validCall = '',
       assignmentStatus,
-      sort={
+      formatLeadType,
+      sort = {
         sortBy: WebinarAttendeesSortBy.EMAIL,
         sortOrder: SortOrder.ASC,
       },
@@ -319,14 +321,17 @@ export class AssignmentService {
             {
               $lookup: {
                 from: 'attendeeassociations',
-                let: { tempMail: '$email' },
+                let: {
+                  tempMail: '$email',
+                  tempAdminId: new Types.ObjectId(`${adminId}`),
+                },
                 pipeline: [
                   {
                     $match: {
                       $expr: {
                         $and: [
                           {
-                            $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                            $eq: ['$adminId', '$$tempAdminId'],
                           },
                           { $eq: ['$email', '$$tempMail'] },
                         ],
@@ -355,6 +360,34 @@ export class AssignmentService {
           attendeeAssociations: 0,
         },
       },
+      ...(formatLeadType
+        ? [
+            {
+              $lookup: {
+                from: 'customleadtypes',
+                foreignField: '_id',
+                localField: 'leadType',
+                as: 'leadTypeDetails',
+              },
+            },
+            {
+              $unwind: {
+                path: '$leadTypeDetails',
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+            {
+              $addFields: {
+                leadType: '$leadTypeDetails.label',
+              },
+            },
+            {
+              $project: {
+                leadTypeDetails: 0,
+              },
+            },
+          ]
+        : []),
     ];
 
     const [result, totalResult] = await Promise.all([

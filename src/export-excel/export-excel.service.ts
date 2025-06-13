@@ -423,6 +423,7 @@ export class ExportExcelService {
         assignmentStatus,
         sort,
         validCallFlag,
+        formatLeadType: true
       },
     );
     console.log(aggregationResult);

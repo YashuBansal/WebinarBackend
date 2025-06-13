@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { AlarmService } from './alarm.service';
 import { AdminId, Id } from 'src/decorators/custom.decorator';
-import { CreateAlarmDto } from './dto/alarm.dto';
+import { CreateAlarmDto, CreateNewAlarmDTO } from './dto/alarm.dto';
 import { Types } from 'mongoose';
 
 @Controller('alarm')
@@ -21,11 +21,14 @@ export class AlarmController {
   async setAlarm(
     @Id() id: string,
     @AdminId() adminId: string,
-    @Body() createAlarmDto: CreateAlarmDto,
+    @Body() createAlarmDto: CreateNewAlarmDTO,
   ): Promise<any> {
-    createAlarmDto.user = id;
-    createAlarmDto.adminId = adminId;
-    const result = await this.alarmService.setAlarm(createAlarmDto);
+    const result = await this.alarmService.createAlarm(
+      createAlarmDto,
+      new Types.ObjectId(`${id}`),
+      new Types.ObjectId(`${adminId}`),
+    );
+    // const result = await this.alarmService.setAlarm(createAlarmDto);
     return result;
   }
 

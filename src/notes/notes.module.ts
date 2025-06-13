@@ -10,8 +10,8 @@ import { UsersModule } from 'src/users/users.module';
 import { AssignmentModule } from 'src/assignment/assignment.module';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { AttendeesModule } from 'src/attendees/attendees.module';
-import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
+import { WebsocketModule } from 'src/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -25,7 +25,7 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
     AssignmentModule,
     forwardRef(() => AttendeesModule),
     AttendeeLogModule,
-
+    WebsocketModule,
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads',
@@ -37,15 +37,11 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
     }),
   ],
   controllers: [NotesController],
-  providers: [NotesService, CloudinaryService, WebsocketGateway],
+  providers: [NotesService, CloudinaryService],
   exports: [NotesService],
 })
 export class NotesModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(GetAdminIdMiddleware)
-      .forRoutes(NotesController);
-
- 
+    consumer.apply(GetAdminIdMiddleware).forRoutes(NotesController);
   }
 }

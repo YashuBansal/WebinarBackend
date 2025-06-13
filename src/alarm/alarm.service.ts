@@ -6,7 +6,7 @@ import {
   NotAcceptableException,
 } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { CreateAlarmDto } from './dto/alarm.dto';
+import { CreateAlarmDto, CreateNewAlarmDTO } from './dto/alarm.dto';
 import { CronJob } from 'cron';
 import { InjectModel } from '@nestjs/mongoose';
 import { Alarm } from 'src/schemas/Alarm.schema';
@@ -33,6 +33,206 @@ export class AlarmService {
   ) {}
 
   private readonly logger = new Logger(AlarmService.name);
+
+  async createAlarm(
+    data: CreateNewAlarmDTO,
+    user: Types.ObjectId,
+    adminId: Types.ObjectId,
+  ): Promise<Alarm> {
+    const existingAlarm = await this.alarmsModel.findOne({
+      user: user,
+      attendeeId: data.attendeeId,
+    });
+
+    if (existingAlarm) {
+      throw new NotAcceptableException(
+        'An active alarm for this attendee already exists.',
+      );
+    }
+
+    const alarmDate = new Date(data.date);
+    const now = Date.now();
+
+    if (alarmDate.getTime() <= now) {
+      throw new NotAcceptableException('Cannot set an alarm for a time in the past.');
+    }
+
+    const reminderDate30min = new Date(alarmDate.getTime() - 30 * 60 * 1000);
+    const reminderDate15min = new Date(alarmDate.getTime() - 15 * 60 * 1000);
+
+    const reminders = [];
+
+    if (reminderDate30min.getTime() > now) {
+      reminders.push({
+        reminderType: '30min',
+        reminderDate: reminderDate30min,
+        sent: false,
+      });
+    }
+
+    if (reminderDate15min.getTime() > now) {
+      reminders.push({
+        reminderType: '15min',
+        reminderDate: reminderDate15min,
+        sent: false,
+      });
+    }
+
+    const newAlarm = new this.alarmsModel({
+      user,
+      adminId,
+      email: data.email,
+      attendeeId: data.attendeeId,
+      note: data.note,
+      secondaryNumber: data.secondaryNumber,
+      date: alarmDate,
+      reminders: reminders,
+      isActive: true,
+    });
+
+    this.logger.log(`Scheduling alarm for attendee ${data.email} at ${alarmDate.toISOString()}`);
+    
+    return newAlarm.save();
+  }
+
+
+  async processDueReminders(): Promise<void> {
+    const now = new Date();
+    const nextMinute = new Date(now.getTime() + 60 * 1000);
+
+    const alarmsWithDueReminders = await this.alarmsModel
+      .find({
+        'reminders.reminderDate': { $gte: now, $lt: nextMinute },
+        'reminders.sent': false,
+      })
+      .populate('user'); 
+
+    if (alarmsWithDueReminders.length === 0) {
+      return; 
+    }
+
+    this.logger.log(`Found ${alarmsWithDueReminders.length} alarm(s) with due reminders.`);
+
+    for (const alarm of alarmsWithDueReminders) {
+      for (const reminder of alarm.reminders) {
+        if (!reminder.sent && reminder.reminderDate <= nextMinute) {
+          try {
+            this.logger.warn(`Sending ${reminder.reminderType} reminder for alarm ${alarm._id}`);
+            await this.sendReminderNotification(alarm);
+
+            await this.alarmsModel.updateOne(
+              { _id: alarm._id, 'reminders.reminderDate': reminder.reminderDate },
+              { $set: { 'reminders.$.sent': true } },
+            );
+          } catch (error) {
+            this.logger.error(`Failed to process reminder for alarm ${alarm._id}`, error);
+          }
+        }
+      }
+    }
+  }
+
+
+  async processDueAlarms(): Promise<void> {
+    const now = new Date();
+    const nextMinute = new Date(now.getTime() + 60 * 1000);
+
+    // Find alarms due in the next minute that haven't been triggered.
+    // This query is highly efficient thanks to the index on `alarmDate`.
+    console.log(now, nextMinute)
+    const dueAlarms = await this.alarmsModel
+      .find({
+        date: { $gte: now, $lt: nextMinute },
+        isActive: true,
+      })
+      .populate('user');
+
+    if (dueAlarms.length === 0) {
+      return; // Nothing to do
+    }
+
+    this.logger.log(`Found ${dueAlarms.length} alarm(s) to trigger.`);
+
+    for (const alarm of dueAlarms) {
+      try {
+        this.logger.warn(`Triggering main alarm for ${alarm._id}`);
+        await this.triggerMainAlarm(alarm);
+
+        // IMPORTANT: Delete the alarm from DB after it has been fully processed.
+        await this.alarmsModel.updateOne({
+          _id: alarm._id
+        },{
+          $set: {
+            isActive: false
+          }
+        })
+        
+      } catch (error) {
+        this.logger.error(`Failed to trigger main alarm for ${alarm._id}`, error);
+      }
+    }
+  }
+
+   private async sendReminderNotification(alarm: any): Promise<void> {
+    const subscription = await this.getSubscriptionForAlarm(alarm);
+    if (!subscription?.plan?.whatsappNotificationOnAlarms) return;
+
+    const msgData = {
+        phone: alarm.user.phone,
+        attendeeEmail: alarm.email,
+        userName: alarm.user.userName,
+        note: alarm.note,
+    };
+
+    if (alarm.user.phone) {
+        this.whatsappService.sendReminderMsg(msgData); // Not awaiting to send them quickly
+    }
+    if (alarm.secondaryNumber) {
+        this.whatsappService.sendReminderMsg({ ...msgData, phone: alarm.secondaryNumber });
+    }
+  }
+
+
+    private async triggerMainAlarm(alarm: any): Promise<void> {
+    // 1. Send WebSocket notification
+    const socketId = this.websocketGateway.activeUsers.get(String(alarm.user._id));
+    if (socketId) {
+        this.websocketGateway.server.to(socketId).emit('playAlarm', {
+            message: '!!! Alarm played !!!',
+            deleteResult: alarm,
+        });
+    }
+
+    // 2. Send WhatsApp notification
+    const subscription = await this.getSubscriptionForAlarm(alarm);
+    if (!subscription?.plan?.whatsappNotificationOnAlarms) return;
+
+    const msgData = {
+        phone: alarm.user.phone,
+        attendeeEmail: alarm.email,
+        userName: alarm.user.userName,
+        note: alarm.note,
+    };
+
+    if (alarm.user.phone) {
+      await this.whatsappService.sendAlarmMsg(msgData);
+    }
+
+    if (alarm.secondaryNumber) {
+        this.whatsappService.sendReminderMsg({ ...msgData, phone: alarm.secondaryNumber });
+    }
+  }
+
+   private async getSubscriptionForAlarm(alarm: any): Promise<any> {
+    const user = alarm?.user;
+    if (!user) return null;
+
+    const adminId = String(user.role) === this.configService.get('appRoles')['ADMIN']
+        ? user._id
+        : user.adminId;
+    
+    return this.subscriptionService.getSubscription(adminId);
+  }
 
   async setAlarm(
     createAlarmDto: CreateAlarmDto,
@@ -274,25 +474,25 @@ export class AlarmService {
     return deleteAlarm;
   }
 
-  async onModuleInit(): Promise<void> {
-    console.log("===================I'm running bitches===================");
-    const alarms: any[] = await this.alarmsModel.find({
-      isActive: true,
-    });
+  // async onModuleInit(): Promise<void> {
+  //   console.log("===================I'm running bitches===================");
+  //   const alarms: any[] = await this.alarmsModel.find({
+  //     isActive: true,
+  //   });
 
-    if (Array.isArray(alarms) && alarms.length > 0) {
-      alarms.forEach(async (alarm) => {
-        const createAlarmDto: CreateAlarmDto = {
-          user: alarm.user,
-          email: alarm?.email,
-          attendeeId: alarm?.attendeeId,
-          date: alarm.date,
-          note: alarm.note,
-        };
-        await this.setAlarm(createAlarmDto, alarm?._id, true);
-      });
-    }
-  }
+  //   if (Array.isArray(alarms) && alarms.length > 0) {
+  //     alarms.forEach(async (alarm) => {
+  //       const createAlarmDto: CreateAlarmDto = {
+  //         user: alarm.user,
+  //         email: alarm?.email,
+  //         attendeeId: alarm?.attendeeId,
+  //         date: alarm.date,
+  //         note: alarm.note,
+  //       };
+  //       await this.setAlarm(createAlarmDto, alarm?._id, true);
+  //     });
+  //   }
+  // }
 
   async fetchAlarmsByMonthAndYear(userId: string, month: number, year: number) {
     const startDate = new Date(year, month - 1, 1);

@@ -7,7 +7,6 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { SchedulerRegistry } from '@nestjs/schedule';
 import { WebsocketExceptionFilter } from './ws-exception.filter';
 import { SocketEvents } from './dto/socket.dto';
 
@@ -18,10 +17,13 @@ import { SocketEvents } from './dto/socket.dto';
 })
 @UseFilters(new WebsocketExceptionFilter())
 export class WebsocketGateway {
-  constructor(private schedulerRegistry: SchedulerRegistry) {}
 
   private readonly logger = new Logger(WebsocketGateway.name);
   public activeUsers = new Map<string, string>(); // Map to store userId -> socketId
+
+  onModuleInit(){
+    this.logger.log("------------ instance --------------")
+  }
 
   @WebSocketServer()
   public server: Server;

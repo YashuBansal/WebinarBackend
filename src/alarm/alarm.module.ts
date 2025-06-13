@@ -10,11 +10,11 @@ import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Alarm, AlarmSchema } from 'src/schemas/Alarm.schema';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { ConfigService } from '@nestjs/config';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
+import { WebsocketModule } from 'src/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -27,12 +27,11 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
     ]),
     forwardRef(() => SubscriptionModule),
 
-    AttendeeLogModule
-
-    
+    AttendeeLogModule,
+    WebsocketModule,
   ],
   controllers: [AlarmController],
-  providers: [AlarmService, WebsocketGateway, SchedulerRegistry, ConfigService],
+  providers: [AlarmService, SchedulerRegistry, ConfigService],
   exports: [AlarmService],
 })
 export class AlarmModule {
