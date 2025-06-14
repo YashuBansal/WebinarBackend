@@ -1,26 +1,37 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { FilterQuery, Model, Types } from 'mongoose';
 import { BillingHistory, BillingType } from 'src/schemas/BillingHistory.schema';
 import {
   BillingHistoryDto,
+  GetBillingHistoryDto,
   UpdateBillingHistory,
 } from './dto/bililngHistory.dto';
+import { Counter } from 'src/schemas/counter.schema';
 
 @Injectable()
 export class BillingHistoryService {
+  private readonly INVOICE_PREFIX = 'WLH';
+  private readonly INVOICE_COUNTER_ID = 'invoiceNumber';
+
   constructor(
     @InjectModel(BillingHistory.name)
     private BillingHistoryModel: Model<BillingHistory>,
+    @InjectModel(Counter.name)
+    private readonly counterModel: Model<Counter>,
   ) {}
 
-  private generateInvoiceNumber(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let invoiceNumber = '';
-    for (let i = 0; i < 6; i++) {
-      invoiceNumber += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return invoiceNumber;
+  private async generateNextInvoiceNumber(): Promise<string> {
+    // FIX: Use findOneAndUpdate and query by the 'name' field
+    const counter = await this.counterModel.findOneAndUpdate(
+      { name: this.INVOICE_COUNTER_ID }, // Query object
+      { $inc: { sequence_value: 1 } }, // Update
+      { new: true, upsert: true }, // Options
+    );
+
+    const sequenceString = counter.sequence_value.toString().padStart(6, '0');
+
+    return `${this.INVOICE_PREFIX}${sequenceString}`;
   }
 
   private async isInvoiceNumberUnique(invoiceNumber: string): Promise<boolean> {
@@ -28,12 +39,11 @@ export class BillingHistoryService {
     return !existing;
   }
 
-  async addBillingHistory(billingHistoryDto: BillingHistoryDto, billingType: BillingType): Promise<any> {
-    let invoiceNumber = this.generateInvoiceNumber();
-
-    while (!(await this.isInvoiceNumberUnique(invoiceNumber))) {
-      invoiceNumber = this.generateInvoiceNumber();
-    }
+  async addBillingHistory(
+    billingHistoryDto: BillingHistoryDto,
+    billingType: BillingType,
+  ): Promise<any> {
+    const invoiceNumber = await this.generateNextInvoiceNumber();
 
     const result = await this.BillingHistoryModel.create({
       ...billingHistoryDto,
@@ -42,7 +52,7 @@ export class BillingHistoryService {
       itemAmount: parseFloat(billingHistoryDto.itemAmount.toFixed(2)),
       discountAmount: parseFloat(billingHistoryDto.discountAmount.toFixed(2)),
       taxAmount: parseFloat(billingHistoryDto.taxAmount.toFixed(2)),
-      amount: parseFloat(billingHistoryDto.amount.toFixed(2))
+      amount: parseFloat(billingHistoryDto.amount.toFixed(2)),
     });
     return result;
   }
@@ -63,11 +73,7 @@ export class BillingHistoryService {
     totalAmount: number,
     taxPercent: number,
   ): Promise<BillingHistory> {
-    let invoiceNumber = this.generateInvoiceNumber();
-
-    while (!(await this.isInvoiceNumberUnique(invoiceNumber))) {
-      invoiceNumber = this.generateInvoiceNumber();
-    }
+    const invoiceNumber = await this.generateNextInvoiceNumber();
 
     const billingHistory = new this.BillingHistoryModel({
       admin: new Types.ObjectId(`${adminId}`),
@@ -83,39 +89,77 @@ export class BillingHistoryService {
     return billingHistory.save();
   }
 
-  async getBillingHistory(
-    adminId: string,
-    page: number,
-    limit: number,
-  ): Promise<{
+  async getBillingHistory(queryDto: GetBillingHistoryDto): Promise<{
     page: number;
+    limit: number;
     totalPages: number;
+    totalRecords: number;
     data: BillingHistory[];
   }> {
-    const skip = (page - 1) * limit;
-    const result = await this.BillingHistoryModel.find({
-      admin: new Types.ObjectId(`${adminId}`),
-    })
-      .populate({
-        path: 'addOn',
-        select: 'addonName _id',
-      })
-      .populate({
-        path: 'plan',
-        select: 'name _id',
-      })
-      .sort({ date: -1 })
-      .skip(skip)
-      .limit(limit);
+    const { page, limit, adminId, startDate, endDate } = queryDto;
+    console.log(queryDto)
 
-    const total = await this.BillingHistoryModel.countDocuments({
-      admin: new Types.ObjectId(`${adminId}`),
-    });
+    // 1. Build the dynamic filter query object
+    const filter: FilterQuery<BillingHistory> = {};
+
+    // Conditionally add adminId to the filter
+    if (adminId) {
+      if (!Types.ObjectId.isValid(adminId)) {
+        throw new BadRequestException('Invalid adminId format.');
+      }
+      filter.admin = new Types.ObjectId(adminId);
+    }
+
+    // Conditionally add the date range to the filter
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) {
+        // Set to the beginning of the start day
+        const start = new Date(startDate);
+        filter.date.$gte = start;
+        console.log('state - ',start)
+      }
+      if (endDate) {
+        // Set to the end of the end day for an inclusive search
+        const end = new Date(endDate);
+        filter.date.$lte = end;
+        console.log('state - ',end)
+      }
+    }
+
+    const skip = (page - 1) * limit;
+
+    // 2. Execute find and count queries in parallel for efficiency
+    const [data, totalRecords] = await Promise.all([
+      this.BillingHistoryModel.find(filter)
+        .populate({
+          path: 'addOn',
+          select: 'addonName _id',
+        })
+        .populate({
+          path: 'plan',
+          select: 'name _id',
+        })
+        .populate({
+          path: 'admin',
+          select: 'userName _id',
+        })
+        .sort({ date: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(), // .exec() is good practice with Promise.all
+      this.BillingHistoryModel.countDocuments(filter).exec(),
+    ]);
+
+    // 3. Calculate total pages and format the response
+    const totalPages = Math.ceil(totalRecords / limit);
 
     return {
-      totalPages: Math.ceil(total / limit),
-      data: result || [],
+      totalPages,
+      data: data || [],
       page,
+      limit,
+      totalRecords,
     };
   }
 }

@@ -1,5 +1,17 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { IsEnum, IsMongoId, IsNotEmpty, IsNumber, IsObject, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsMongoId,
+  IsNotEmpty,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 import { Types } from 'mongoose';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
 
@@ -22,7 +34,7 @@ export class BillingHistoryDto {
 
   @IsNumber()
   @IsNotEmpty()
-  taxPercent: number
+  taxPercent: number;
 
   @IsNumber()
   @IsNotEmpty()
@@ -38,4 +50,43 @@ export class BillingHistoryDto {
   durationType: DurationType;
 }
 
-export class UpdateBillingHistory extends PartialType(BillingHistoryDto){}
+export class UpdateBillingHistory extends PartialType(BillingHistoryDto) {}
+
+export class GetBillingHistoryDto {
+  @IsOptional()
+  @IsMongoId()
+  adminId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit: number;
+}
+
+export class ExportBillingHistoryDTO {
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  fileName: string;
+
+}

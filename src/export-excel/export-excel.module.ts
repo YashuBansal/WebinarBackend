@@ -17,6 +17,7 @@ import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middlew
 import { UserActivityModule } from 'src/user-activity/user-activity.module';
 import { AssignmentModule } from 'src/assignment/assignment.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
+import { BillingHistoryModule } from 'src/billing-history/billing-history.module';
 
 @Module({
   imports: [
@@ -30,7 +31,8 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
     CustomLeadTypeModule,
     UserActivityModule,
     AssignmentModule,
-    WebsocketModule
+    WebsocketModule,
+    BillingHistoryModule,
   ],
   controllers: [ExportExcelController],
   providers: [ExportExcelService],
@@ -68,6 +70,9 @@ export class ExportExcelModule {
     );
     consumer
       .apply(AuthSuperAdminMiddleware)
-      .forRoutes({ path: 'export-excel/client', method: RequestMethod.POST });
+      .forRoutes(
+        { path: 'export-excel/client', method: RequestMethod.POST },
+        { path: 'export-excel/client-billing', method: RequestMethod.POST },
+      );
   }
 }

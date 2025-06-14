@@ -7,10 +7,12 @@ import {
   BillingHistorySchema,
 } from 'src/schemas/BillingHistory.schema';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
+import { Counter, CounterSchema } from 'src/schemas/counter.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
+      { name: Counter.name, schema: CounterSchema },
       {
         name: BillingHistory.name,
         schema: BillingHistorySchema,

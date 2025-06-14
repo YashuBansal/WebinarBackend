@@ -8,7 +8,6 @@ import {
 } from 'src/schemas/custom-lead-type.schema';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
-import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [

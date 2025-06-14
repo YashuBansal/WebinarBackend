@@ -29,6 +29,11 @@ import { UserActivityService } from 'src/user-activity/user-activity.service';
 import { UserActivityFilterDTO } from 'src/user-activity/dto/user-activity.dto';
 import { AssignmentService } from 'src/assignment/assignment.service';
 import { AssignmentStatus } from 'src/schemas/Assignments.schema';
+import { BillingHistoryService } from 'src/billing-history/billing-history.service';
+import {
+  ExportBillingHistoryDTO,
+  GetBillingHistoryDto,
+} from 'src/billing-history/dto/bililngHistory.dto';
 @Injectable()
 export class ExportExcelService {
   constructor(
@@ -41,6 +46,7 @@ export class ExportExcelService {
     private readonly leadTypeService: CustomLeadTypeService,
     private readonly userActivityService: UserActivityService,
     private readonly assignmentService: AssignmentService,
+    private readonly billingService: BillingHistoryService,
   ) {}
 
   emitProgress(socketId: null | string, value: number) {
@@ -423,7 +429,7 @@ export class ExportExcelService {
         assignmentStatus,
         sort,
         validCallFlag,
-        formatLeadType: true
+        formatLeadType: true,
       },
     );
     console.log(aggregationResult);
@@ -455,6 +461,97 @@ export class ExportExcelService {
       fileName: fileName,
       fileSize: fileData.fileSize,
       filters: filterData,
+    });
+
+    updateProgress(100);
+    return fileData;
+  }
+
+  async generateExcelForClientBillingHistory(
+    obj: ExportBillingHistoryDTO,
+    adminId: string,
+  ) {
+    const { startDate, endDate, fileName } = obj;
+    console.log(fileName)
+
+    const columns = [
+      'client',
+      'date',
+      'plan',
+      'itemAmount',
+      'discountAmount',
+      'durationType',
+      'billingType',
+      'taxPercent',
+      'taxAmount',
+      'amount',
+      'invoiceNumber',
+    ];
+
+    const socketId = this.websocketGateway.activeUsers.get(String(adminId));
+    let lastProgress = 0;
+    const updateProgress = (current) => {
+      if (current - lastProgress >= 5) {
+        // 5% increments
+        this.emitProgress(socketId, current);
+        lastProgress = current;
+      }
+    };
+
+    updateProgress(10);
+
+    const aggregationResult: any = await this.billingService.getBillingHistory({
+      page: 1,
+      limit: 1000,
+      startDate,
+      endDate,
+    });
+
+    const userDir = this.getUserDirectory(adminId);
+    const filePath = path.join(userDir, fileName);
+    const payload = {
+      data: Array.isArray(aggregationResult?.data)
+        ? aggregationResult?.data.map((item) => ({
+            client: item.admin?.userName,
+            plan: item.plan?.name,
+            date: item.date,
+            itemAmount: item.itemAmount,
+            discountAmount: item.discountAmount,
+            durationType: item.durationType,
+            billingType: item.billingType,
+            taxPercent: item.taxPercent,
+            taxAmount: item.taxAmount,
+            amount: item.amount,
+            invoiceNumber: item.invoiceNumber,
+          }))
+        : [],
+      columns: columns.map((col) => ({
+        header: col,
+        key: col,
+        width: 20,
+      })),
+      filePath,
+      isKey: true,
+    };
+    updateProgress(50);
+    console.log(payload)
+
+
+    const workerPath = path.resolve(
+      __dirname,
+      '../workers/generate-excel.worker.js',
+    );
+    const fileData = await this.generateExcel(payload, workerPath);
+    updateProgress(80);
+    this.createUserDocuments({
+      userId: adminId,
+      filePath: filePath,
+      fileName: fileName,
+      fileSize: fileData.fileSize,
+      filters: {
+        startDate,
+        endDate,
+      },
     });
 
     updateProgress(100);

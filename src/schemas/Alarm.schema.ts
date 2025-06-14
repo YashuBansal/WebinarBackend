@@ -76,7 +76,7 @@ export const AlarmSchema = SchemaFactory.createForClass(Alarm);
 
 AlarmSchema.index({ user: 1, isActive: 1, date: 1 });
 
-AlarmSchema.index({ 'reminders.reminderDate': 1, 'reminders.sent': 1 });
+AlarmSchema.index({ 'reminders.reminderDate': 1, 'reminders.sent': 1, isActive: 1 });
 
 AlarmSchema.index({ date: 1, isActive: 1 });
 AlarmSchema.pre('save', function (next) {
