@@ -255,7 +255,10 @@ export class WebinarService {
 
   async getWebinar(id: string, adminId: string): Promise<any> {
     const result = await this.webinarModel
-      .findById(id)
+      .findOne({
+        _id: new Types.ObjectId(`${id}`),
+        adminId: new Types.ObjectId(`${adminId}`)
+      })
       .populate('assignedEmployees')
       .populate('productIds')
       .lean();

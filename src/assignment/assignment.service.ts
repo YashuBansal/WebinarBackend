@@ -46,7 +46,6 @@ import {
   notificationType,
 } from 'src/schemas/notification.schema';
 import { TagsService } from 'src/tags/tags.service';
-import { Usecase } from 'src/schemas/tags.schema';
 import { EnrollmentsService } from 'src/enrollments/enrollments.service';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
@@ -969,19 +968,9 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
   ): Promise<boolean> {
     const webinarId = webinar._id.toString();
     const attendeeId = attendee?._id;
-
-    const existingTags = await this.tagsService.getTags(adminId);
-    const tagsUsecaseMap = existingTags.reduce((acc, tag) => {
-      acc[tag.name] = tag.usecase;
-      return acc;
-    }, {});
     let executeFurther = true;
-
     for (const tag of tags) {
-      if (
-        tagsUsecaseMap[tag] === Usecase.PRODUCT &&
-        Array.isArray(assignedProducts)
-      ) {
+      if (Array.isArray(assignedProducts)) {
         assignedProducts
           .filter((product) => product.tag === tag)
           .forEach(async (product) => {

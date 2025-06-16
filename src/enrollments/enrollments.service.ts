@@ -109,7 +109,7 @@ export class EnrollmentsService {
     const existingEnrollments = await this.enrollmentModel
       .find({
         webinar: webinarId,
-        $or: combinationsToCheck, 
+        $or: combinationsToCheck,
       })
       .exec(); // Add .exec() if you are using Mongoose promises
 
@@ -133,10 +133,12 @@ export class EnrollmentsService {
     if (enrollmentsToInsert.length > 0) {
       console.log(`Inserting ${enrollmentsToInsert.length} new enrollments.`);
       try {
-    console.log(enrollmentsToInsert);
+        console.log(enrollmentsToInsert);
         // Assuming enrollmentModel is a Mongoose model with insertMany
-        const result =
-          await this.enrollmentModel.insertMany(enrollmentsToInsert, { session });
+        const result = await this.enrollmentModel.insertMany(
+          enrollmentsToInsert,
+          { session },
+        );
         console.log(`Successfully inserted ${result.length} enrollments.`);
         return result; // Return the documents that were successfully inserted
       } catch (error) {
@@ -376,14 +378,13 @@ export class EnrollmentsService {
           path: '$product',
         },
       },
-      
     ];
 
     const result = await this.enrollmentModel.aggregate(pipeline);
     return result;
   }
 
-    async getEnrollmentsByProductLevel(
+  async getEnrollmentsByProductLevel(
     adminId: string,
     email: string,
     productLevel: number,
@@ -450,10 +451,7 @@ export class EnrollmentsService {
     return result;
   }
 
-  async getEnrollmentsByEmail(
-    adminId: string,
-    email: string,
-  ) {
+  async getEnrollmentsByEmail(adminId: string, email: string) {
     const pipeline: PipelineStage[] = [
       {
         $match: {
@@ -487,34 +485,34 @@ export class EnrollmentsService {
           path: '$webinar',
         },
       },
-     {
-      $lookup: {
-        from: 'users',
-        localField: 'assignedBy',
-        foreignField: '_id',
-        as: 'assignedByUser', // ✅ avoid name conflict
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'assignedBy',
+          foreignField: '_id',
+          as: 'assignedByUser', // ✅ avoid name conflict
+        },
       },
-    },
-    {
-      $unwind: {
-        path: '$assignedByUser',
-        preserveNullAndEmptyArrays: true,
+      {
+        $unwind: {
+          path: '$assignedByUser',
+          preserveNullAndEmptyArrays: true,
+        },
       },
-    },
-    {
-      $lookup: {
-        from: 'roles',
-        localField: 'assignedByUser.role',
-        foreignField: '_id',
-        as: 'userRole'
+      {
+        $lookup: {
+          from: 'roles',
+          localField: 'assignedByUser.role',
+          foreignField: '_id',
+          as: 'userRole',
+        },
       },
-    },
-    {
-      $unwind: {
-        path: '$userRole',
-        preserveNullAndEmptyArrays: true,
+      {
+        $unwind: {
+          path: '$userRole',
+          preserveNullAndEmptyArrays: true,
+        },
       },
-    },
       {
         $project: {
           _id: 1,
@@ -524,9 +522,9 @@ export class EnrollmentsService {
           productLevel: '$product.level',
           productPrice: '$price',
           assignedBy: '$assignedByUser.userName',
-          assignType : '$assignType',
+          assignType: '$assignType',
           enrollmentDate: '$createdAt',
-          userRole : "$userRole.name"
+          userRole: '$userRole.name',
         },
       },
       {
@@ -561,8 +559,11 @@ export class EnrollmentsService {
   ) {
     const page = parseInt(productData.page) || 1;
     const limit = parseInt(productData.limit) || 10;
-    const level = parseInt(productData.productLevel) || undefined;
-
+    const level = parseInt(productData.productLevel)
+      ? parseInt(productData.productLevel)
+      : parseInt(productData.productLevel) === 0
+        ? 0
+        : undefined;
     console.log(page, limit, level, productData);
     const skip = (page - 1) * limit;
 
