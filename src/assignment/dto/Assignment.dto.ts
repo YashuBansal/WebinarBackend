@@ -15,6 +15,7 @@ import { Types } from 'mongoose';
 import {
   AttendeesFilterDto,
   CreateAttendeeDto,
+  PreWebinarPostAttendeeDTO,
   WebinarAttendeesSortObject,
 } from 'src/attendees/dto/attendees.dto';
 import { AssignmentStatus, RecordType } from 'src/schemas/Assignments.schema';
@@ -47,8 +48,8 @@ export class preWebinarAssignmentDto {
 
   @IsNotEmpty()
   @ValidateNested()
-  @Type(() => CreateAttendeeDto)
-  attendee: CreateAttendeeDto;
+  @Type(() => PreWebinarPostAttendeeDTO)
+  attendee: PreWebinarPostAttendeeDTO;
 }
 
 export class GetAssignmentDTO {

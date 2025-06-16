@@ -30,6 +30,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   AttendeesFilterDto,
   CreateAttendeeDto,
+  PreWebinarPostAttendeeDTO,
   SortOrder,
   WebinarAttendeesSortBy,
   WebinarAttendeesSortObject,
@@ -1039,7 +1040,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
   async addPreWebinarAssignments(
     adminId: string,
     webinarId: string,
-    attendee: CreateAttendeeDto,
+    attendee: PreWebinarPostAttendeeDTO,
   ) {
     const recordType = 'preWebinar';
 

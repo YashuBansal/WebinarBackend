@@ -563,7 +563,7 @@ export class EnrollmentsService {
     const limit = parseInt(productData.limit) || 10;
     const level = parseInt(productData.productLevel) || undefined;
 
-    console.log(page, limit, level, productData.productId);
+    console.log(page, limit, level, productData);
     const skip = (page - 1) * limit;
 
     const basePipeline: PipelineStage[] = [

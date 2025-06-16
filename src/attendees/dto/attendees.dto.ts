@@ -84,6 +84,71 @@ export class CreateAttendeeDto {
   tags?: string;
 }
 
+export class PreWebinarPostAttendeeDTO {
+  @IsEmail({}, { message: 'Invalid email format' })
+  @IsNotEmpty({ message: 'Email is required' })
+  email: string;
+
+  @IsOptional()
+  @IsString({ message: 'First name must be a string' })
+  @MaxLength(100, { message: 'First name can be up to 100 characters long' })
+  firstName?: string | null;
+
+  @IsOptional()
+  @IsString({ message: 'Last name must be a string' })
+  @MaxLength(100, { message: 'Last name can be up to 100 characters long' })
+  lastName?: string | null;
+
+  @IsOptional()
+  @IsString({ message: 'Phone number must be a string' })
+  @MaxLength(20, { message: 'Phone number can be up to 20 characters long' })
+  phone?: string | null;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Time in session must be a number' })
+  timeInSession?: number = 0;
+
+  @IsOptional()
+  @IsMongoId({ message: 'Webinar must be a valid MongoId' })
+  @IsNotEmpty({ message: 'Webinar is required' })
+  webinar: Types.ObjectId;
+
+  @IsOptional()
+  @IsBoolean({ message: 'IsAttended must be a boolean' })
+  @IsNotEmpty({ message: 'IsAttended is required' })
+  isAttended: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value?.toLowerCase())
+  @IsEnum(['male', 'female', 'others'], {
+    message: 'Gender must be one of male, female, or others',
+  })
+  gender?: string;
+
+  @IsOptional()
+  @IsString({ message: 'Location must be a string' })
+  @MaxLength(100, { message: 'Location can be up to 100 characters long' })
+  location?: string;
+
+  @IsOptional()
+  @IsMongoId({ message: 'Admin ID must be a valid MongoId' })
+  @IsNotEmpty({ message: 'Admin ID is required' })
+  adminId: Types.ObjectId;
+
+  @IsOptional()
+  @IsMongoId({ message: 'Attendee Id must be a valid MongoId' })
+  attendeeId?: Types.ObjectId;
+
+  @IsOptional()
+  @IsString({ message: 'Source must be a string' })
+  source?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+}
+
 export class UpdateAttendeeDto {
   @IsOptional()
   @IsString({ message: 'First name must be a string' })

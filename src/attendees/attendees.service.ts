@@ -16,6 +16,7 @@ import {
   GroupedAttendeesFilterDto,
   GroupedAttendeesSortBy,
   GroupedAttendeesSortObject,
+  PreWebinarPostAttendeeDTO,
   SortOrder,
   SwapAttendeeFieldsDTO,
   UpdateAttendeeDto,
@@ -67,7 +68,7 @@ export class AttendeesService {
     private readonly customLeadTypeService: CustomLeadTypeService,
   ) {}
 
-  async addAttendees(attendees: [CreateAttendeeDto]): Promise<any> {
+  async addAttendees(attendees: [PreWebinarPostAttendeeDTO]): Promise<any> {
     const result = await this.attendeeModel.create(attendees);
     return result;
   }
@@ -722,8 +723,8 @@ export class AttendeesService {
       },
     } = obj;
 
-    const queryFields = fields.split(',').map(a => a.trim())
-    console.log(queryFields)
+    const queryFields = fields.split(',').map((a) => a.trim());
+    console.log(queryFields);
 
     const allFields = {
       email: 1,
