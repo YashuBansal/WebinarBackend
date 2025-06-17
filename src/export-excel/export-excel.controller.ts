@@ -34,6 +34,7 @@ import {
   ExportBillingHistoryDTO,
   GetBillingHistoryDto,
 } from 'src/billing-history/dto/bililngHistory.dto';
+import { ProductRevenueExportDTO } from 'src/products/dto/product-level.dto';
 
 @Controller('export-excel')
 export class ExportExcelController {
@@ -243,6 +244,41 @@ export class ExportExcelController {
     try {
       const filePath =
         await this.exportExcelService.generateExcelForClientBillingHistory(
+          body,
+          adminId,
+        );
+
+      // Stream the file to the client
+      res.setHeader('Content-Disposition', `attachment; filename="users.xlsx"`);
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+
+      const fileStream = fs.createReadStream(filePath.filePath);
+      fileStream.pipe(res);
+
+      // Delete the file after streaming
+      fileStream.on('end', () => {
+        // fs.unlinkSync(filePath);'
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to download Excel file. Please try again later.',
+        error: error.message,
+      });
+    }
+  }
+
+  @Post('/product-revenue')
+  async downloadProductRevenueMetrics(
+    @Body() body: ProductRevenueExportDTO,
+    @Id() adminId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      const filePath =
+        await this.exportExcelService.generateExcelForProductRevenue(
           body,
           adminId,
         );

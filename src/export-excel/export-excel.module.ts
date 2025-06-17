@@ -18,6 +18,7 @@ import { UserActivityModule } from 'src/user-activity/user-activity.module';
 import { AssignmentModule } from 'src/assignment/assignment.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
 import { BillingHistoryModule } from 'src/billing-history/billing-history.module';
+import { ProductRevenueModule } from 'src/product-revenue/product-revenue.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { BillingHistoryModule } from 'src/billing-history/billing-history.module
     AssignmentModule,
     WebsocketModule,
     BillingHistoryModule,
+    ProductRevenueModule
   ],
   controllers: [ExportExcelController],
   providers: [ExportExcelService],
@@ -58,6 +60,10 @@ export class ExportExcelModule {
       { path: 'export-excel/webinars', method: RequestMethod.POST },
       {
         path: 'export-excel/user-activity/:userId',
+        method: RequestMethod.POST,
+      },
+      {
+        path: 'export-excel/product-revenue',
         method: RequestMethod.POST,
       },
       {

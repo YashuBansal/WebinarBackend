@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsMongoId, IsNumber, Min, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsMongoId, IsNumber, Min, IsOptional, IsDateString } from 'class-validator';
 
 export class CreateProductLevelDto {
   @IsString()
@@ -9,6 +9,27 @@ export class CreateProductLevelDto {
   @Min(0)
   @IsNotEmpty()
   level: number;
+}
+
+export class ProductRevenueExportDTO {
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  fileName: string;
+
+  @IsNumber()
+  limit: number;
+
+  @IsString()
+  @IsNotEmpty()
+  uniqueId: string;
 }
 
 export class UpdateProductLevelDto {

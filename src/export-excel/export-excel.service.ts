@@ -34,6 +34,8 @@ import {
   ExportBillingHistoryDTO,
   GetBillingHistoryDto,
 } from 'src/billing-history/dto/bililngHistory.dto';
+import { ProductRevenueExportDTO } from 'src/products/dto/product-level.dto';
+import { ProductRevenueService } from 'src/product-revenue/product-revenue.service';
 @Injectable()
 export class ExportExcelService {
   constructor(
@@ -47,6 +49,7 @@ export class ExportExcelService {
     private readonly userActivityService: UserActivityService,
     private readonly assignmentService: AssignmentService,
     private readonly billingService: BillingHistoryService,
+    private readonly productRevenueService: ProductRevenueService,
   ) {}
 
   emitProgress(socketId: null | string, value: number) {
@@ -472,7 +475,7 @@ export class ExportExcelService {
     adminId: string,
   ) {
     const { startDate, endDate, fileName } = obj;
-    console.log(fileName)
+    console.log(fileName);
 
     const columns = [
       'client',
@@ -534,8 +537,7 @@ export class ExportExcelService {
       isKey: true,
     };
     updateProgress(50);
-    console.log(payload)
-
+    console.log(payload);
 
     const workerPath = path.resolve(
       __dirname,
@@ -552,6 +554,178 @@ export class ExportExcelService {
         startDate,
         endDate,
       },
+    });
+
+    updateProgress(100);
+    return fileData;
+  }
+
+  async generateExcelForProductRevenue(
+    obj: ProductRevenueExportDTO,
+    adminId: string,
+  ) {
+    const {
+      startDate: startStr,
+      endDate: endStr,
+      fileName,
+      limit,
+      uniqueId,
+    } = obj;
+
+    let columns = [];
+    let arrayData = [];
+
+    const socketId = this.websocketGateway.activeUsers.get(String(adminId));
+    let lastProgress = 0;
+    const updateProgress = (current) => {
+      if (current - lastProgress >= 5) {
+        // 5% increments
+        this.emitProgress(socketId, current);
+        lastProgress = current;
+      }
+    };
+    updateProgress(10);
+
+    if (uniqueId === 'revenue-by-product-level') {
+      columns = [
+        {
+          key: '_id',
+          header: 'Level',
+        },
+        {
+          key: 'totalRevenue',
+          header: 'Revenue',
+        },
+        {
+          key: 'count',
+          header: 'Sales',
+        },
+      ];
+
+      const { startDate, endDate } = this.productRevenueService.validateDate(
+        startStr,
+        endStr,
+      );
+
+      const result = await this.productRevenueService.getRevenueByLevel(
+        adminId,
+        startDate,
+        endDate,
+      );
+
+      if (Array.isArray(result)) {
+        arrayData = result;
+      }
+    } else if (uniqueId === 'webinar-performance') {
+      columns = [
+        {
+          key: 'webinarName',
+          header: 'Webinar',
+        },
+        {
+          key: 'totalRevenue',
+          header: 'Revenue',
+        },
+        {
+          key: 'totalEnrollments',
+          header: 'Enrollments',
+        },
+      ];
+
+      const result = await this.productRevenueService.getRevenueByWebinar(
+        adminId,
+        limit,
+      );
+
+      if (Array.isArray(result)) {
+        arrayData = result;
+      }
+    } else if (uniqueId === 'top-performing-products') {
+      columns = [
+        {
+          key: 'name',
+          header: 'Product',
+        },
+        {
+          key: 'totalRevenue',
+          header: 'Revenue',
+        },
+        {
+          key: 'totalSales',
+          header: 'Sales',
+        },
+      ];
+
+      const { startDate, endDate } = this.productRevenueService.validateDate(
+        startStr,
+        endStr,
+      );
+
+      const result = await this.productRevenueService.getTopProducts(
+        adminId,
+        startDate,
+        endDate,
+        limit,
+      );
+
+      if (Array.isArray(result)) {
+        arrayData = result;
+      }
+    } else if (uniqueId === 'top-customers') {
+      columns = [
+        {
+          key: '_id',
+          header: 'Email',
+        },
+        {
+          key: 'totalRevenue',
+          header: 'Total Spent',
+        },
+        {
+          key: 'totalPurchases',
+          header: 'Purchases',
+        },
+      ];
+
+      const { startDate, endDate } = this.productRevenueService.validateDate(
+        startStr,
+        endStr,
+      );
+
+      const result = await this.productRevenueService.getTopUsers(
+        adminId,
+        startDate,
+        endDate,
+        limit,
+      );
+
+      if (Array.isArray(result)) {
+        arrayData = result;
+      }
+    }
+
+    const userDir = this.getUserDirectory(adminId);
+    const filePath = path.join(userDir, fileName);
+    const payload = {
+      data: arrayData,
+      columns: columns,
+      filePath,
+    };
+    updateProgress(50);
+    console.log(payload);
+
+    const workerPath = path.resolve(
+      __dirname,
+      '../workers/generate-excel.worker.js',
+    );
+    const fileData = await this.generateExcel(payload, workerPath);
+    updateProgress(80);
+    this.createUserDocuments({
+      userId: adminId,
+      filePath: filePath,
+      fileName: fileName,
+      fileSize: fileData.fileSize,
+      filters: {},
     });
 
     updateProgress(100);
