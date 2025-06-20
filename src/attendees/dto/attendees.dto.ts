@@ -6,7 +6,6 @@ import {
   IsMongoId,
   IsNotEmpty,
   IsOptional,
-  isArray,
   IsString,
   IsNumber,
   MaxLength,
@@ -19,6 +18,7 @@ import {
 } from 'class-validator';
 import { Types } from 'mongoose';
 import { RangeNumberDto, RangeStringDto } from 'src/users/dto/filters.dto';
+import { WebinarParticipantDto } from 'src/webinar-participant/dto/webinar-participant.dto';
 
 export class CreateAttendeeDto {
   @IsEmail({}, { message: 'Invalid email format' })
@@ -147,6 +147,27 @@ export class PreWebinarPostAttendeeDTO {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+}
+
+export class ImportAttendeesDTO {
+  @IsNotEmpty()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateAttendeeDto)
+  data: CreateAttendeeDto[];
+
+  @IsNotEmpty()
+  @IsMongoId()
+  webinarId: string;
+
+  @IsBoolean()
+  isAttended: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => WebinarParticipantDto)
+  unMergedData?: WebinarParticipantDto[];
 }
 
 export class UpdateAttendeeDto {

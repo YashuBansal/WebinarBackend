@@ -44,6 +44,8 @@ import { AttendeeAssociationService } from 'src/attendee-association/attendee-as
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { CustomLeadTypeService } from 'src/custom-lead-type/custom-lead-type.service';
+import { WebinarParticipantDto } from 'src/webinar-participant/dto/webinar-participant.dto';
+import { WebinarParticipantService } from 'src/webinar-participant/webinar-participant.service';
 
 @Injectable()
 export class AttendeesService {
@@ -66,6 +68,7 @@ export class AttendeesService {
     private readonly attendeeAssociationService: AttendeeAssociationService,
     private readonly attendeeLogService: AttendeeLogService,
     private readonly customLeadTypeService: CustomLeadTypeService,
+    private readonly webinarParticipantService: WebinarParticipantService,
   ) {}
 
   async addAttendees(attendees: [PreWebinarPostAttendeeDTO]): Promise<any> {
@@ -93,6 +96,7 @@ export class AttendeesService {
     adminId: string,
     postWebinarExists: boolean,
     webinarName: string,
+    unMergedData?: WebinarParticipantDto[],
   ): Promise<any> {
     const subscription =
       await this.subscriptionService.getSubscription(adminId);
@@ -287,6 +291,21 @@ export class AttendeesService {
             session: currentSession,
           });
         }
+
+        if (
+          !postWebinarExists &&
+          isAttended &&
+          Array.isArray(unMergedData) &&
+          unMergedData.length > 0
+        ) {
+          const data = unMergedData.map((data) => ({
+            ...data,
+            adminId: new Types.ObjectId(`${adminId}`),
+            webinar: new Types.ObjectId(`${webinar}`),
+          }));
+          await this.webinarParticipantService.createMany(data, currentSession);
+        }
+
         updateProgress(70);
 
         const newAttendees = await this.attendeeModel.insertMany(

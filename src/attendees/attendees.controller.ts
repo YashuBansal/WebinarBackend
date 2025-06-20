@@ -21,12 +21,14 @@ import {
   DeleteWebinarAttendeesDTO,
   FetchGroupedAttendeesDTO,
   GetAttendeesDTO,
+  ImportAttendeesDTO,
   SwapAttendeeFieldsDTO,
   UpdateAttendeeDto,
 } from './dto/attendees.dto';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { WebinarService } from 'src/webinar/webinar.service';
 import { AssignmentService } from 'src/assignment/assignment.service';
+import { WebinarParticipantService } from 'src/webinar-participant/webinar-participant.service';
 
 @Controller('attendees')
 export class AttendeesController {
@@ -35,6 +37,7 @@ export class AttendeesController {
     private readonly assignService: AssignmentService,
     @Inject(forwardRef(() => WebinarService))
     private readonly webinarService: WebinarService,
+    private readonly webinarParticipantService: WebinarParticipantService,
   ) {}
 
   @Get('webinar')
@@ -54,13 +57,27 @@ export class AttendeesController {
         assignmentType: query?.assignmentType,
         sort: query?.sort,
         leadType: query?.leadType === 'true',
-        fields: query.fields
+        fields: query.fields,
       },
     );
 
     const processingTime = Date.now() - start;
     console.log(`Processing time: ${processingTime} milliseconds`);
     return result ? { ...result, processingTime } : result;
+  }
+
+  @Get('webinar-participants/:id')
+  async getWebinar(@Id() adminId: string, @Param('id') webinarId: string) {
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(webinarId)
+    ) {
+      throw new NotFoundException('Admin Id and Webinar Id is Required');
+    }
+    return await this.webinarParticipantService.findByAdminAndWebinar(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(webinarId),
+    );
   }
 
   @Get(':email')
@@ -97,7 +114,7 @@ export class AttendeesController {
   async addPostAttendees(
     @Id() adminId: string,
     @Body()
-    body: { data: [CreateAttendeeDto]; webinarId: string; isAttended: boolean },
+    body: ImportAttendeesDTO,
   ): Promise<any> {
     const webinar = await this.webinarService.getWebinar(
       body.webinarId,
@@ -136,6 +153,7 @@ export class AttendeesController {
       adminId,
       postWebinarExists ? true : false,
       webinar.webinarName,
+      body.unMergedData,
     );
     return result;
   }

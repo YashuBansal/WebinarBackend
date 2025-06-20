@@ -51,6 +51,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { JwtModule } from '@nestjs/jwt';
 import { AttendeeLogModule } from './attendee-log/attendee-log.module';
 import { WebsocketModule } from './websocket/websocket.module';
+import { WebinarParticipantModule } from './webinar-participant/webinar-participant.module';
 
 @Module({
   imports: [
@@ -124,6 +125,7 @@ import { WebsocketModule } from './websocket/websocket.module';
     }),
     AttendeeLogModule,
     WebsocketModule,
+    WebinarParticipantModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService],

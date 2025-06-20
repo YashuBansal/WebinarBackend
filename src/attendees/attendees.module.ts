@@ -25,6 +25,7 @@ import { AttendeeAssociationModule } from 'src/attendee-association/attendee-ass
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
+import { WebinarParticipantModule } from 'src/webinar-participant/webinar-participant.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
     AttendeeLogModule,
     CustomLeadTypeModule,
     WebsocketModule,
+    WebinarParticipantModule,
   ],
   controllers: [AttendeesController],
   providers: [AttendeesService],
@@ -59,6 +61,10 @@ export class AttendeesModule {
         { path: 'attendees', method: RequestMethod.POST },
         { path: 'attendees/swap', method: RequestMethod.PUT },
         { path: 'attendees/webinar', method: RequestMethod.DELETE },
+        {
+          path: 'attendees/webinar-participants/:id',
+          method: RequestMethod.GET,
+        },
         { path: 'attendees/all', method: RequestMethod.DELETE },
       );
 
