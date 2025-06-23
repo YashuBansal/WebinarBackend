@@ -25,6 +25,7 @@ import { Location, LocationSchema } from 'src/schemas/location.schema';
 import { SubscriptionAddOn, SubscriptionAddOnSchema } from 'src/schemas/SubscriptionAddon.schema';
 import { Tag, TagSchema } from 'src/schemas/tags.schema';
 import { UserDocuments, UserDocumentsSchema } from 'src/schemas/user-documents.schema';
+import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
 
 @Module({
   imports: [
@@ -52,6 +53,10 @@ import { UserDocuments, UserDocumentsSchema } from 'src/schemas/user-documents.s
       {
         name: BillingHistory.name,
         schema: BillingHistorySchema
+      },
+      {
+        name: Plans.name,
+        schema: PlansSchema
       },
       {
         name: CustomLeadType.name,

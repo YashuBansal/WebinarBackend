@@ -1,4 +1,5 @@
 import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { RangeStringDto } from 'src/users/dto/filters.dto';
 
 export class CreateProductsDto {
   @IsString()
@@ -30,6 +31,28 @@ export class CreateProductsDto {
   @IsOptional()
   @IsString()
   tag: string;
+}
+
+export class ProductsFilterDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  uniqueId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  price?: RangeStringDto;
+
+  @IsOptional()
+  @IsNumber()
+  level?: string;
+
+  @IsOptional()
+  @IsString()
+  tag?: string;
 }
 
 export class UpdateProductsDto {

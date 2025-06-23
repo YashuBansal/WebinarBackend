@@ -8,7 +8,11 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Products } from 'src/schemas/Products.schema';
-import { CreateProductsDto, UpdateProductsDto } from './dto/products.dto';
+import {
+  CreateProductsDto,
+  ProductsFilterDto,
+  UpdateProductsDto,
+} from './dto/products.dto';
 import { EnrollmentsService } from 'src/enrollments/enrollments.service';
 import { ProductLevel } from 'src/schemas/product-level.schema';
 import {
@@ -68,14 +72,40 @@ export class ProductsService {
     adminId: string,
     page: number,
     limit: number,
+    filters?: ProductsFilterDto,
   ): Promise<any> {
     const skip = (page - 1) * limit;
 
-    const pipeline = { adminId: new Types.ObjectId(`${adminId}`) };
+    let pipeline: any = { adminId: new Types.ObjectId(`${adminId}`) };
 
     const totalProducts = await this.productsModel.countDocuments(pipeline);
 
     const totalPages = Math.ceil(totalProducts / limit);
+
+    if (filters) {
+      const priceFilter = {};
+      if (filters.price) {
+        if (filters.price.$gte) {
+          priceFilter['price']['$gte'] = parseInt(filters.price.$gte, 10);
+        }
+        if (filters.price.$lte) {
+          priceFilter['price']['$lte'] = parseInt(filters.price.$gte, 10);
+        }
+      }
+
+      pipeline = {
+        ...pipeline,
+        ...(filters.name
+          ? { name: { $regex: filters.name, $options: 'i' } }
+          : {}),
+        ...(filters.level ? { level: parseInt(filters.level, 10) } : {}),
+        ...(filters.uniqueId ? { uniqueId: filters.uniqueId } : {}),
+        ...(filters.tag ? { tag: filters.tag } : {}),
+        ...priceFilter,
+      };
+    }
+
+    console.log(pipeline);
 
     const result = await this.productsModel
       .find(pipeline)
@@ -204,7 +234,7 @@ export class ProductsService {
 
     const newProductLevels = ProductLevels.map((ProductLevel) => ({
       ...ProductLevel,
-      adminId
+      adminId,
     }));
 
     return this.productLevelModel.insertMany(newProductLevels);

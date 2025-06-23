@@ -52,6 +52,7 @@ export class DeleteDataService {
         @InjectModel(SubscriptionAddOn.name) private readonly subscriptionAddOnModel: Model<SubscriptionAddOn>,
         @InjectModel(Tag.name) private readonly tagModel: Model<Tag>,
         @InjectModel(UserDocuments.name) private readonly userDocumentsModel: Model<UserDocuments>,
+        @InjectModel(Plans.name) private readonly plansModel: Model<Plans>,
     ) { }
 
     async deleteData(id: string): Promise<any> {
@@ -79,6 +80,7 @@ export class DeleteDataService {
                 this.subscriptionAddOnModel.deleteMany({}),
                 this.tagModel.deleteMany({}),
                 this.userDocumentsModel.deleteMany({}),
+                this.plansModel.deleteMany({}),
                 // Delete records in User and StatusDropdown but exclude those with adminId equal to provided id
                 this.userModel.deleteMany({ _id: { $ne: new Types.ObjectId(`${id}`) } }), // Do not delete users with adminId == id
                 this.statusDropdownModel.deleteMany({ createdBy: { $ne: id } }) // Do not delete StatusDropdown with adminId == id

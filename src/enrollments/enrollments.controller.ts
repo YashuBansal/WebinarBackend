@@ -52,57 +52,57 @@ export class EnrollmentsController {
     return enrollment;
   }
 
-  @Get('attendee/:id')
-  async getAttendeeEnrollments(
-    @Param('id') attendeeId: string,
-    @Query() query: { page?: string; limit?: string },
-    @AdminId() adminId: string,
-  ): Promise<any> {
-    const page = Number(query.page) ? Number(query.page) : 1;
+  // @Get('attendee/:id')
+  // async getAttendeeEnrollments(
+  //   @Param('id') attendeeId: string,
+  //   @Query() query: { page?: string; limit?: string },
+  //   @AdminId() adminId: string,
+  // ): Promise<any> {
+  //   const page = Number(query.page) ? Number(query.page) : 1;
 
-    const limit = Number(query.limit) ? Number(query.limit) : 25;
-    const enrollment = await this.enrollmentsService.getAttendeeEnrollments(
-      adminId,
-      attendeeId,
-      page,
-      limit,
-    );
+  //   const limit = Number(query.limit) ? Number(query.limit) : 25;
+  //   const enrollment = await this.enrollmentsService.getAttendeeEnrollments(
+  //     adminId,
+  //     attendeeId,
+  //     page,
+  //     limit,
+  //   );
 
-    return enrollment;
-  }
+  //   return enrollment;
+  // }
 
-  @Get('product-level-counts')
-  async getProductLevelCounts(
-    @AdminId() adminId: string,
-    @Query('email') email: string,
-  ): Promise<any> {
-    if (!email || !adminId) {
-      throw new BadRequestException('Email and Admin ID are required');
-    }
-    const result = await this.enrollmentsService.getProductLevelCounts(
-      adminId,
-      email,
-    );
-    return result;
-  }
+  // @Get('product-level-counts')
+  // async getProductLevelCounts(
+  //   @AdminId() adminId: string,
+  //   @Query('email') email: string,
+  // ): Promise<any> {
+  //   if (!email || !adminId) {
+  //     throw new BadRequestException('Email and Admin ID are required');
+  //   }
+  //   const result = await this.enrollmentsService.getProductLevelCounts(
+  //     adminId,
+  //     email,
+  //   );
+  //   return result;
+  // }
 
-  @Get('product-level-enrollments')
-  async getEnrollmentsByProductLevel(
-    @AdminId() adminId: string,
-    @Query() query: GetEnrollmentsByProductLevelDto,
-  ): Promise<any> {
-    const productLevel = Number(query.productLevel);
-    if (isNaN(productLevel)) {
-      throw new BadRequestException('Invalid product level');
-    }
+  // @Get('product-level-enrollments')
+  // async getEnrollmentsByProductLevel(
+  //   @AdminId() adminId: string,
+  //   @Query() query: GetEnrollmentsByProductLevelDto,
+  // ): Promise<any> {
+  //   const productLevel = Number(query.productLevel);
+  //   if (isNaN(productLevel)) {
+  //     throw new BadRequestException('Invalid product level');
+  //   }
 
-    const result = await this.enrollmentsService.getEnrollmentsByProductLevel(
-      adminId,
-      query.email,
-      productLevel,
-    );
-    return result;
-  }
+  //   const result = await this.enrollmentsService.getEnrollmentsByProductLevel(
+  //     adminId,
+  //     query.email,
+  //     productLevel,
+  //   );
+  //   return result;
+  // }
 
   @Get('product-email-enrollments')
   async getEnrollmentsByEmail(

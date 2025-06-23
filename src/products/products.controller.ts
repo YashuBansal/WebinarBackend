@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { AdminId, Id } from 'src/decorators/custom.decorator';
-import { CreateProductsDto, UpdateProductsDto } from './dto/products.dto';
+import { CreateProductsDto, ProductsFilterDto, UpdateProductsDto } from './dto/products.dto';
 import {
   CreateProductLevelDto,
   UpdateProductLevelDto,
@@ -33,7 +33,7 @@ export class ProductsController {
 
   @Get()
   async getProducts(
-    @Query() query: { page?: string; limit?: string },
+    @Query() query: { page?: string; limit?: string; filters?:ProductsFilterDto },
     @AdminId() adminId: string,
   ): Promise<any> {
     const page = Number(query?.page) ? Number(query?.page) : 1;
@@ -43,6 +43,7 @@ export class ProductsController {
       adminId,
       page,
       limit,
+      query.filters
     );
 
     return products;
