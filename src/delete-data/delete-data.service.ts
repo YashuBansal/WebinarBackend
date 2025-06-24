@@ -83,7 +83,7 @@ export class DeleteDataService {
                 this.plansModel.deleteMany({}),
                 // Delete records in User and StatusDropdown but exclude those with adminId equal to provided id
                 this.userModel.deleteMany({ _id: { $ne: new Types.ObjectId(`${id}`) } }), // Do not delete users with adminId == id
-                this.statusDropdownModel.deleteMany({ createdBy: { $ne: id } }) // Do not delete StatusDropdown with adminId == id
+                // this.statusDropdownModel.deleteMany({ createdBy: { $ne: id } }) // Do not delete StatusDropdown with adminId == id
             ]);
 
             return { success: true, message: 'All data has been deleted from all models.' };
