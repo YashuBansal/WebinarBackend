@@ -271,17 +271,20 @@ export class AttendeesFilterDto {
   @IsString()
   source?: string;
 
+  @IsArray()
   @IsOptional()
-  @IsString()
-  isAssigned?: string;
+  @IsMongoId({ each: true })
+  isAssigned?: string[];
+
+  @IsArray()
+  @IsOptional()
+  @IsMongoId({ each: true })
+  leadType?: string[];
 
   @IsOptional()
-  @IsMongoId()
-  leadType?: Types.ObjectId;
-
-  @IsOptional()
-  @IsString()
-  status?: string;
+  @IsArray()
+  @IsString({ each: true })
+  status?: string[];
 
   @IsOptional()
   @IsArray()

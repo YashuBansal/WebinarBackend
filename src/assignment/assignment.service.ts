@@ -270,7 +270,7 @@ export class AssignmentService {
           }),
         },
       },
-      ...(filters.leadType
+      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
         ? [
             {
               $lookup: {
@@ -286,9 +286,11 @@ export class AssignmentService {
                           },
                           { $eq: ['$email', '$$tempMail'] },
                           {
-                            $eq: [
+                            $in: [
                               '$leadType',
-                              new Types.ObjectId(filters.leadType),
+                              filters.leadType.map(
+                                (a) => new Types.ObjectId(a),
+                              ),
                             ],
                           },
                         ],
@@ -315,7 +317,7 @@ export class AssignmentService {
       { $sort: { [sort.sortBy]: sort.sortOrder === SortOrder.ASC ? 1 : -1 } },
       { $skip: skip },
       { $limit: limit },
-      ...(filters.leadType
+      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
         ? []
         : [
             {

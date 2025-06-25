@@ -796,6 +796,30 @@ export class AttendeesService {
     );
     console.log(filters, 'filters');
 
+    const timeInSessionFilter = {};
+    if (filters.timeInSession) {
+      if (filters.timeInSession.$gte) {
+        if (!timeInSessionFilter['timeInSession'])
+          timeInSessionFilter['timeInSession'] = {};
+
+        timeInSessionFilter['timeInSession']['$gte'] = parseInt(
+          `${filters.timeInSession.$gte}`,
+          10,
+        );
+      }
+
+      if (filters.timeInSession.$lte) {
+        if (!timeInSessionFilter['timeInSession'])
+          timeInSessionFilter['timeInSession'] = {};
+
+        timeInSessionFilter['timeInSession']['$lte'] = parseInt(
+          `${filters.timeInSession.$lte}`,
+          10,
+        );
+      }
+    }
+    console.log(timeInSessionFilter)
+
     const basePipeline: PipelineStage[] = [
       {
         $match: {
@@ -821,7 +845,7 @@ export class AttendeesService {
         },
       },
 
-      ...(filters.isAssigned
+      ...(Array.isArray(filters.isAssigned) && filters.isAssigned.length > 0
         ? [
             {
               $addFields: {
@@ -893,25 +917,22 @@ export class AttendeesService {
                 ...(filters.source && {
                   source: { $regex: filters.source, $options: 'i' },
                 }),
-                ...(filters.timeInSession && {
-                  timeInSession: filters.timeInSession,
-                }),
+                ...(filters.timeInSession && timeInSessionFilter),
                 ...(filters.status && {
-                  status: filters.status,
+                  status: { $in: filters.status },
                 }),
                 ...(filters.tags && {
                   tags: { $in: filters.tags },
                 }),
-                ...(filters.isAssigned &&
-                  Types.ObjectId.isValid(filters.isAssigned) && {
-                    lookupField: new Types.ObjectId(filters.isAssigned),
+                ...(Array.isArray(filters.isAssigned) && filters.isAssigned.length > 0 && {
+                  lookupField: { $in: filters.isAssigned.map(item => new Types.ObjectId(item)) },
                   }),
               },
             },
           ]
         : []),
 
-      ...(filters.leadType
+      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
         ? [
             {
               $lookup: {
@@ -927,9 +948,9 @@ export class AttendeesService {
                           },
                           { $eq: ['$email', '$$tempMail'] },
                           {
-                            $eq: [
+                            $in: [
                               '$leadType',
-                              new Types.ObjectId(filters.leadType),
+                              filters.leadType.map(item => new Types.ObjectId(item)),
                             ],
                           },
                         ],
@@ -1064,7 +1085,7 @@ export class AttendeesService {
           lookupField: 0,
         },
       },
-      ...(filters.leadType
+      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
         ? []
         : [
             {
