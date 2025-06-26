@@ -818,7 +818,7 @@ export class AttendeesService {
         );
       }
     }
-    console.log(timeInSessionFilter)
+    console.log(timeInSessionFilter);
 
     const basePipeline: PipelineStage[] = [
       {
@@ -924,8 +924,13 @@ export class AttendeesService {
                 ...(filters.tags && {
                   tags: { $in: filters.tags },
                 }),
-                ...(Array.isArray(filters.isAssigned) && filters.isAssigned.length > 0 && {
-                  lookupField: { $in: filters.isAssigned.map(item => new Types.ObjectId(item)) },
+                ...(Array.isArray(filters.isAssigned) &&
+                  filters.isAssigned.length > 0 && {
+                    lookupField: {
+                      $in: filters.isAssigned.map(
+                        (item) => new Types.ObjectId(item),
+                      ),
+                    },
                   }),
               },
             },
@@ -950,7 +955,9 @@ export class AttendeesService {
                           {
                             $in: [
                               '$leadType',
-                              filters.leadType.map(item => new Types.ObjectId(item)),
+                              filters.leadType.map(
+                                (item) => new Types.ObjectId(item),
+                              ),
                             ],
                           },
                         ],
@@ -1309,6 +1316,12 @@ export class AttendeesService {
       throw new BadRequestException('Both field1 and field2 must be provided.');
     }
 
+    const webinar = await this.webinarService.getWebinar(webinarId, adminId);
+
+    if (!webinar) {
+      throw new BadRequestException('Webinar Not Exists.');
+    }
+
     let attendees = [];
 
     if (attendeesIds.length > 0) {
@@ -1361,6 +1374,20 @@ export class AttendeesService {
         `Only ${result.modifiedCount} out of ${attendees.length} attendees were updated`,
       );
     }
+
+    const webinarName = webinar.webinarName;
+    const webinarType = isAttended ? 'Sales' : 'Reminder';
+
+    const attendeeLogs = attendees.map((attendee) => ({
+      attendee: attendee.email,
+      action: AttendeeAction.COlUMN_SWAP, // or whatever action you want
+      item: webinarName,
+      details: `<span>Swapped <strong>${field1}</strong> and <strong>${field2}</strong> in the <strong>${webinarType}</strong> webinar: <strong>${webinarName}</strong></span>`,
+      adminId: new Types.ObjectId(adminId),
+    }));
+
+    // ✅ Save the logs
+    await this.attendeeLogService.createAttendeeLogs(attendeeLogs);
 
     return { message: 'Attendees updated successfully', success: true };
   }

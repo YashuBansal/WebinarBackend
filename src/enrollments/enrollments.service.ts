@@ -185,12 +185,12 @@ export class EnrollmentsService {
 
     const { createdBy, webinarName, productName } = createEnrollmentDto;
 
-    if (createdBy && webinarName && productName) {
+    if ( webinarName && productName) {
       this.attendeeLogService.createSingleAttendeeLog({
         attendee: result.attendee,
         item: '',
         action: AttendeeAction.Enrollment_CREATED,
-        details: `<span>Enrollment created by <strong>${createdBy}</strong> for the webinar : <strong>${webinarName}</strong> and product : <strong>${productName}</strong>.</span>`,
+        details: `<span>Enrollment created by <strong>${createdBy ? createdBy : 'API'}</strong> for the webinar : <strong>${webinarName}</strong> and product : <strong>${productName}</strong>.</span>`,
         adminId: new Types.ObjectId(`${createEnrollmentDto.adminId}`),
       });
     }

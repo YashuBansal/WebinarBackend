@@ -260,7 +260,7 @@ export class AssignmentService {
               : { status: null }),
           }),
           ...(filters.status && {
-             status: { $in: filters.status },
+            status: { $in: filters.status },
           }),
           ...(filters.tags && {
             tags: { $in: filters.tags },
@@ -967,10 +967,14 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
     tags: string[],
     assignedProducts: any[] = [],
     assignedEmployees: any[] = [],
-  ): Promise<boolean> {
+  ): Promise<{
+    executeFurther: boolean;
+    AssignmentResponse: any;
+  }> {
     const webinarId = webinar._id.toString();
     const attendeeId = attendee?._id;
     let executeFurther = true;
+    let AssignmentResponse = {};
     for (const tag of tags) {
       if (Array.isArray(assignedProducts)) {
         assignedProducts
@@ -985,11 +989,13 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
               );
             if (existingEnrollment) {
             } else {
-              const enrollment = await this.enrollmentService.createEnrollment({
+              await this.enrollmentService.createEnrollment({
                 attendee: attendeeEmail,
                 product: product._id,
+                productName: product.name,
                 adminId: adminId.toString(),
                 webinar: webinarId,
+                webinarName: webinar.webinarName,
               });
             }
           });
@@ -1014,7 +1020,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
         });
         if (existingAssignment) {
         } else {
-          await this.createNewAssignmentForPreWebinar(
+          AssignmentResponse = await this.createNewAssignmentForPreWebinar(
             adminId,
             webinar,
             attendee,
@@ -1025,7 +1031,10 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
         executeFurther = false;
       }
     }
-    return executeFurther;
+    return {
+      executeFurther,
+      AssignmentResponse,
+    };
   }
 
   async addPreWebinarAssignments(
@@ -1186,7 +1195,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
       adminId: new Types.ObjectId(adminId),
     });
 
-    const executeFurther: boolean = await this.handleTags(
+    const { executeFurther, AssignmentResponse } = await this.handleTags(
       newAttendee,
       newAttendee.email,
       webinar,
@@ -1197,11 +1206,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
     );
 
     if (!executeFurther) {
-      return {
-        success: true,
-        message: 'Attendee updated successfully',
-        data: {},
-      };
+      return AssignmentResponse;
     }
 
     // Validate webinar assigned employees
@@ -2048,7 +2053,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
               attendee: attendee.email,
               action: AttendeeAction.REASSIGNMENT,
               item: webinarName,
-              details: `<span>Attendee Reassigned to <strong>${employee.userName}</strong> <strong>${data.isTemp ? 'temporarily' : ''}</strong> in webinar : <strong>${webinarName}</strong></span>`,
+              details: `<span>Attendee Reassigned to <strong>${employee.userName}</strong> <strong>${data.isTemp ? 'temporarily' : 'Permanently'}</strong> in webinar : <strong>${webinarName}</strong></span>`,
               adminId: new Types.ObjectId(`${adminId}`),
             }));
 

@@ -93,6 +93,16 @@ export class AlarmService {
       isActive: true,
     });
 
+    if (adminId && data.createdBy) {
+      this.attendeeLogService.createSingleAttendeeLog({
+        attendee: data.email,
+        item: '',
+        action: AttendeeAction.ALARM,
+        details: `<span>Alarm created by <strong>${data.createdBy}</strong> for Date/Time : <strong>${this.formatDateTime(data.date)}</strong>.</span>`,
+        adminId,
+      });
+    }
+
     this.logger.log(
       `Scheduling alarm for attendee ${data.email} at ${alarmDate.toISOString()}`,
     );
