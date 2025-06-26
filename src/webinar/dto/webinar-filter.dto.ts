@@ -27,6 +27,7 @@ export class WebinarFilterDTO {
   webinarDate?: RangeStringDto;
 
   @IsOptional()
-  @IsMongoId()
-  assignedEmployee?: string;
+  @IsArray()
+  @IsMongoId({each: true})
+  assignedEmployee?: string[];
 }

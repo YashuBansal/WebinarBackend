@@ -104,11 +104,14 @@ export class WebinarService {
             webinarName: { $regex: filters.webinarName, $options: 'i' },
           }),
           ...dateFilter,
-          ...(filters.assignedEmployee && {
-            assignedEmployees: new Types.ObjectId(
-              `${filters.assignedEmployee}`,
-            ),
-          }),
+          ...(Array.isArray(filters.assignedEmployee) &&
+            filters.assignedEmployee.length > 0 && {
+              assignedEmployees: {
+                $in: filters.assignedEmployee.map(
+                  (item) => new Types.ObjectId(item),
+                ),
+              },
+            }),
         },
       },
       {
@@ -257,7 +260,7 @@ export class WebinarService {
     const result = await this.webinarModel
       .findOne({
         _id: new Types.ObjectId(`${id}`),
-        adminId: new Types.ObjectId(`${adminId}`)
+        adminId: new Types.ObjectId(`${adminId}`),
       })
       .populate('assignedEmployees')
       .populate('productIds')

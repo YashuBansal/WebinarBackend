@@ -86,9 +86,11 @@ export class ProductsService {
       const priceFilter = {};
       if (filters.price) {
         if (filters.price.$gte) {
+          if (!priceFilter['price']) priceFilter['price'] = {};
           priceFilter['price']['$gte'] = parseInt(filters.price.$gte, 10);
         }
         if (filters.price.$lte) {
+          if (!priceFilter['price']) priceFilter['price'] = {};
           priceFilter['price']['$lte'] = parseInt(filters.price.$gte, 10);
         }
       }

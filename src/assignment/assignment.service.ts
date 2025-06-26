@@ -260,7 +260,7 @@ export class AssignmentService {
               : { status: null }),
           }),
           ...(filters.status && {
-            status: filters.status,
+             status: { $in: filters.status },
           }),
           ...(filters.tags && {
             tags: { $in: filters.tags },
