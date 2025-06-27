@@ -564,7 +564,7 @@ export class AlarmService {
           $lt: endDate,
         },
       })
-      .select('date email note _id attendeeId isActive')
+      .select('date email note _id attendeeId isActive createdAt')
       .exec();
 
     return alarms;

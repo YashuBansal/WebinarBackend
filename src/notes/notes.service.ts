@@ -759,7 +759,7 @@ export class NotesService {
     const endDatePlusOneDay = new Date(endDate);
 
     let query = {};
-    if (webinarId && mongoose.isValidObjectId(webinarId)) {
+    if (mongoose.isValidObjectId(webinarId)) {
       const webinarAttendees =
         await this.attendeeService.fetchAttendeesByWebinar(webinarId);
 

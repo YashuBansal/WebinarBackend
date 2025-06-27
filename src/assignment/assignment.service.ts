@@ -140,8 +140,9 @@ export class AssignmentService {
         $match: {
           adminId: new Types.ObjectId(adminId),
           ...(id && { user: new Types.ObjectId(id) }),
-          ...(webinarId &&
-            webinarId !== 'all' && { webinar: new Types.ObjectId(webinarId) }),
+          ...(mongoose.isValidObjectId(webinarId) && {
+            webinar: new Types.ObjectId(webinarId),
+          }),
           status: assignmentStatus,
           ...(filters.createdAt && {
             createdAt: {
@@ -243,7 +244,7 @@ export class AssignmentService {
             lastName: { $regex: filters.lastName, $options: 'i' },
           }),
           ...(filters.gender && {
-            gender: { $regex: filters.gender, $options: 'i' },
+            gender: filters.gender.trim().toLocaleLowerCase(),
           }),
           ...(filters.phone && {
             phone: { $regex: filters.phone, $options: 'i' },
