@@ -5,6 +5,7 @@ import {
   Body,
   Put,
   NotFoundException,
+  Query,
 } from '@nestjs/common';
 import { NoticeBoardService } from './notice-board.service';
 import { NoticeBoard } from '../schemas/notice-board.schema';
@@ -18,11 +19,12 @@ export class NoticeBoardController {
   @Get()
   async getNoticeBoard(
     @AdminId() adminId: Types.ObjectId,
+    @Query('type') type: string = 'sales',
   ): Promise<NoticeBoard> {
     if (!adminId) {
       throw new NotFoundException('Admin ID is required');
     }
-    return await this.noticeBoardService.find(adminId);
+    return await this.noticeBoardService.find(adminId, type);
   }
 
   @Post()

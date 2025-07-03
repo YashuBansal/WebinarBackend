@@ -1118,7 +1118,7 @@ export class UsersService {
   }
 
   async getEmployeesForNotes(adminId: Types.ObjectId) {
-    return this.userModel.find({ adminId }, '_id email userName isActive');
+    return this.userModel.find({ adminId }, '_id email userName isActive role');
   }
 
   async updateEmployeeAssignmentCounts(
