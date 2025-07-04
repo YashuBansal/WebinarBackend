@@ -2817,6 +2817,189 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
       .exec();
   }
 
+  async getRevisedAssignments(
+    startDate: Date,
+    endDate: Date,
+    adminId: Types.ObjectId,
+    webinar?: Types.ObjectId,
+  ) {
+    const pipeline = [
+      // --- Your initial stages are correct ---
+      {
+        $match: {
+          adminId,
+          status: AssignmentStatus.ACTIVE,
+          ...(webinar ? { webinar } : {}), // Optional filter for webinarId
+          $expr: {
+            $and: [
+              {
+                $gte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  startDate,
+                ],
+              },
+              {
+                $lte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  endDate,
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'attendees',
+          localField: 'attendee',
+          foreignField: '_id',
+          as: 'attendeeData',
+        },
+      },
+      {
+        $unwind: {
+          path: '$attendeeData',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      // --- Group by user to get preliminary counts and the raw status list ---
+      {
+        $group: {
+          _id: '$user', // Grouping by user as requested
+
+          // 1. Count of total assignments
+          totalAssignments: { $sum: 1 },
+
+          // 2. Count where status exists
+          statusExists: {
+            $sum: {
+              $cond: [{ $ne: ['$attendeeData.status', null] }, 1, 0],
+            },
+          },
+
+          // 3. Count where status is null or does not exist
+          statusNotExists: {
+            $sum: {
+              $cond: [{ $eq: ['$attendeeData.status', null] }, 1, 0],
+            },
+          },
+
+          // 4. Count where validCall is true
+          validCallCount: {
+            $sum: {
+              $cond: [{ $eq: ['$attendeeData.validCall', true] }, 1, 0],
+            },
+          },
+
+          // 5. Collect all non-null statuses into an array for processing in the next stage
+          existingStatusList: {
+            $push: {
+              $cond: [
+                { $ne: ['$attendeeData.status', null] },
+                '$attendeeData.status',
+                '$$REMOVE',
+              ],
+            },
+          },
+        },
+      },
+
+      // --- Use $project to transform the array and format the final output ---
+      {
+        $project: {
+          _id: 0, // Hide the original _id field
+          user: '$_id', // Rename _id to 'user' for clarity
+          totalAssignments: 1, // Keep the calculated fields
+          statusExists: 1,
+          statusNotExists: 1,
+          validCallCount: 1,
+
+          // The core logic to create the grouped status counts
+          groupedStatuses: {
+            // Use $let to define a variable for unique statuses, making the query cleaner
+            $let: {
+              vars: {
+                // Step 1: Create an array of unique statuses from our list
+                uniqueStatuses: { $setUnion: '$existingStatusList' },
+              },
+              in: {
+                // Step 2: Map over the array of unique statuses
+                $map: {
+                  input: '$$uniqueStatuses',
+                  as: 'status',
+                  in: {
+                    // Step 3: For each unique status, create an object
+                    status: '$$status',
+                    // And calculate its count
+                    count: {
+                      // Step 4: To count, filter the original list to get only items matching the current status
+                      $size: {
+                        $filter: {
+                          input: '$existingStatusList',
+                          as: 'item',
+                          cond: { $eq: ['$$item', '$$status'] },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    ];
+
+    return this.assignmentsModel
+      .aggregate(pipeline, { allowDiskUse: true })
+      .exec();
+  }
+
   async getAssignmentByAttendeeId(attendee: Types.ObjectId) {
     return this.assignmentsModel.findOne({ attendee }).exec();
   }
@@ -2903,6 +3086,186 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
       .exec();
   }
 
+  async getRevisedEmployeeAssignments(
+    startDate: Date,
+    endDate: Date,
+    user: Types.ObjectId,
+    webinar?: Types.ObjectId,
+  ) {
+    const pipeline: PipelineStage[] = [
+      // --- Start with your initial stages ---
+      {
+        $match: {
+          user,
+          ...(webinar ? { webinar } : {}),
+          status: AssignmentStatus.ACTIVE,
+          $expr: {
+            $and: [
+              {
+                $gte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  startDate,
+                ],
+              },
+              {
+                $lte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  endDate,
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'attendees',
+          localField: 'attendee',
+          foreignField: '_id',
+          as: 'attendeeData',
+        },
+      },
+      {
+        $unwind: {
+          path: '$attendeeData',
+          preserveNullAndEmptyArrays: true, // Keep assignments even if they have no attendee
+        },
+      },
+
+      // --- Use $facet to run multiple aggregations at once ---
+      {
+        $facet: {
+          // --- Pipeline 1: Calculate overall counts ---
+          overallCounts: [
+            {
+              $group: {
+                _id: null,
+                // 1. Count of total assignments
+                totalAssignments: { $sum: 1 },
+
+                // 2. Count where status exists and is not null
+                statusExists: {
+                  $sum: {
+                    $cond: [{ $ne: ['$attendeeData.status', null] }, 1, 0],
+                  },
+                },
+
+                // 3. Count where status is null or does not exist
+                statusNotExists: {
+                  $sum: {
+                    $cond: [{ $eq: ['$attendeeData.status', null] }, 1, 0],
+                  },
+                },
+
+                // 4. Count where validCall is true
+                validCallCount: {
+                  $sum: {
+                    $cond: [{ $eq: ['$attendeeData.validCall', true] }, 1, 0],
+                  },
+                },
+              },
+            },
+          ],
+
+          // --- Pipeline 2: Group counts by status value ---
+          statusCounts: [
+            {
+              // Only consider documents where status is not null
+              $match: {
+                'attendeeData.status': { $ne: null },
+              },
+            },
+            {
+              $group: {
+                _id: '$attendeeData.status',
+                count: { $sum: 1 },
+              },
+            },
+            {
+              // Format the output to be more readable
+              $project: {
+                _id: 0,
+                status: '$_id',
+                count: '$count',
+              },
+            },
+            {
+              // Optional: sort by the most common status
+              $sort: { count: -1 },
+            },
+          ],
+        },
+      },
+
+      // --- Final stage to combine the results from $facet into one object ---
+      {
+        $project: {
+          _id: 0,
+          // Get the single object from the 'overallCounts' array
+          totalAssignments: {
+            $arrayElemAt: ['$overallCounts.totalAssignments', 0],
+          },
+          statusExists: { $arrayElemAt: ['$overallCounts.statusExists', 0] },
+          statusNotExists: {
+            $arrayElemAt: ['$overallCounts.statusNotExists', 0],
+          },
+          validCallCount: {
+            $arrayElemAt: ['$overallCounts.validCallCount', 0],
+          },
+          // The 'statusCounts' field is already in the correct array format
+          groupedStatuse: '$statusCounts',
+        },
+      },
+    ];
+    const result = await this.assignmentsModel.aggregate(pipeline).exec();
+    if (Array.isArray(result) && result.length > 0) return result[0];
+    return {};
+  }
+
   async getEmployeeDailyContactCount(
     adminId: Types.ObjectId,
     session?: ClientSession,
@@ -2936,11 +3299,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
     // This point marks the START boundary (inclusive) of the IST day we're interested in.
     const startOfISTDay = new Date(endOfISTDay.getTime() - 24 * 60 * 60 * 1000); // Subtract 24 hours
 
-    // 3. Define the query filter.
-    // We want documents where:
-    // - user matches the given empId
-    // - createdAt is greater than or equal to the start of the IST day (in UTC)
-    // - createdAt is strictly less than the end of the IST day (in UTC)
+
     const filter = {
       adminId,
       status: AssignmentStatus.ACTIVE,

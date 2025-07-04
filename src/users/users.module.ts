@@ -29,6 +29,7 @@ import {
 import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.module';
 import { NotificationModule } from 'src/notification/notification.module';
 import { ProductsModule } from 'src/products/products.module';
+import { WebsocketModule } from 'src/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { ProductsModule } from 'src/products/products.module';
     NotificationModule,
     forwardRef(() => CustomLeadTypeModule),
     forwardRef(() => ProductsModule),
+    WebsocketModule
     
   ],
   controllers: [UsersController],

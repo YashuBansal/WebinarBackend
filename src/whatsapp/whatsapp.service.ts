@@ -40,6 +40,7 @@ export class WhatsappService {
    * @param payload The data to be sent to the webhook.
    */
   async callExternalWebhook(payload: Record<string, any>) {
+    console.log(payload)
     const webhookUrl = this.configService.get<string>('EXTERNAL_WEBHOOK_URL');
 
     if (!webhookUrl) {

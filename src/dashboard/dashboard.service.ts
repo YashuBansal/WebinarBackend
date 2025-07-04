@@ -538,7 +538,7 @@ export class DashboardService {
     webinarId?: Types.ObjectId,
   ) {
     console.log(startDate, endDate, adminId, webinarId);
-    const assignmentsCount = await this.assingmentService.getAssignmentsCount(
+    const assignmentsCount = await this.assingmentService.getRevisedAssignments(
       startDate,
       endDate,
       adminId,
@@ -547,20 +547,20 @@ export class DashboardService {
 
     let notes = [];
 
-    if (assignmentsCount.length > 0) {
-      let attendees = [];
-      assignmentsCount.forEach((assignmentData) => {
-        if (
-          Array.isArray(assignmentData.attendees) &&
-          assignmentData.attendees.length > 0
-        ) {
-          attendees.push(...assignmentData.attendees);
-        }
-      });
+    // if (assignmentsCount.length > 0) {
+    //   let attendees = [];
+    //   assignmentsCount.forEach((assignmentData) => {
+    //     if (
+    //       Array.isArray(assignmentData.attendees) &&
+    //       assignmentData.attendees.length > 0
+    //     ) {
+    //       attendees.push(...assignmentData.attendees);
+    //     }
+    //   });
 
-      notes =
-        await this.notesService.fetchNotesDataForClientDashboard(attendees);
-    }
+    //   notes =
+    //     await this.notesService.fetchNotesDataForClientDashboard(attendees);
+    // }
 
     return {
       notes,
@@ -577,29 +577,28 @@ export class DashboardService {
   ) {
     console.log(startDate, endDate, employeeId, webinarId);
     const assignmentsCount =
-      await this.assingmentService.getEmployeeAssignments(
+      await this.assingmentService.getRevisedEmployeeAssignments(
         startDate,
         endDate,
         employeeId,
         webinarId,
       );
 
-    let notes = [];
-    let count = 0;
+    // let notes = [];
+    // let count = 0;
 
-    if (assignmentsCount.length > 0) {
-      count = assignmentsCount.length;
-      const attendees = assignmentsCount.map(
-        (assignmentData) => assignmentData.attendee,
-      );
+    // if (assignmentsCount.length > 0) {
+    //   count = assignmentsCount.length;
+    //   const attendees = assignmentsCount.map(
+    //     (assignmentData) => assignmentData.attendee,
+    //   );
 
-      notes =
-        await this.notesService.fetchNotesDataForClientDashboard(attendees);
-    }
+    //   notes =
+    //     await this.notesService.fetchNotesDataForClientDashboard(attendees);
+    // }
 
     return {
-      notes,
-      count,
+      assignmentsCount,
       message: 'Data fetched successfully',
     };
   }

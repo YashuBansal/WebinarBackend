@@ -352,6 +352,16 @@ export class GroupedAttendeesFilterDto {
   @IsArray()
   @IsMongoId({ each: true })
   enrollments?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  locations?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  sources?: string[];
 }
 
 export enum SortOrder {

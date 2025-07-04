@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -46,12 +47,17 @@ export class AlarmController {
   @Get('user/:id')
   async getUserAlarms(
     @Param('id') id: string,
-    @Query() query: { month: string; year: string },
+    @Query() query: { month: string; year: string; isAcknowledged: string },
   ): Promise<any> {
     const year = Number(query.year);
     const month = Number(query.month);
     if (year && month)
       return await this.alarmService.fetchAlarmsByMonthAndYear(id, month, year);
+    else if (query.isAcknowledged === 'true') {
+      return await this.alarmService.fetchUnAckAlarms(id);
+    }
+
+    throw new BadRequestException('Year and Month are Required');
   }
 
   @Patch()

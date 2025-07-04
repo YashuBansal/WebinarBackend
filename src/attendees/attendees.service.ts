@@ -1895,6 +1895,19 @@ export class AttendeesService {
           ...(filters.registeredWebinarCount && {
             registeredWebinarCount: filters.registeredWebinarCount,
           }),
+          ...(Array.isArray(filters.locations) &&
+            filters.locations.length > 0 && {
+              locations: {
+                $in: filters.locations,
+              },
+            }),
+
+          ...(Array.isArray(filters.sources) &&
+            filters.sources.length > 0 && {
+              sources: {
+                $in: filters.sources,
+              },
+            }),
         },
       },
 

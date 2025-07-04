@@ -15,6 +15,7 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { ConfigService } from '@nestjs/config';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
+import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 
 @Module({
   imports: [
@@ -38,6 +39,11 @@ export class AlarmModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(AuthTokenMiddleware)
+      .exclude({ path: 'alarm', method: RequestMethod.POST })
       .forRoutes({ path: 'alarm', method: RequestMethod.ALL });
+
+    consumer
+      .apply(GetAdminIdMiddleware)
+      .forRoutes({ path: 'alarm', method: RequestMethod.POST });
   }
 }

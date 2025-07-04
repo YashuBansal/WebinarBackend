@@ -92,12 +92,24 @@ export class AuthService {
     const result = user.toObject();
     delete result['password'];
 
+    const role = user.role;
+    const adminRole = this.configService.get('appRoles')['ADMIN'];
+    const salesEmpRole = this.configService.get('appRoles')['EMPLOYEE_SALES'];
+    const reminderEmpRole = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
+
+    // if(String(role) === adminRole){
+    //   const subscription = await this.subscriptionService.getSubscription(`${user._id}`); 
+    // }else if(String(role) === salesEmpRole || String(role) === reminderEmpRole){
+    // }
+
+
     const payload = {
       id: user?._id,
       role: user?.role,
       adminId: user?.adminId,
-      plan: user?.plan,
     };
+
+
 
     return {
       userData: result,
@@ -124,7 +136,6 @@ export class AuthService {
       id: user?._id,
       role: user?.role,
       adminId: user?.adminId,
-      plan: user?.plan,
     };
 
     const access_token = await this.jwtService.signAsync(payload, {

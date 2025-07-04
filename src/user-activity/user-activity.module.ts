@@ -13,6 +13,7 @@ import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { UsersModule } from 'src/users/users.module';
+import { WebsocketModule } from 'src/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -23,10 +24,11 @@ import { UsersModule } from 'src/users/users.module';
       global: true,
     }),
     NotificationModule,
-    UsersModule
+    UsersModule,
+    WebsocketModule
   ],
   controllers: [UserActivityController],
-  providers: [UserActivityService, ConfigService, WebsocketGateway],
+  providers: [UserActivityService, ConfigService],
   exports: [UserActivityService],
 })
 export class UserActivityModule {

@@ -12,6 +12,7 @@ import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { AttendeesModule } from 'src/attendees/attendees.module';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
+import { AlarmModule } from 'src/alarm/alarm.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
     forwardRef(() => AttendeesModule),
     AttendeeLogModule,
     WebsocketModule,
+    AlarmModule,
     MulterModule.register({
       storage: diskStorage({
         destination: './uploads',

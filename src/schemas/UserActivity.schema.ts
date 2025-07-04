@@ -37,4 +37,4 @@ UserActivitySchema.pre('save', function (next) {
   next();
 });
 
-UserActivitySchema.index({ adminId: 1 });
+UserActivitySchema.index({ adminId: 1, user: 1, createdAt: -1 });

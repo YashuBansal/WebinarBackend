@@ -21,12 +21,14 @@ import {
 import { UserActivityService } from './user-activity.service';
 import mongoose, { Types } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
+import { UsersService } from 'src/users/users.service';
 
 @Controller('user-activities')
 export class UserActivityController {
   constructor(
     private readonly userActivityService: UserActivityService,
     private readonly configService: ConfigService,
+    private readonly userService: UsersService
   ) {}
 
   @Post()
@@ -55,7 +57,7 @@ export class UserActivityController {
     if (!id || !mongoose.isValidObjectId(id)) {
       throw new BadRequestException('User ID is required.');
     }
-    return await this.userActivityService.getUserActivityOfEmployees(
+    return await this.userService.getUserActivityOfEmployees(
       new Types.ObjectId(`${id}`),
     );
   }

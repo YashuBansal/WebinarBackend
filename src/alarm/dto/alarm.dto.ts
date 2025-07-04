@@ -1,4 +1,11 @@
-import { IsMongoId, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import {
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateAlarmDto {
   @IsOptional()
@@ -8,11 +15,11 @@ export class CreateAlarmDto {
 
   @IsString()
   @IsNotEmpty()
-  email: string
+  email: string;
 
   @IsString()
   @IsNotEmpty()
-  attendeeId: string
+  attendeeId: string;
 
   @IsString()
   @IsNotEmpty()
@@ -33,23 +40,22 @@ export class CreateAlarmDto {
   @IsOptional()
   @IsString()
   @Matches(/^\+91\d{10}$/, {
-    message: 'Must start with +91 followed by 10 digits'
+    message: 'Must start with +91 followed by 10 digits',
   })
   @MaxLength(13, {
-    message: 'Phone number must be 13 characters including +91'
+    message: 'Phone number must be 13 characters including +91',
   })
   secondaryNumber?: string;
 }
 
-export class CreateNewAlarmDTO{
-
+export class CreateNewAlarmDTO {
   @IsString()
   @IsNotEmpty()
-  email: string
+  email: string;
 
   @IsString()
   @IsMongoId()
-  attendeeId: string
+  attendeeId: string;
 
   @IsString()
   @IsNotEmpty()
@@ -61,15 +67,19 @@ export class CreateNewAlarmDTO{
 
   @IsOptional()
   @IsString()
+  attendeePhone?: string;
+
+  @IsOptional()
+  @IsString()
   createdBy?: string;
 
   @IsOptional()
   @IsString()
   @Matches(/^\+91\d{10}$/, {
-    message: 'Must start with +91 followed by 10 digits'
+    message: 'Must start with +91 followed by 10 digits',
   })
   @MaxLength(13, {
-    message: 'Phone number must be 13 characters including +91'
+    message: 'Phone number must be 13 characters including +91',
   })
   secondaryNumber?: string;
 }

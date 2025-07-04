@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotAcceptableException,
+  NotFoundException,
 } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CreateAlarmDto, CreateNewAlarmDTO } from './dto/alarm.dto';
@@ -81,6 +82,7 @@ export class AlarmService {
       });
     }
 
+    console.log(data)
     const newAlarm = new this.alarmsModel({
       user,
       adminId,
@@ -88,6 +90,7 @@ export class AlarmService {
       attendeeId: data.attendeeId,
       note: data.note,
       secondaryNumber: data.secondaryNumber,
+      attendeePhone: data.attendeePhone,
       date: alarmDate,
       reminders: reminders,
       isActive: true,
@@ -145,7 +148,7 @@ export class AlarmService {
             this.logger.warn(
               `Sending ${reminder.reminderType} reminder for alarm ${alarm._id}`,
             );
-            await this.sendReminderNotification(alarm);
+            await this.sendReminderNotification(alarm, reminder.reminderType);
 
             await this.alarmsModel.updateOne(
               {
@@ -211,29 +214,31 @@ export class AlarmService {
     }
   }
 
-  private async sendReminderNotification(alarm: any): Promise<void> {
+  private async sendReminderNotification(
+    alarm: any,
+    reminderType: string,
+  ): Promise<void> {
     const subscription = await this.getSubscriptionForAlarm(alarm);
     if (!subscription?.plan?.whatsappNotificationOnAlarms) return;
 
     const msgData = {
-      phone: alarm.user.phone,
-      attendeeEmail: alarm.email,
-      userName: alarm.user.userName,
+      user: {
+        phone: alarm.user.phone,
+        userName: alarm.user.userName,
+        secondaryNumber: alarm.secondaryNumber,
+      },
+      attendee: {
+        email: alarm.email,
+        phone: alarm.attendeePhone,
+      },
+      alarmDate: alarm.date,
       note: alarm.note,
+      isReminder: true,
+      reminderType,
     };
 
     if (alarm.user.phone) {
-      this.whatsappService.callExternalWebhook({
-        ...msgData,
-        isReminder: true,
-      }); // Not awaiting to send them quickly
-    }
-    if (alarm.secondaryNumber) {
-      this.whatsappService.callExternalWebhook({
-        ...msgData,
-        phone: alarm.secondaryNumber,
-        isReminder: true,
-      });
+      this.whatsappService.callExternalWebhook(msgData);
     }
   }
 
@@ -254,25 +259,22 @@ export class AlarmService {
     if (!subscription?.plan?.whatsappNotificationOnAlarms) return;
 
     const msgData = {
-      phone: alarm.user.phone,
-      attendeeEmail: alarm.email,
-      userName: alarm.user.userName,
+      user: {
+        phone: alarm.user.phone,
+        userName: alarm.user.userName,
+        secondaryNumber: alarm.secondaryNumber,
+      },
+      attendee: {
+        email: alarm.email,
+        phone: alarm.attendeePhone,
+      },
+      alarmDate: alarm.date,
       note: alarm.note,
+      isReminder: false,
     };
 
     if (alarm.user.phone) {
-      await this.whatsappService.callExternalWebhook({
-        ...msgData,
-        isReminder: false,
-      });
-    }
-
-    if (alarm.secondaryNumber) {
-      this.whatsappService.callExternalWebhook({
-        ...msgData,
-        phone: alarm.secondaryNumber,
-        isReminder: false,
-      });
+      await this.whatsappService.callExternalWebhook(msgData);
     }
   }
 
@@ -533,6 +535,46 @@ export class AlarmService {
     return deleteAlarm;
   }
 
+  async fetchUnAckAlarms(userId: string) {
+    const alarms = await this.alarmsModel
+      .find({
+        user: new Types.ObjectId(`${userId}`),
+        isAcknowledged: { $ne: true },
+        isActive: false,
+      })
+      .select(
+        'date email note _id attendeeId isActive createdAt isAcknowledged',
+      )
+      .exec();
+
+    return alarms;
+  }
+
+  async updateAllAlarmAcknowledgement(user: Types.ObjectId, email: string) {
+    console.log(user, email);
+    const result = await this.alarmsModel.updateMany(
+      {
+        user,
+        email,
+        isAcknowledged: { $ne: true },
+        isActive: false,
+      },
+      {
+        $set: {
+          isAcknowledged: true,
+        },
+      },
+    );
+  }
+
+  async updateAlarmAcknowledgement(alarmId: string) {
+    const alarm = await this.alarmsModel.findById(alarmId);
+    if (!alarm) throw new NotFoundException('Alarm Not Found');
+
+    alarm.isAcknowledged = true;
+    return await alarm.save();
+  }
+
   // async onModuleInit(): Promise<void> {
   //   console.log("===================I'm running bitches===================");
   //   const alarms: any[] = await this.alarmsModel.find({
@@ -564,7 +606,9 @@ export class AlarmService {
           $lt: endDate,
         },
       })
-      .select('date email note _id attendeeId isActive createdAt')
+      .select(
+        'date email note _id attendeeId isActive createdAt isAcknowledged',
+      )
       .exec();
 
     return alarms;

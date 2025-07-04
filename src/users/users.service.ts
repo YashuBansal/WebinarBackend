@@ -35,6 +35,7 @@ import {
 } from 'src/schemas/notification.schema';
 import { BillingType } from 'src/schemas/BillingHistory.schema';
 import { ProductsService } from 'src/products/products.service';
+import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 
 @Injectable()
 export class UsersService {
@@ -52,6 +53,7 @@ export class UsersService {
     private readonly customLeadTypeService: CustomLeadTypeService,
     private readonly productsService: ProductsService,
     private readonly notificationService: NotificationService,
+    private readonly socketGateway: WebsocketGateway,
   ) {}
 
   getUsers() {
@@ -655,7 +657,7 @@ export class UsersService {
     return employee;
   }
 
-  async getUser(email: string): Promise<any> {
+  async getUser(email: string): Promise<User> {
     const user = await this.userModel.findOne({ email: email });
     return user;
   }
@@ -705,6 +707,88 @@ export class UsersService {
       { new: true },
     );
     return result;
+  }
+
+  async getUserActivityOfEmployees(adminId: Types.ObjectId) {
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          adminId,
+          isActive: true,
+        },
+      },
+      {
+        $lookup: {
+          from: 'roles',
+          localField: 'role',
+          foreignField: '_id',
+          as: 'roleDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$roleDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: 'useractivities',
+          let: {
+            tempAdmin: '$adminId',
+            tempUser: '$_id',
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$adminId', '$$tempAdmin'] },
+                    { $eq: ['$user', '$$tempUser'] },
+                  ],
+                },
+              },
+            },
+            {
+              $sort: {
+                createdAt: -1,
+              },
+            },
+            {
+              $limit: 1,
+            },
+          ],
+          as: 'useractivities',
+        },
+      },
+      {
+        $unwind: {
+          path: '$useractivities',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $project: {
+          action: '$useractivities.action',
+          createdAt: '$useractivities.createdAt',
+          details: '$useractivities.details',
+          updatedAt: '$useractivities.updatedAt',
+          userEmail: '$email',
+          userName: 1,
+          userRole: '$roleDetails.name',
+        },
+      },
+    ];
+
+    const employees = await this.userModel.aggregate(pipeline).exec();
+    employees.forEach((employee) => {
+      if (this.socketGateway.activeUsers.has(employee._id.toString())) {
+        employee['isOnline'] = true;
+      } else {
+        employee['isOnline'] = false;
+      }
+    });
+    return employees;
   }
 
   async deleteDocument(id: string, filename: string): Promise<any> {
@@ -1203,8 +1287,6 @@ export class UsersService {
     return this.userModel.bulkWrite(operations, { ordered: false, session });
   }
 
-
-
   /**
    * Performs a bulk write operation on the User collection, typically for
    * updating employee-related fields like daily contact counts within a transaction.
@@ -1217,18 +1299,30 @@ export class UsersService {
    */
   async bulkUpdateUsersDailyContactCount(
     updates: any[], // Using 'any' for simplicity, can be typed as (BulkWriteOptions | AnyBulkWriteOperation)[]
-    session: ClientSession // Requires a session as it's designed for use within a transaction
-  ): Promise<any> { // Return type is Mongoose BulkWriteResult, using 'any' for now
+    session: ClientSession, // Requires a session as it's designed for use within a transaction
+  ): Promise<any> {
+    // Return type is Mongoose BulkWriteResult, using 'any' for now
     if (!session) {
-        // This function is designed for use within transactions, ensure a session is provided
-        throw new Error('bulkUpdateUsersDailyContactCount requires a Mongoose client session.');
+      // This function is designed for use within transactions, ensure a session is provided
+      throw new Error(
+        'bulkUpdateUsersDailyContactCount requires a Mongoose client session.',
+      );
     }
-     if (!updates || updates.length === 0) {
-         console.log('bulkUpdateUsersDailyContactCount called with no updates. Returning early.');
-         // Return a result object indicating no operations were performed, similar to bulkWrite output structure
-         return { acknowledged: true, insertedCount: 0, matchedCount: 0, modifiedCount: 0, deletedCount: 0, upsertedCount: 0, upsertedIds: {} };
-     }
-
+    if (!updates || updates.length === 0) {
+      console.log(
+        'bulkUpdateUsersDailyContactCount called with no updates. Returning early.',
+      );
+      // Return a result object indicating no operations were performed, similar to bulkWrite output structure
+      return {
+        acknowledged: true,
+        insertedCount: 0,
+        matchedCount: 0,
+        modifiedCount: 0,
+        deletedCount: 0,
+        upsertedCount: 0,
+        upsertedIds: {},
+      };
+    }
 
     try {
       // Use the injected Mongoose userModel to perform the bulk write operation
@@ -1241,9 +1335,11 @@ export class UsersService {
       // Mongoose's bulkWrite returns an object containing statistics about the operations performed.
       // Example: { acknowledged: true, insertedCount: 0, matchedCount: 2, modifiedCount: 2, deletedCount: 0, upsertedCount: 0, upsertedIds: {} }
       return result; // This is the BulkWriteResult object
-
     } catch (error) {
-      console.error('Error during User dailyContactCount bulk write operation:', error);
+      console.error(
+        'Error during User dailyContactCount bulk write operation:',
+        error,
+      );
       // Re-throw the error so the calling transaction can catch and handle it
       throw error;
     }

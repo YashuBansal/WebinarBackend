@@ -31,10 +31,13 @@ class CallDurationDto {
 }
 
 export class CreateNoteDto {
-
   @IsString()
   @IsNotEmpty({ message: 'Attendee ID is required' })
   attendee: string;
+
+  @IsOptional()
+  @IsMongoId()
+  alarmId?: string;
 
   @IsString()
   @IsNotEmpty({ message: 'E-Mail is required' })

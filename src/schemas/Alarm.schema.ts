@@ -38,6 +38,11 @@ export class Alarm extends Document {
   attendeeId: Types.ObjectId;
 
   @Prop({
+    type: String,
+  })
+  attendeePhone?: string;
+
+  @Prop({
     type: Date,
     required: [true, 'Alarm Date-Time is required '],
   })
@@ -48,6 +53,12 @@ export class Alarm extends Document {
     default: true,
   })
   isActive: boolean;
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  isAcknowledged: boolean;
 
   @Prop({
     type: String,
@@ -76,7 +87,11 @@ export const AlarmSchema = SchemaFactory.createForClass(Alarm);
 
 AlarmSchema.index({ user: 1, isActive: 1, date: 1 });
 
-AlarmSchema.index({ 'reminders.reminderDate': 1, 'reminders.sent': 1, isActive: 1 });
+AlarmSchema.index({
+  'reminders.reminderDate': 1,
+  'reminders.sent': 1,
+  isActive: 1,
+});
 
 AlarmSchema.index({ date: 1, isActive: 1 });
 AlarmSchema.pre('save', function (next) {

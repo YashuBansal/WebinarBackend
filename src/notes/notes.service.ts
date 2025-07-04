@@ -16,6 +16,7 @@ import { SocketEvents } from 'src/websocket/dto/socket.dto';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { Attendee } from 'src/schemas/Attendee.schema';
+import { AlarmService } from 'src/alarm/alarm.service';
 
 @Injectable()
 export class NotesService {
@@ -28,6 +29,7 @@ export class NotesService {
     private readonly attendeeService: AttendeesService,
     private readonly websocketGateway: WebsocketGateway,
     private readonly attendeeLogService: AttendeeLogService,
+    private readonly alarmService: AlarmService,
   ) {}
 
   async updateAssignmentDateOnNotes(
@@ -48,12 +50,14 @@ export class NotesService {
     createdBy: string,
     adminId: string,
   ): Promise<Notes | null> {
+    console.log(body);
+    const callDuration = body.callDuration;
+
+    const totalCallDuration: number =
+      Number(callDuration.min) * 60 + Number(callDuration.sec);
 
     const user = await this.usersService.getUserById(createdBy);
     let validCall = false;
-    const callDuration = body.callDuration;
-    const totalCallDuration: number =
-      Number(callDuration.min) * 60 + Number(callDuration.sec);
 
     if (user && user?.validCallTime) {
       if (totalCallDuration >= user.validCallTime) {
@@ -100,6 +104,11 @@ export class NotesService {
       details: `<span>Note created by <strong>${body.createdBy}</strong> with status: <strong>${body.status}</strong>.</span>`,
       adminId: new Types.ObjectId(`${adminId}`),
     });
+
+    await this.alarmService.updateAllAlarmAcknowledgement(
+      new Types.ObjectId(`${createdBy}`),
+      body.email,
+    );
 
     this.websocketGateway.emitSocketEvent(
       adminId,
