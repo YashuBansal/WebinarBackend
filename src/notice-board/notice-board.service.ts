@@ -8,6 +8,7 @@ import {
   notificationActionType,
   notificationType,
 } from 'src/schemas/notification.schema';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class NoticeBoardService {
@@ -15,6 +16,7 @@ export class NoticeBoardService {
     @InjectModel(NoticeBoard.name) private noticeBoardModel: Model<NoticeBoard>,
     private readonly userService: UsersService,
     private readonly notificationService: NotificationService,
+    private readonly configService: ConfigService,
   ) {}
 
   async sendNotificationsToEmployees(
@@ -24,8 +26,19 @@ export class NoticeBoardService {
     const employees =
       (await this.userService.getEmployeesForNotes(adminId)) || [];
 
+    let role = '';
+
+    if( notice.type === 'sales') {
+      role = this.configService.get('appRoles')['EMPLOYEE_SALES'];
+    } else if (notice.type === 'reminder') {
+      role = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
+    }
+    console.log('Role:', role);
+    
+
     for (const employee of employees) {
-      if (employee.isActive) {
+      console.log('Employee:', employee.role, employee.isActive, employee.userName);
+      if (employee.isActive && String(employee.role) === role) {
         const notification = {
           recipient: String(employee._id),
           title: 'Notice Board Updated',
@@ -67,13 +80,9 @@ export class NoticeBoardService {
   }
 
   // Get the current notice board content
-  async find(adminId: Types.ObjectId): Promise<NoticeBoard> {
-    const notice = await this.noticeBoardModel.findOne({ adminId }).exec();
+  async find(adminId: Types.ObjectId, type: string): Promise<NoticeBoard> {
+    const notice = await this.noticeBoardModel.findOne({ adminId, type }).exec();
 
-    if (!notice) {
-      throw new NotFoundException('Notice board not found');
-    }
-
-    return notice;
+    return notice ? notice : null;
   }
 }
