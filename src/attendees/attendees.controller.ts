@@ -24,6 +24,7 @@ import {
   ImportAttendeesDTO,
   SwapAttendeeFieldsDTO,
   UpdateAttendeeDto,
+  UpdateAttendeeTagDTO,
 } from './dto/attendees.dto';
 import mongoose, { Types } from 'mongoose';
 import { WebinarService } from 'src/webinar/webinar.service';
@@ -108,6 +109,19 @@ export class AttendeesController {
     const processingTime = Date.now() - start;
     console.log(`Processing time: ${processingTime} milliseconds`);
     return { ...result, processingTime };
+  }
+
+  @Put('tag')
+  async updateAttendeeTag(
+    @Id() adminId: string,
+    @Body() body: UpdateAttendeeTagDTO,
+  ) {
+    return await this.attendeesService.updateAttendeeTags(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${body.webinar}`),
+      body.emails,
+      body.tag,
+    );
   }
 
   @Post()

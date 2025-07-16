@@ -6,6 +6,7 @@ import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
@@ -16,6 +17,8 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
       },
     ]),
     forwardRef(() => SubscriptionModule),
+    forwardRef(() => UsersModule)
+
   ],
   controllers: [PlansController],
   providers: [PlansService],

@@ -17,13 +17,15 @@ export class WebinarParticipantService {
 
   async createMany(
     createParticipantDtos: CreateWebinarParticipantDto[],
+    adminId: Types.ObjectId,
+    webinarId: Types.ObjectId,
     session: ClientSession,
   ) {
     if (!createParticipantDtos || createParticipantDtos.length === 0) {
       return [];
     }
 
-        const allLastNamesBlank = createParticipantDtos.every(
+    const allLastNamesBlank = createParticipantDtos.every(
       (attendee) => !attendee.lastName || attendee.lastName.trim() === '',
     );
 
@@ -41,8 +43,18 @@ export class WebinarParticipantService {
       });
     }
     try {
+      const deletedParticipants = await this.webinarParticipantModel.deleteMany(
+        {
+          adminId: adminId,
+          webinar: webinarId,
+        },
+        {
+          session,
+        },
+      );
+
       const createdParticipants = await this.webinarParticipantModel.insertMany(
-        createParticipantDtos.filter(item => item.inTime && item.outTime),
+        createParticipantDtos.filter((item) => item.inTime && item.outTime),
         {
           session,
         },
@@ -71,8 +83,6 @@ export class WebinarParticipantService {
         })
         .select('email firstName lastName inTime outTime')
         .exec();
-
-      
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;

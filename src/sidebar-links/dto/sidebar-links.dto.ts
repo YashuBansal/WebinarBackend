@@ -6,6 +6,8 @@ import {
   IsUrl,
   MaxLength,
   MinLength,
+  IsOptional,
+  IsMongoId,
 } from 'class-validator';
 
 export class CreateSidebarLinkDto {
@@ -21,6 +23,10 @@ export class CreateSidebarLinkDto {
   @MinLength(1, { message: 'Link is too short' })
   @MaxLength(2048, { message: 'Link is too long' })
   link: string;
+
+  @IsOptional()
+  @IsMongoId()
+  role: string;
 }
 
 export class UpdateSidebarLinkDto extends PartialType(CreateSidebarLinkDto) {}

@@ -37,12 +37,6 @@ export class User extends Document {
   })
   phone: string; //Phone
 
-  @Prop({
-    type: String,
-    trim: true,
-    required: false,
-  })
-  alarmPhone: string; //Phone number for alarm msg
 
   @Prop({
     type: Boolean,
@@ -91,6 +85,12 @@ export class User extends Document {
     required: false,
   })
   pabblyToken: string;
+
+  @Prop({
+    type: Date,
+    required: false,
+  })
+  pabblyTokenExpiry: Date;
 
   @Prop({
     type: String,
@@ -193,6 +193,12 @@ export class User extends Document {
     select: false
   })
   whatsappToken: string;
+
+    @Prop({ default: false })
+   isTwoFactorAuthenticationEnabled: boolean;
+
+  @Prop({ nullable: true })
+   twoFactorAuthenticationSecret?: string;
 }
 
 const UserSchema = SchemaFactory.createForClass(User);

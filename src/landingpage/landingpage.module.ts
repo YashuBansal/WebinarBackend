@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
 import { LandingpageController } from './landingpage.controller';
 import { LandingpageService } from './landingpage.service';
 import { MulterModule } from '@nestjs/platform-express';
@@ -7,6 +7,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { LandingPage, LandingPageSchema } from 'src/schemas/LandingPage.schema';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
         },
       }),
     }),
+    forwardRef(() =>UsersModule),
     MongooseModule.forFeature([
       {
         name: LandingPage.name,

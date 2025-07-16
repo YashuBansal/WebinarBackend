@@ -52,6 +52,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AttendeeLogModule } from './attendee-log/attendee-log.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { WebinarParticipantModule } from './webinar-participant/webinar-participant.module';
+import { TwoFactorAuthenticationModule } from './two-factor-authentication/two-factor-authentication.module';
 
 @Module({
   imports: [
@@ -126,6 +127,7 @@ import { WebinarParticipantModule } from './webinar-participant/webinar-particip
     AttendeeLogModule,
     WebsocketModule,
     WebinarParticipantModule,
+    TwoFactorAuthenticationModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService],

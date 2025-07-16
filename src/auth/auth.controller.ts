@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { CreateEmployeeDto } from './dto/createEmployee.dto';
 import { AdminId, Id, Plan, Role } from 'src/decorators/custom.decorator';
 import { CreateClientDto, ValidateOtpDto } from './dto/createClient.dto';
+import { GeneratePablyTokenDto } from './dto/generatePablyToken.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -20,6 +21,12 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.authService.signIn(signInDto);
+
+    if(result.twoFA){
+      return {
+        twoFa: true
+      }
+    }
 
     if (result.access_token) {
       response.cookie(
@@ -122,5 +129,26 @@ export class AuthController {
   async validateOTP(@Body() validateOtpDto: ValidateOtpDto) {
     await this.authService.validateOTP(validateOtpDto.email, validateOtpDto.otp);
     return { message: 'OTP validated successfully' };
+  }
+
+  @Post('verify-admin')
+  async verifyAdmin(
+    @Id() id: string,
+    @Role() role: string,
+    @AdminId() adminId: string,
+  ) {
+    return this.authService.verifyAdmin(id, role, adminId);
+  }
+
+  @Post('/pably-token')
+  async pabblyToken(
+    @Id() id: string,
+    @Body() generatePablyTokenDto: GeneratePablyTokenDto,
+  ): Promise<any> {
+    const result = await this.authService.pablyToken(id, generatePablyTokenDto.expiry);
+    return {
+      token: result.pabblyToken,
+      pabblyTokenExpiry: result.pabblyTokenExpiry,
+    };
   }
 }

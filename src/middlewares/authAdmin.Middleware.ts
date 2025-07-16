@@ -6,12 +6,15 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { NextFunction, Response } from 'express';
+import { AuthService } from 'src/auth/auth.service';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class AuthAdminTokenMiddleware implements NestMiddleware {
   constructor(
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
+    private readonly userService: UsersService,
   ) {}
 
   async use(req, res: Response, next: NextFunction) {
@@ -24,6 +27,13 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
 
     if (!access_token && !pabbly_access_token && !queryAccessToken) {
       throw new UnauthorizedException('Access token not found.');
+    }
+
+    if (
+      pabbly_access_token &&
+      this.userService.expiredPablyTokens.has(pabbly_access_token)
+    ) {
+      throw new UnauthorizedException('Pably token has expired.');
     }
 
     try {

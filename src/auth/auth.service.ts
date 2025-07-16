@@ -26,17 +26,22 @@ import { CreateClientDto } from './dto/createClient.dto';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { MailerService } from '@nestjs-modules/mailer';
+import { ExpiredPablyToken } from 'src/schemas/ExpiredPablyToken.schema';
+import { TwoFactorAuthenticationService } from 'src/two-factor-authentication/two-factor-authentication.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(ExpiredPablyToken.name)
+    private expiredPablyTokenModel: Model<ExpiredPablyToken>,
     private usersService: UsersService,
     private jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly subscriptionService: SubscriptionService,
     private readonly whatsappService: WhatsappService,
     private readonly mailerService: MailerService,
+    private readonly twoFAService: TwoFactorAuthenticationService,
   ) {}
 
   private readonly logger = new Logger(AuthService.name);
@@ -73,12 +78,18 @@ export class AuthService {
     }
   }
 
-  async signIn(signInDto: SignInDto): Promise<any> {
+  async signIn(signInDto: SignInDto) {
     const user = await this.usersService.getUser(signInDto.email);
-
     if (!user) {
       throw new NotFoundException('Incorrect E-Mail');
     }
+
+    const role = user.role;
+    const superAdminRole = this.configService.get('appRoles')['SUPER_ADMIN'];
+    const adminRole = this.configService.get('appRoles')['ADMIN'];
+    const salesEmpRole = this.configService.get('appRoles')['EMPLOYEE_SALES'];
+    const reminderEmpRole =
+      this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
 
     const matchPassword = await bcrypt.compare(
       signInDto.password,
@@ -89,27 +100,37 @@ export class AuthService {
       throw new NotFoundException('Incorrect Password');
     }
 
+    if (String(role) === superAdminRole) {
+      if (user.isTwoFactorAuthenticationEnabled) {
+        if (!signInDto.securityCode) {
+          return {
+            twoFA: true,
+          };
+        } else {
+          const isValid = this.twoFAService.isTwoFactorAuthenticationCodeValid(
+            signInDto.securityCode,
+            user,
+          );
+          if (!isValid) {
+            throw new NotAcceptableException('Incorrect Security Code');
+          }
+        }
+      }
+    }
+
     const result = user.toObject();
     delete result['password'];
 
-    const role = user.role;
-    const adminRole = this.configService.get('appRoles')['ADMIN'];
-    const salesEmpRole = this.configService.get('appRoles')['EMPLOYEE_SALES'];
-    const reminderEmpRole = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
-
     // if(String(role) === adminRole){
-    //   const subscription = await this.subscriptionService.getSubscription(`${user._id}`); 
+    //   const subscription = await this.subscriptionService.getSubscription(`${user._id}`);
     // }else if(String(role) === salesEmpRole || String(role) === reminderEmpRole){
     // }
-
 
     const payload = {
       id: user?._id,
       role: user?.role,
       adminId: user?.adminId,
     };
-
-
 
     return {
       userData: result,
@@ -207,10 +228,19 @@ export class AuthService {
     return this.usersService.createClient(createClientDto, creatorDetailsDto);
   }
 
-  async pabblyToken(id: string): Promise<any> {
+  async pablyToken(id: string, expiry?: string): Promise<any> {
     const user = await this.userModel.findById(id);
 
     if (!user) throw new NotFoundException('No user found with the given ID.');
+
+    if (user.pabblyToken) {
+      await this.expiredPablyTokenModel.create({
+        token: user.pabblyToken,
+        expiryDate: user.pabblyTokenExpiry,
+        user: user._id,
+      });
+      this.usersService.addExpiredToken(user.pabblyToken);
+    }
 
     const payload = {
       id: user?._id,
@@ -218,12 +248,21 @@ export class AuthService {
       adminId: user?.adminId,
     };
 
+    const expiresIn = expiry
+      ? Math.floor((new Date(expiry).getTime() - Date.now()) / 1000) + 's'
+      : undefined;
+
     //create jwt with payload here
     const token = await this.jwtService.signAsync(payload, {
       secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
+      ...(expiresIn && { expiresIn }),
     });
 
-    return token;
+    user.pabblyToken = token;
+    user.pabblyTokenExpiry = expiry ? new Date(expiry) : null;
+    await user.save({ validateBeforeSave: false });
+
+    return { pabblyToken: token, pabblyTokenExpiry: user.pabblyTokenExpiry };
   }
 
   async getCurrentUser(id: string): Promise<User> {
@@ -341,14 +380,15 @@ export class AuthService {
 
   private async generateNewPassword(user: User): Promise<void> {
     // Generate random 8-character alphanumeric password
-    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    const newPassword = Array.from({length: 8}, () => 
-      charset.charAt(Math.floor(Math.random() * charset.length))
+    const charset =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const newPassword = Array.from({ length: 8 }, () =>
+      charset.charAt(Math.floor(Math.random() * charset.length)),
     ).join('');
 
     // Hash and save new password
     user.password = await this.createHash(newPassword);
-    
+
     // Clear OTP details
     await this.clearOtp(user);
 
@@ -361,7 +401,9 @@ export class AuthService {
       });
     } catch (error) {
       this.logger.error('Failed to send new password email', error.stack);
-      throw new InternalServerErrorException('Failed to send new password email');
+      throw new InternalServerErrorException(
+        'Failed to send new password email',
+      );
     }
   }
 
@@ -396,5 +438,18 @@ export class AuthService {
     hashedPassword: string,
   ): Promise<boolean> {
     return await bcrypt.compare(plainTextPassword, hashedPassword);
+  }
+
+  async verifyAdmin(
+    id: string,
+    role: string,
+    adminId: string,
+  ): Promise<{ isAdmin: boolean; message: string }> {
+    const adminRole = this.configService.get('appRoles')['ADMIN'];
+    if (id === adminId && role === adminRole) {
+      return { isAdmin: true, message: 'User is an admin.' };
+    } else {
+      return { isAdmin: false, message: 'User is not an admin.' };
+    }
   }
 }

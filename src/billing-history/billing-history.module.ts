@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module } from '@nestjs/common';
+import { forwardRef, MiddlewareConsumer, Module } from '@nestjs/common';
 import { BillingHistoryService } from './billing-history.service';
 import { BillingHistoryController } from './billing-history.controller';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -8,6 +8,7 @@ import {
 } from 'src/schemas/BillingHistory.schema';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { Counter, CounterSchema } from 'src/schemas/counter.schema';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { Counter, CounterSchema } from 'src/schemas/counter.schema';
         schema: BillingHistorySchema,
       },
     ]),
+    forwardRef(() => UsersModule)
   ],
   providers: [BillingHistoryService],
   controllers: [BillingHistoryController],

@@ -1,20 +1,41 @@
-import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+} from '@nestjs/common';
 import { SidebarLinksService } from './sidebar-links.service';
-import { CreateSidebarLinkDto, UpdateSidebarLinkDto } from './dto/sidebar-links.dto';
-import { SidebarLinks } from '../schemas/SidebarLinks.schema';  // Import the SidebarLinks schema
+import {
+  CreateSidebarLinkDto,
+  UpdateSidebarLinkDto,
+} from './dto/sidebar-links.dto';
+import { SidebarLinks } from '../schemas/SidebarLinks.schema'; // Import the SidebarLinks schema
+import { Role } from 'src/decorators/custom.decorator';
 
 @Controller('sidebar-links')
 export class SidebarLinksController {
   constructor(private readonly sidebarLinksService: SidebarLinksService) {}
 
   @Post()
-  async create(@Body() createSidebarLinkDto: CreateSidebarLinkDto): Promise<SidebarLinks> {
+  async create(
+    @Body() createSidebarLinkDto: CreateSidebarLinkDto,
+  ): Promise<SidebarLinks> {
     return this.sidebarLinksService.create(createSidebarLinkDto);
   }
 
   @Get()
-  async findAll(): Promise<SidebarLinks[]> {
-    return this.sidebarLinksService.findAll();
+  async findAll(
+    @Role() role: string
+  ): Promise<SidebarLinks[]> {
+    return this.sidebarLinksService.findAll(role);
+  }
+
+  @Get('all')
+  async findAllForSuperAdmin(): Promise<SidebarLinks[]> {
+    return this.sidebarLinksService.findAllForSuperAdmin();
   }
 
   @Get(':id')

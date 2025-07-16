@@ -1570,7 +1570,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
         attendee: email,
         action: AttendeeAction.REASSIGNMENT_REQUEST,
         item: webinarName,
-        details: `<span><strong>${userName}</strong> requested reassignment in webinar : <strong>${webinarName}</strong></span>`,
+        details: `<span><strong>${userName}</strong> requested reassignment in webinar <strong>${webinarName}</strong>, reason: <strong>${requestReason}</strong></span>`,
         adminId: new Types.ObjectId(`${adminId}`),
       }));
 

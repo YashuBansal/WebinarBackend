@@ -41,7 +41,6 @@
     "class-validator": "^0.14.1",
     "cloudinary": "^2.5.1",
     "cookie-parser": "^1.4.7",
-    "cron": "^3.2.1",
     "exceljs": "^4.4.0",
     "ics": "^3.8.1",
     "mongoose": "^8.8.1",
@@ -51,7 +50,8 @@
     "passport-jwt": "^4.0.1",
     "razorpay": "^2.9.5",
     "reflect-metadata": "^0.2.0",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "speakeasy": "^2.0.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",
@@ -65,6 +65,7 @@
     "@types/multer": "^1.4.12",
     "@types/node": "^20.3.1",
     "@types/nodemailer": "^6.4.17",
+    "@types/speakeasy": "^2.0.10",
     "@types/supertest": "^6.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",

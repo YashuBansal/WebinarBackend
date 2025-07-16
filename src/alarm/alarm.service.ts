@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CreateAlarmDto, CreateNewAlarmDTO } from './dto/alarm.dto';
-import { CronJob } from 'cron';
 import { InjectModel } from '@nestjs/mongoose';
 import { Alarm } from 'src/schemas/Alarm.schema';
 import { ClientSession, Model, Types } from 'mongoose';
@@ -82,7 +81,6 @@ export class AlarmService {
       });
     }
 
-    console.log(data)
     const newAlarm = new this.alarmsModel({
       user,
       adminId,
@@ -129,7 +127,10 @@ export class AlarmService {
           },
         },
       })
-      .populate('user');
+      .populate({
+        path: 'user',
+        select: 'userName email role _id adminId phone',
+      });
 
     if (alarmsWithDueReminders.length === 0) {
       return;
@@ -181,7 +182,10 @@ export class AlarmService {
         date: { $gte: now, $lt: nextMinute },
         isActive: true,
       })
-      .populate('user');
+      .populate({
+        path: 'user',
+        select: 'userName email role _id adminId phone',
+      });
 
     if (dueAlarms.length === 0) {
       return; // Nothing to do
@@ -290,157 +294,165 @@ export class AlarmService {
     return this.subscriptionService.getSubscription(adminId);
   }
 
-  async setAlarm(
-    createAlarmDto: CreateAlarmDto,
-    id?: string,
-    startup?: boolean,
-  ): Promise<any> {
-    //perform check here
-    const alarmExists = await this.getAttendeeAlarm(
-      createAlarmDto.user,
-      createAlarmDto.email,
-    );
+  // async setAlarm(
+  //   createAlarmDto: CreateAlarmDto,
+  //   id?: string,
+  //   startup?: boolean,
+  // ): Promise<any> {
+  //   //perform check here
+  //   const alarmExists = await this.getAttendeeAlarm(
+  //     createAlarmDto.user,
+  //     createAlarmDto.email,
+  //   );
 
-    if (alarmExists && !startup)
-      throw new NotAcceptableException(
-        'Alarm for this attendee already exists.',
-      );
+  //   if (alarmExists && !startup)
+  //     throw new NotAcceptableException(
+  //       'Alarm for this attendee already exists.',
+  //     );
 
-    let reminderAlarmDate = new Date(
-      new Date(createAlarmDto.date).getTime() - 900 * 1000,
-    );
-    let alarmDate = new Date(new Date(createAlarmDto.date).getTime());
+  //   let reminderAlarmDate = new Date(
+  //     new Date(createAlarmDto.date).getTime() - 900 * 1000,
+  //   );
+  //   let alarmDate = new Date(new Date(createAlarmDto.date).getTime());
 
-    if (alarmDate.getTime() - Date.now() <= 0 && !startup)
-      throw new NotAcceptableException('Cannot set alarm for time in past.');
+  //   if (alarmDate.getTime() - Date.now() <= 0 && !startup)
+  //     throw new NotAcceptableException('Cannot set alarm for time in past.');
 
-    if (!id) {
-      const alarmData = await this.saveAlarmInDB(createAlarmDto);
-      id = alarmData._id;
-    }
+  //   if (!id) {
+  //     const alarmData = await this.saveAlarmInDB(createAlarmDto);
+  //     id = alarmData._id;
+  //   }
 
-    // reminder alarm
-    if (reminderAlarmDate.getTime() - Date.now() > 0) {
-      const reminderId = `reminder-${id}`; //format: reminder-{alarm _id from MongoDB}
-      const reminderAlarm = new CronJob(reminderAlarmDate, async () => {
-        const alarmDetails: any = await this.alarmsModel
-          .findById(id)
-          .populate('user');
+  //   // reminder alarm
+  //   if (reminderAlarmDate.getTime() - Date.now() > 0) {
+  //     const reminderId = `reminder-${id}`; //format: reminder-{alarm _id from MongoDB}
+  //     const reminderAlarm = new CronJob(reminderAlarmDate, async () => {
+  //       const alarmDetails: any = await this.alarmsModel.findById(id).populate({
+  //         path: 'user',
+  //         select: 'userName email role _id adminId phone',
+  //       });
 
-        this.logger.warn(
-          `reminder for the alarm was set (${Date.now()}) for job ${reminderId} to run!`,
-        );
-        const user = alarmDetails?.user;
-        let subscription: any = {};
-        if (
-          String(user?.role) === this.configService.get('appRoles')['ADMIN']
-        ) {
-          subscription = await this.subscriptionService.getSubscription(
-            user?._id,
-          );
-        } else {
-          subscription = await this.subscriptionService.getSubscription(
-            user?.adminId,
-          );
-        }
-        console.log('usvcripton', subscription);
+  //       this.logger.warn(
+  //         `reminder for the alarm was set (${Date.now()}) for job ${reminderId} to run!`,
+  //       );
+  //       const user = alarmDetails?.user;
+  //       let subscription: any = {};
+  //       if (
+  //         String(user?.role) === this.configService.get('appRoles')['ADMIN']
+  //       ) {
+  //         subscription = await this.subscriptionService.getSubscription(
+  //           user?._id,
+  //         );
+  //       } else {
+  //         subscription = await this.subscriptionService.getSubscription(
+  //           user?.adminId,
+  //         );
+  //       }
+  //       console.log('usvcripton', subscription);
 
-        const whatsappNotificationOnAlarms =
-          subscription?.plan?.whatsappNotificationOnAlarms;
-        console.log('whtsapp', whatsappNotificationOnAlarms);
-        const msgData = {
-          phone: alarmDetails.user.phone,
-          attendeeEmail: alarmDetails.email,
-          userName: alarmDetails.user.userName,
-          note: alarmDetails.note,
-        };
-        if (alarmDetails?.user?.phone && whatsappNotificationOnAlarms) {
-          this.whatsappService.sendReminderMsg(msgData);
-        }
-        console.log('setting secondary alarm', createAlarmDto.secondaryNumber);
+  //       const whatsappNotificationOnAlarms =
+  //         subscription?.plan?.whatsappNotificationOnAlarms;
+  //       console.log('whtsapp', whatsappNotificationOnAlarms);
+  //       const msgData = {
+  //         phone: alarmDetails.user.phone,
+  //         attendeeEmail: alarmDetails.email,
+  //         userName: alarmDetails.user.userName,
+  //         note: alarmDetails.note,
+  //       };
+  //       if (alarmDetails?.user?.phone && whatsappNotificationOnAlarms) {
+  //         this.whatsappService.sendReminderMsg(msgData);
+  //       }
+  //       console.log('setting secondary alarm', createAlarmDto.secondaryNumber);
 
-        if (createAlarmDto.secondaryNumber && whatsappNotificationOnAlarms) {
-          this.whatsappService.sendReminderMsg({
-            ...msgData,
-            phone: createAlarmDto.secondaryNumber,
-          });
-        }
-      });
+  //       if (createAlarmDto.secondaryNumber && whatsappNotificationOnAlarms) {
+  //         this.whatsappService.sendReminderMsg({
+  //           ...msgData,
+  //           phone: createAlarmDto.secondaryNumber,
+  //         });
+  //       }
+  //     });
 
-      this.schedulerRegistry.addCronJob(reminderId, reminderAlarm);
-      reminderAlarm.start();
+  //     this.schedulerRegistry.addCronJob(reminderId, reminderAlarm);
+  //     reminderAlarm.start();
 
-      this.logger.warn(`Alarm ${reminderId} added for ${reminderAlarmDate}!`);
-    }
+  //     this.logger.warn(`Alarm ${reminderId} added for ${reminderAlarmDate}!`);
+  //   }
 
-    const alarm = new CronJob(alarmDate, async () => {
-      const alarmDetails: any = await this.alarmsModel
-        .findById(id)
-        .populate('user');
-      // console.log(alarmDetails)
-      const deleteResult = await this.deleteAlarm(id);
-      const socketId = this.websocketGateway.activeUsers.get(
-        createAlarmDto.user,
-      );
-      this.websocketGateway.server.to(socketId).emit('playAlarm', {
-        message: '!!! Alarm played !!!',
-        deleteResult,
-      });
-      const user = alarmDetails?.user;
-      let subscription: any = {};
-      if (String(user?.role) === this.configService.get('appRoles')['ADMIN']) {
-        subscription = await this.subscriptionService.getSubscription(
-          user?._id,
-        );
-      } else {
-        subscription = await this.subscriptionService.getSubscription(
-          user?.adminId,
-        );
-      }
-      console.log('usvcripton', subscription);
+  //   const alarm = new CronJob(alarmDate, async () => {
+  //     const alarmDetails: any = await this.alarmsModel.findById(id).populate({
+  //       path: 'user',
+  //       select: 'userName email role _id adminId phone',
+  //     });
+  //     // console.log(alarmDetails)
+  //     const deleteResult = await this.deleteAlarm(id);
+  //     const socketId = this.websocketGateway.activeUsers.get(
+  //       createAlarmDto.user,
+  //     );
+  //     this.websocketGateway.server.to(socketId).emit('playAlarm', {
+  //       message: '!!! Alarm played !!!',
+  //       deleteResult,
+  //     });
+  //     const user = alarmDetails?.user;
+  //     let subscription: any = {};
+  //     if (String(user?.role) === this.configService.get('appRoles')['ADMIN']) {
+  //       subscription = await this.subscriptionService.getSubscription(
+  //         user?._id,
+  //       );
+  //     } else {
+  //       subscription = await this.subscriptionService.getSubscription(
+  //         user?.adminId,
+  //       );
+  //     }
+  //     console.log('usvcripton', subscription);
 
-      const whatsappNotificationOnAlarms =
-        subscription?.plan?.whatsappNotificationOnAlarms;
-      console.log('whtsapp', whatsappNotificationOnAlarms);
-      if (alarmDetails?.user?.phone && whatsappNotificationOnAlarms) {
-        const msgData = {
-          phone: alarmDetails.user.phone,
-          attendeeEmail: alarmDetails.email,
-          userName: alarmDetails.user.userName,
-          note: alarmDetails.note,
-        };
-        await this.whatsappService.sendAlarmMsg(msgData);
-      }
-    });
+  //     const whatsappNotificationOnAlarms =
+  //       subscription?.plan?.whatsappNotificationOnAlarms;
+  //     console.log('whtsapp', whatsappNotificationOnAlarms);
+  //     if (alarmDetails?.user?.phone && whatsappNotificationOnAlarms) {
+  //       const msgData = {
+  //         phone: alarmDetails.user.phone,
+  //         attendeeEmail: alarmDetails.email,
+  //         userName: alarmDetails.user.userName,
+  //         note: alarmDetails.note,
+  //       };
+  //       await this.whatsappService.sendAlarmMsg(msgData);
+  //     }
+  //   });
 
-    const alarmId = `alarm-${id}`;
+  //   const alarmId = `alarm-${id}`;
 
-    this.schedulerRegistry.addCronJob(alarmId, alarm); //id === alarm document ID in DB
-    alarm.start();
-    // add alarm data in DB
+  //   this.schedulerRegistry.addCronJob(alarmId, alarm); //id === alarm document ID in DB
+  //   alarm.start();
+  //   // add alarm data in DB
 
-    this.logger.warn(`Alarm ${alarmId} added for ${alarmDate}!`);
-    return 'Alarm set.';
-  }
+  //   this.logger.warn(`Alarm ${alarmId} added for ${alarmDate}!`);
+  //   return 'Alarm set.';
+  // }
 
   formatDateTime(isoString: string | Date): string {
     if (!isoString) return 'N/A';
     try {
       const date = new Date(isoString);
       if (isNaN(date.getTime())) {
-        return 'Invalid Date'; // Handle invalid date strings
+        return 'Invalid Date';
       }
+
       const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
+      const month = String(date.getMonth() + 1).padStart(2, '0');
       const day = String(date.getDate()).padStart(2, '0');
-      const hours = String(date.getHours()).padStart(2, '0');
+
+      let hours = date.getHours();
       const minutes = String(date.getMinutes()).padStart(2, '0');
       const seconds = String(date.getSeconds()).padStart(2, '0');
 
-      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12; // Convert 0 to 12
+      const formattedHours = String(hours).padStart(2, '0');
+
+      return `${year}-${month}-${day} ${formattedHours}:${minutes}:00 ${ampm}`;
     } catch (error) {
       console.error('Error formatting date:', isoString, error);
-      return 'Error'; // Return 'Error' on unexpected format issues
+      return 'Error';
     }
   }
 

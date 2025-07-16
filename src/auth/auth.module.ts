@@ -11,6 +11,12 @@ import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 
+import {
+  ExpiredPablyToken,
+  ExpiredPablyTokenSchema,
+} from 'src/schemas/ExpiredPablyToken.schema';
+import { TwoFactorAuthenticationModule } from 'src/two-factor-authentication/two-factor-authentication.module';
+
 @Module({
   imports: [
     UsersModule,
@@ -22,9 +28,14 @@ import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
         name: User.name,
         schema: UserSchema,
       },
+      {
+        name: ExpiredPablyToken.name,
+        schema: ExpiredPablyTokenSchema,
+      },
     ]),
     SubscriptionModule,
-    WhatsappModule
+    WhatsappModule,
+    TwoFactorAuthenticationModule
   ],
   controllers: [AuthController],
   providers: [AuthService],
@@ -38,8 +49,11 @@ export class AuthModule {
       .apply(AuthAdminTokenMiddleware)
       .forRoutes({ path: 'auth/employee', method: RequestMethod.ALL });
 
-      consumer
+    consumer
       .apply(AuthTokenMiddleware)
-      .forRoutes({ path: 'auth/current-user', method: RequestMethod.GET });
+      .forRoutes(
+        { path: 'auth/current-user', method: RequestMethod.GET },
+        { path: 'auth/pably-token', method: RequestMethod.POST },
+      );
   }
 }

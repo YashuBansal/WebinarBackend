@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module } from '@nestjs/common';
+import { forwardRef, MiddlewareConsumer, Module } from '@nestjs/common';
 import { DeleteDataController } from './delete-data.controller';
 import { DeleteDataService } from './delete-data.service';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -26,6 +26,7 @@ import { SubscriptionAddOn, SubscriptionAddOnSchema } from 'src/schemas/Subscrip
 import { Tag, TagSchema } from 'src/schemas/tags.schema';
 import { UserDocuments, UserDocumentsSchema } from 'src/schemas/user-documents.schema';
 import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
@@ -127,7 +128,8 @@ import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
         schema: UserDocumentsSchema
       }
 
-    ])
+    ]),
+    forwardRef(() => UsersModule)
   ],
   controllers: [DeleteDataController],
   providers: [DeleteDataService]

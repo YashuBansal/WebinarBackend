@@ -26,6 +26,7 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
 import { WebinarParticipantModule } from 'src/webinar-participant/webinar-participant.module';
+import { TagsModule } from 'src/tags/tags.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ export class AttendeesModule {
       .forRoutes(
         { path: 'attendees', method: RequestMethod.POST },
         { path: 'attendees/swap', method: RequestMethod.PUT },
+        { path: 'attendees/tag', method: RequestMethod.PUT },
         { path: 'attendees/webinar', method: RequestMethod.DELETE },
         {
           path: 'attendees/webinar-participants/:id',

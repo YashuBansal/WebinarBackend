@@ -68,6 +68,7 @@ export class Attendee extends Document {
   @Prop({
     type: String,
     maxlength: 100,
+    lowercase: true,
   })
   location: string;
 
@@ -116,13 +117,15 @@ export class Attendee extends Document {
 
   @Prop({
     type: String,
-    default: 'Import',
+    default: 'import',
+    lowercase: true,
   })
   source: string;
 
   @Prop({
     type: [String],
     default: [],
+    set: (tags: string[]) => tags.map(tag => tag.toLowerCase()),
   })
   tags: string[];
 

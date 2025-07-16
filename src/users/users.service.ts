@@ -6,6 +6,7 @@ import {
   Logger,
   NotAcceptableException,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { InjectModel } from '@nestjs/mongoose';
@@ -36,14 +37,20 @@ import {
 import { BillingType } from 'src/schemas/BillingHistory.schema';
 import { ProductsService } from 'src/products/products.service';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
+import { ExpiredPablyToken } from 'src/schemas/ExpiredPablyToken.schema';
+import { TwoFactorAuthenticationService } from 'src/two-factor-authentication/two-factor-authentication.service';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
   private readonly logger = new Logger(UsersService.name);
+  public expiredPablyTokens: Set<string> = new Set();
+
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Roles.name) private rolesModel: Model<Roles>,
     @InjectModel(Plans.name) private plansModel: Model<Plans>,
+    @InjectModel(ExpiredPablyToken.name)
+    private expiredPablyTokenModel: Model<ExpiredPablyToken>,
     private configService: ConfigService,
     private readonly billingHistoryService: BillingHistoryService,
     @Inject(forwardRef(() => SubscriptionService))
@@ -54,10 +61,102 @@ export class UsersService {
     private readonly productsService: ProductsService,
     private readonly notificationService: NotificationService,
     private readonly socketGateway: WebsocketGateway,
+    private readonly twofaService: TwoFactorAuthenticationService,
   ) {}
+
+  async onModuleInit() {
+    await this.loadExpiredPablyTokens();
+  }
+
+  async loadExpiredPablyTokens() {
+    const tokens = await this.expiredPablyTokenModel.find({
+      $or: [{ expiryDate: { $exists: false } }, { expiryDate: { $ne: null } }],
+    });
+    tokens.forEach((token) => this.expiredPablyTokens.add(token.token));
+  }
 
   getUsers() {
     return this.userModel.find();
+  }
+
+  addExpiredToken(pabblyToken: string) {
+    this.expiredPablyTokens.add(pabblyToken);
+  }
+
+  async setTwoFactorAuthenticationSecret(
+    secret: string,
+    userId: Types.ObjectId,
+  ) {
+    return this.userModel
+      .updateOne(
+        { _id: userId },
+        {
+          twoFactorAuthenticationSecret: secret,
+        },
+      )
+      .exec();
+  }
+
+  async toggle2FA(userId: Types.ObjectId) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User Not Found');
+    }
+    if(user.isTwoFactorAuthenticationEnabled){
+      user.twoFactorAuthenticationSecret = null;
+    }
+
+    user.isTwoFactorAuthenticationEnabled =
+      !user.isTwoFactorAuthenticationEnabled;
+    user.save();
+  }
+
+  async turnOffTwoFactorAuthentication(userId: Types.ObjectId) {
+    return this.userModel
+      .updateOne(
+        { _id: userId },
+        {
+          isTwoFactorAuthenticationEnabled: false,
+          twoFactorAuthenticationSecret: null,
+        },
+      )
+      .exec();
+  }
+
+  async generate2faToken(id: string) {
+    const user = await this.userModel.findById(id);
+
+    if (!user) {
+      throw new NotFoundException('User Not Found');
+    }
+    const { secret } =
+      await this.twofaService.generateTwoFactorAuthenticationSecret(user);
+    await this.setTwoFactorAuthenticationSecret(
+      secret,
+      user._id as Types.ObjectId,
+    );
+
+    return { secret };
+  }
+
+  async start2faAuthentication(
+    id: string,
+    twoFactorAuthenticationCode: string,
+  ) {
+    console.log(id, twoFactorAuthenticationCode);
+    const user = await this.userModel.findById(id);
+    const isCodeValid =
+      await this.twofaService.isTwoFactorAuthenticationCodeValid(
+        twoFactorAuthenticationCode,
+        user,
+      );
+
+    if (!isCodeValid) {
+      throw new BadRequestException('Wrong authentication code');
+    }
+
+    await this.toggle2FA(user._id as Types.ObjectId);
+    return { message: '2FA has been enabled successfully.' };
   }
 
   createUser(createUserDto: CreateUserDto) {

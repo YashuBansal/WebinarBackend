@@ -570,3 +570,19 @@ export class DeleteAllAttendeesDTO {
   @IsEmail({}, { each: true })
   attendees: string[];
 }
+
+
+export class UpdateAttendeeTagDTO {
+  @IsArray()
+  @IsNotEmpty()
+  @IsEmail({}, { each: true })
+  emails: string[];
+
+  @IsOptional()
+  @IsMongoId( )
+  webinar: string;
+
+  @IsString()
+  @IsNotEmpty()
+  tag: string;
+}

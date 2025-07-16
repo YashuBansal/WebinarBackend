@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -39,6 +40,19 @@ export class UsersController {
   getUsers() {
     const users = this.usersService.getUsers();
     return users;
+  }
+
+  @Get('secret')
+  async get2FASecret(@Id() id: string) {
+    return await this.usersService.generate2faToken(id);
+  }
+
+  @Patch('secret')
+  async verify2FASecret(@Id() id: string, @Body() data: any) {
+    if (!data.code) {
+      throw new NotFoundException('Verification Token Not Found');
+    }
+    return await this.usersService.start2faAuthentication(id, `${data.code}`);
   }
 
   @Post()
@@ -179,7 +193,10 @@ export class UsersController {
     @Id() id: string,
     @Body() body: { whatsappToken: string },
   ) {
-    return await this.usersService.updateWhatsappToken(id, body.whatsappToken ? body.whatsappToken.trim() : null);
+    return await this.usersService.updateWhatsappToken(
+      id,
+      body.whatsappToken ? body.whatsappToken.trim() : null,
+    );
   }
 
   @Get('/dropdown/clients')

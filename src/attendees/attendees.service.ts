@@ -46,6 +46,7 @@ import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { CustomLeadTypeService } from 'src/custom-lead-type/custom-lead-type.service';
 import { WebinarParticipantDto } from 'src/webinar-participant/dto/webinar-participant.dto';
 import { WebinarParticipantService } from 'src/webinar-participant/webinar-participant.service';
+import { TagsService } from 'src/tags/tags.service';
 
 @Injectable()
 export class AttendeesService {
@@ -69,12 +70,33 @@ export class AttendeesService {
     private readonly attendeeLogService: AttendeeLogService,
     private readonly customLeadTypeService: CustomLeadTypeService,
     private readonly webinarParticipantService: WebinarParticipantService,
+    // private readonly tagsService: TagsService,
   ) {}
 
   async addAttendees(attendees: [PreWebinarPostAttendeeDTO]): Promise<any> {
     const result = await this.attendeeModel.create(attendees);
     return result;
   }
+
+  //   async addAttendees(
+  //   attendees: PreWebinarPostAttendeeDTO[], // Correct: Use array type `[]`
+  // ): Promise<Attendee[]> {
+  //   if (!attendees || attendees.length === 0) {
+  //     return [];
+  //   }
+
+  //   const adminId = attendees[0].adminId;
+  //   const tags = await this.tagsService.getTags(adminId);
+
+  //   const validTagsSet = new Set(tags.map((tag) => tag.name));
+
+  //   const filteredAttendees = attendees.map((attendee) => ({
+  //     ...attendee,
+  //     tags: (attendee.tags || []).filter((tag) => typeof tag === 'string' && validTagsSet.has(tag)),
+  //   }));
+
+  //   return this.attendeeModel.create(filteredAttendees);
+  // }
 
   checkLength(arr?: string[]): boolean {
     return !!(Array.isArray(arr) && arr.length);
@@ -276,13 +298,13 @@ export class AttendeesService {
               filter: { _id: attendee.attendeeId },
               update: {
                 $set: {
-                  firstName: attendee.firstName || null,
-                  lastName: attendee.lastName || null,
-                  phone: attendee.phone,
-                  gender: attendee.gender || null,
-                  timeInSession: attendee.timeInSession || 0,
-                  location: attendee.location || null,
-                  source: attendee.source || 'Import',
+                  firstName: attendee.firstName || undefined,
+                  lastName: attendee.lastName || undefined,
+                  phone: attendee.phone || undefined,
+                  gender: attendee.gender || undefined,
+                  timeInSession: attendee.timeInSession || undefined,
+                  location: attendee.location || undefined,
+                  source: attendee.source || undefined,
                 },
               },
             },
@@ -293,7 +315,6 @@ export class AttendeesService {
         }
 
         if (
-          !postWebinarExists &&
           isAttended &&
           Array.isArray(unMergedData) &&
           unMergedData.length > 0
@@ -303,7 +324,12 @@ export class AttendeesService {
             adminId: new Types.ObjectId(`${adminId}`),
             webinar: new Types.ObjectId(`${webinar}`),
           }));
-          await this.webinarParticipantService.createMany(data, currentSession);
+          await this.webinarParticipantService.createMany(
+            data,
+            new Types.ObjectId(`${adminId}`),
+            new Types.ObjectId(`${webinar}`),
+            currentSession,
+          );
         }
 
         updateProgress(70);
@@ -476,6 +502,36 @@ export class AttendeesService {
     } finally {
       session.endSession();
     }
+  }
+
+  async updateAttendeeTags(
+    adminId: Types.ObjectId,
+    webinarId: Types.ObjectId,
+    emails: string[],
+    tag: string,
+  ) {
+    const filter = {
+      webinar: webinarId,
+      adminId: adminId,
+      email: {
+        $in: emails,
+      },
+      isAttended: true,
+    };
+
+    const count = await this.attendeeModel.countDocuments(filter);
+
+    if (emails.length !== count) {
+      throw new BadRequestException(
+        'Some or all of the specified attendees were not found for this webinar.',
+      );
+    }
+
+    const updateResult = await this.attendeeModel.updateMany(filter, {
+      $addToSet: { tags: tag.toLowerCase() },
+    });
+
+    return updateResult; // Returns an object like { matchedCount, modifiedCount, ... }
   }
 
   async hideAttendees(
@@ -1762,8 +1818,6 @@ export class AttendeesService {
       this.checkLength(filters.reminderLastStatus) ||
       this.checkLength(filters.tags);
 
-    console.log('is filters ----  > ', isLastFilters, filters);
-
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -1898,14 +1952,14 @@ export class AttendeesService {
           ...(Array.isArray(filters.locations) &&
             filters.locations.length > 0 && {
               locations: {
-                $in: filters.locations,
+                $in: filters.locations.map((a) => a.toLowerCase()),
               },
             }),
 
           ...(Array.isArray(filters.sources) &&
             filters.sources.length > 0 && {
               sources: {
-                $in: filters.sources,
+                $in: filters.sources.map((a) => a.toLowerCase()),
               },
             }),
         },

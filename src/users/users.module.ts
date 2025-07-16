@@ -30,6 +30,8 @@ import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.modu
 import { NotificationModule } from 'src/notification/notification.module';
 import { ProductsModule } from 'src/products/products.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
+import { ExpiredPablyToken, ExpiredPablyTokenSchema } from 'src/schemas/ExpiredPablyToken.schema';
+import { TwoFactorAuthenticationModule } from 'src/two-factor-authentication/two-factor-authentication.module';
 
 @Module({
   imports: [
@@ -56,12 +58,17 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
         name: Roles.name,
         schema: RolesSchema,
       },
+       {
+        name: ExpiredPablyToken.name,
+        schema: ExpiredPablyTokenSchema,
+      },
     ]),
     BillingHistoryModule,
     NotificationModule,
     forwardRef(() => CustomLeadTypeModule),
     forwardRef(() => ProductsModule),
-    WebsocketModule
+    WebsocketModule,
+    TwoFactorAuthenticationModule
     
   ],
   controllers: [UsersController],
@@ -89,6 +96,7 @@ export class UsersModule {
       .apply(AuthSuperAdminMiddleware)
       .forRoutes(
         { path: 'users/clients/*', method: RequestMethod.ALL },
+        { path: 'users/secret', method: RequestMethod.ALL },
         {
           path: 'users/super-admin/whatsapp-token',
           method: RequestMethod.PATCH,

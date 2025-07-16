@@ -1,4 +1,9 @@
-import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import {
+  forwardRef,
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+} from '@nestjs/common';
 import { AddonController } from './addon.controller';
 import { AddOnService } from './addon.service';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -7,12 +12,14 @@ import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middlew
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { SubscriptionAddonModule } from 'src/subscription-addon/subscription-addon.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: AddOn.name, schema: AddOnSchema }]),
     SubscriptionAddonModule,
     forwardRef(() => SubscriptionModule),
+    forwardRef(() => UsersModule),
   ],
   controllers: [AddonController],
   providers: [AddOnService],
