@@ -9,7 +9,6 @@ import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middlew
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
-import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 
 import {
   ExpiredPablyToken,
@@ -34,7 +33,6 @@ import { TwoFactorAuthenticationModule } from 'src/two-factor-authentication/two
       },
     ]),
     SubscriptionModule,
-    WhatsappModule,
     TwoFactorAuthenticationModule
   ],
   controllers: [AuthController],

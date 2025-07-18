@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { NextFunction, Response } from 'express';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 
 @Injectable()
 export class GetAdminIdMiddleware implements NestMiddleware {
@@ -37,9 +37,18 @@ export class GetAdminIdMiddleware implements NestMiddleware {
         req.id = decodedToken.id;
         next();
       } else {
+
         
+        if(mongoose.isValidObjectId(decodedToken.adminId))
         
         req.adminId = new Types.ObjectId(`${decodedToken.adminId}`);
+        else {
+          return  res.status(200).json({
+            status: false,
+            message: 'Invalid admin ID in token.',
+          });
+        }
+         
         req.id = decodedToken.id;
         next();
       }

@@ -18,12 +18,14 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
   ) {}
 
   async use(req, res: Response, next: NextFunction) {
-    console.log(' ----seomtid---- > ', req.query);
 
     const queryAccessToken = req?.query?.accessToken;
     const access_token =
       req.cookies[this.configService.get('ACCESS_TOKEN_NAME')];
     const pabbly_access_token = this.extractTokenFromHeader(req);
+
+    console.log(' ----seomtid---- > ', req.query);
+
 
     if (!access_token && !pabbly_access_token && !queryAccessToken) {
       throw new UnauthorizedException('Access token not found.');

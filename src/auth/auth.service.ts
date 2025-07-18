@@ -7,7 +7,6 @@ import {
   Logger,
   NotAcceptableException,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
 
 import { UsersService } from 'src/users/users.service';
@@ -21,10 +20,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { User } from 'src/schemas/User.schema';
 import { Model, Types } from 'mongoose';
 import { CreatorDetailsDto } from './dto/creatorDetails.dto';
-import { PlansService } from 'src/plans/plans.service';
 import { CreateClientDto } from './dto/createClient.dto';
 import { SubscriptionService } from 'src/subscription/subscription.service';
-import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { MailerService } from '@nestjs-modules/mailer';
 import { ExpiredPablyToken } from 'src/schemas/ExpiredPablyToken.schema';
 import { TwoFactorAuthenticationService } from 'src/two-factor-authentication/two-factor-authentication.service';
@@ -39,7 +36,6 @@ export class AuthService {
     private jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly subscriptionService: SubscriptionService,
-    private readonly whatsappService: WhatsappService,
     private readonly mailerService: MailerService,
     private readonly twoFAService: TwoFactorAuthenticationService,
   ) {}

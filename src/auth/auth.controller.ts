@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Req, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignInDto } from './dto/signIn.dto';
-import { Response } from 'express';
+import { CookieOptions, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { CreateEmployeeDto } from './dto/createEmployee.dto';
 import { AdminId, Id, Plan, Role } from 'src/decorators/custom.decorator';
@@ -14,6 +14,20 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
   ) {}
+
+   private getCookieOptions(): CookieOptions {
+    const isProduction = this.configService.get('NODE_ENV') !== 'development';
+    const cookieDomain = this.configService.get('COOKIE_DOMAIN');
+
+    return {
+      httpOnly: true, // Prevents client-side JS from accessing the cookie
+      secure: isProduction, // Only send cookie over HTTPS in production
+      sameSite: 'lax', // 'lax' is a good default. Use 'strict' if you are sure your FE/BE are on the same site. Use 'none' for completely different domains (requires secure: true)
+      path: '/', // Cookie is available to all paths
+      // domain: isProduction ? cookieDomain : undefined, // Share cookie across subdomains in production
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days. Match this to your JWT expiration if possible.
+    };
+  }
 
   @Post('login')
   async signIn(
@@ -32,6 +46,7 @@ export class AuthController {
       response.cookie(
         this.configService.get('ACCESS_TOKEN_NAME'),
         result.access_token,
+        this.getCookieOptions()
       );
     }
     return result.userData;
@@ -49,16 +64,12 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.authService.refreshToken(body.email);
-    console.log(this.configService.get('NODE_ENV') === 'production', "--- log ---", this.configService.get('NODE_ENV'))
+    console.log(this.configService.get('NODE_ENV') !== 'development', "--- log ---", this.configService.get('NODE_ENV'))
     if (result.access_token) {
       response.cookie(
         this.configService.get('ACCESS_TOKEN_NAME'),
         result.access_token,
-        {
-          httpOnly: true,
-          secure: this.configService.get('NODE_ENV') === 'production',
-          sameSite: 'strict',
-        },
+        this.getCookieOptions()
       );
       
     }
