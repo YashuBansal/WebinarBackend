@@ -1,5 +1,6 @@
 import { PartialType } from '@nestjs/mapped-types';
 import {
+  IsDateString,
   IsEnum,
   IsInt,
   IsMongoId,
@@ -72,6 +73,17 @@ export class UpdatePlanDTO {
     message: 'Duration type must be one of the allowed values.',
   })
   durationType: DurationType;
+}
+
+export class UpdateExpiryDateDTO {
+  @IsNotEmpty()
+  @IsMongoId()
+  adminId: string;
+
+  @IsNotEmpty()
+  @IsDateString()
+  expiryDate: string;
+  
 }
 
 export class AddAddOnDTO {

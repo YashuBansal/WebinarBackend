@@ -22,6 +22,10 @@ export class UpdateUserInfoDto {
 
     @IsOptional()
     @IsString()
+    planExpiry?: string
+
+    @IsOptional()
+    @IsString()
     password?: string
 
     @IsOptional()

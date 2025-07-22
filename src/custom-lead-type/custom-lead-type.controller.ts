@@ -14,7 +14,7 @@ export class CustomLeadTypeController {
 
   @Get()
   async getLeadTypes(@AdminId() adminId: string) {
-    if(adminId) return null;
+    if(!adminId) return null;
     return await this.customLeadTypeService.getLeadTypes(adminId);
   }
 

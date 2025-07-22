@@ -22,10 +22,8 @@ export class AuthController {
     return {
       httpOnly: true, // Prevents client-side JS from accessing the cookie
       secure: isProduction, // Only send cookie over HTTPS in production
-      sameSite: 'lax', // 'lax' is a good default. Use 'strict' if you are sure your FE/BE are on the same site. Use 'none' for completely different domains (requires secure: true)
-      path: '/', // Cookie is available to all paths
-      // domain: isProduction ? cookieDomain : undefined, // Share cookie across subdomains in production
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days. Match this to your JWT expiration if possible.
+      sameSite: 'none',
+      maxAge: 3600000 * 5,
     };
   }
 

@@ -64,6 +64,31 @@ export class SubscriptionService {
     return result;
   }
 
+
+async updateSubscriptionExpiryDate(
+  adminId: Types.ObjectId,
+  expiryDate: Date
+): Promise<Subscription> {
+
+  const updatedSubscription = await this.SubscriptionModel.findOneAndUpdate(
+    { admin: adminId },
+    { expiryDate },
+    { new: true }
+  );
+
+  if (!updatedSubscription) {
+    throw new BadRequestException('Subscription not found');
+  }
+
+  // If the expiryDate is in the past, deactivate the user
+  if (new Date(expiryDate).getTime() < Date.now()) {
+    await this.userService.deactivateUserByAdminId(adminId);
+  }
+
+  return updatedSubscription;
+}
+
+
   async getUpcomingExpiry(): Promise<Subscription[]> {
     const today = new Date();
     const date15DaysLater = new Date();

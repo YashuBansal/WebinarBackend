@@ -102,7 +102,7 @@ export class UsersService implements OnModuleInit {
     if (!user) {
       throw new NotFoundException('User Not Found');
     }
-    if(user.isTwoFactorAuthenticationEnabled){
+    if (user.isTwoFactorAuthenticationEnabled) {
       user.twoFactorAuthenticationSecret = null;
     }
 
@@ -653,6 +653,12 @@ export class UsersService implements OnModuleInit {
           actionType: notificationActionType.ACCOUNT_DEACTIVATION,
         });
       }
+    }
+
+    if (result && updateUserInfoDto.planExpiry){
+      const planExpiryDate = new Date(updateUserInfoDto.planExpiry);
+      planExpiryDate.setHours(23, 59);
+      await this.subscriptionService.updateSubscriptionExpiryDate(result._id as Types.ObjectId, planExpiryDate)
     }
 
     return result;
@@ -1442,5 +1448,25 @@ export class UsersService implements OnModuleInit {
       // Re-throw the error so the calling transaction can catch and handle it
       throw error;
     }
+  }
+
+  async deactivateUserByAdminId(adminId: Types.ObjectId) {
+    const admin = await this.userModel.findById(adminId);
+    if (!admin) {
+      throw new NotFoundException('Admin not found');
+    }
+
+    admin.isActive = false;
+    admin.statusChangeNote = 'Account deactivated by super admin.';
+    await admin.save();
+
+    await this.userModel.updateMany(
+      { adminId: admin._id },
+      { $set: { isActive: false } },
+    );
+
+    return {
+      message: 'User and associated employees deactivated successfully.',
+    };
   }
 }

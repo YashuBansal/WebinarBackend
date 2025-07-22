@@ -26,7 +26,7 @@ export class TagsController {
     @AdminId() adminId: string,
     @Query('usecase') usecase: Usecase | undefined,
   ) {
-    if(adminId) return null;
+    if(!adminId) return null;
     const tags = await this.tagsService.getTags(
       new Types.ObjectId(`${adminId}`),
       usecase,

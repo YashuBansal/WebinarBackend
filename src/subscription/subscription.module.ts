@@ -52,6 +52,7 @@ export class SubscriptionModule {
       .forRoutes(
         { path: 'subscription/addOn', method: RequestMethod.PATCH },
         { path: 'subscription/update', method: RequestMethod.PATCH },
+        { path: 'subscription/expiry-date', method: RequestMethod.PATCH },
       );
 
     consumer

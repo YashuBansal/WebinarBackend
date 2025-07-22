@@ -3,9 +3,11 @@ import { AdminId, Id, Plan } from 'src/decorators/custom.decorator';
 import { SubscriptionService } from './subscription.service';
 import {
   AddAddOnDTO,
+  UpdateExpiryDateDTO,
   UpdatePlanDTO,
   ValidateUserEligibilityDTO,
 } from './dto/subscription.dto';
+import { Types } from 'mongoose';
 
 @Controller('subscription')
 export class SubscriptionController {
@@ -42,6 +44,17 @@ export class SubscriptionController {
       body.adminId,
       body.planId,
       body.durationType,
+    );
+  }
+
+  @Patch('expiry-date')
+  async updateSubscriptionExpiryDate(@Body() body: UpdateExpiryDateDTO) {
+    const adminId = new Types.ObjectId(body.adminId);
+    const expiryDate = new Date(body.expiryDate);
+
+    return await this.subscriptionService.updateSubscriptionExpiryDate(
+      adminId,
+      expiryDate,
     );
   }
 }
