@@ -1392,16 +1392,6 @@ export class UsersService implements OnModuleInit {
     return this.userModel.bulkWrite(operations, { ordered: false, session });
   }
 
-  /**
-   * Performs a bulk write operation on the User collection, typically for
-   * updating employee-related fields like daily contact counts within a transaction.
-   *
-   * @param updates An array of Mongoose bulk write operation objects
-   *                (e.g., { updateOne: { filter, update } }, { insertOne: { document } }, etc.).
-   *                For updating dailyContactCount, this will likely contain $inc operations.
-   * @param session The Mongoose client session to use for the transaction.
-   * @returns A promise resolving to the result object from the bulk write operation (Mongoose BulkWriteResult).
-   */
   async bulkUpdateUsersDailyContactCount(
     updates: any[], // Using 'any' for simplicity, can be typed as (BulkWriteOptions | AnyBulkWriteOperation)[]
     session: ClientSession, // Requires a session as it's designed for use within a transaction
