@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { Type } from 'class-transformer';
 import {
+  IsDate,
   IsDateString,
   IsEnum,
   IsInt,
@@ -19,6 +20,15 @@ export class BillingHistoryDto {
   @IsObject()
   @IsNotEmpty()
   admin: string;
+
+  @IsOptional()
+  @IsDate()
+  startDate?: Date;
+
+  @IsOptional()
+  @IsDate()
+  expiryDate?: Date;
+
 
   @IsString()
   @IsNotEmpty()

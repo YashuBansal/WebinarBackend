@@ -315,6 +315,8 @@ async updateSubscriptionExpiryDate(
         taxPercent: 18,
         taxAmount: gst,
         durationType: durationType,
+        startDate: subscription.startDate,
+        expiryDate: subscription.expiryDate,
       },
       BillingType.RENEWAL,
     );

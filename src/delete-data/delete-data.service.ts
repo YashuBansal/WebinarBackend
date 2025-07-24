@@ -58,33 +58,33 @@ export class DeleteDataService {
     async deleteData(id: string): Promise<any> {
         try {
             // Delete all data except for User and StatusDropdown where adminId equals the provided id
-            await Promise.all([
-                // Delete all records in the following models
-                this.webinarModel.deleteMany({}),
-                this.notesModel.deleteMany({}),
-                this.attendeeModel.deleteMany({}),
-                this.attendeeAssociationModel.deleteMany({}),
-                this.billingHistoryModel.deleteMany({}),
-                this.customLeadTypeModel.deleteMany({}),
-                this.enrollmentModel.deleteMany({}),
-                this.productsModel.deleteMany({}),
-                this.subscriptionModel.deleteMany({}),
-                this.alarmModel.deleteMany({}),
-                this.noticeBoardModel.deleteMany({}),
-                this.notificationModel.deleteMany({}),
-                this.userActivityModel.deleteMany({}),
-                this.filterPresetModel.deleteMany({}),
-                this.assignmentsModel.deleteMany({}),
-                this.locationModel.deleteMany({}),
-                this.productLevelModel.deleteMany({}),
-                this.subscriptionAddOnModel.deleteMany({}),
-                this.tagModel.deleteMany({}),
-                this.userDocumentsModel.deleteMany({}),
-                this.plansModel.deleteMany({}),
-                // Delete records in User and StatusDropdown but exclude those with adminId equal to provided id
-                this.userModel.deleteMany({ _id: { $ne: new Types.ObjectId(`${id}`) } }), // Do not delete users with adminId == id
-                // this.statusDropdownModel.deleteMany({ createdBy: { $ne: id } }) // Do not delete StatusDropdown with adminId == id
-            ]);
+            // await Promise.all([
+            //     // Delete all records in the following models
+            //     this.webinarModel.deleteMany({}),
+            //     this.notesModel.deleteMany({}),
+            //     this.attendeeModel.deleteMany({}),
+            //     this.attendeeAssociationModel.deleteMany({}),
+            //     this.billingHistoryModel.deleteMany({}),
+            //     this.customLeadTypeModel.deleteMany({}),
+            //     this.enrollmentModel.deleteMany({}),
+            //     this.productsModel.deleteMany({}),
+            //     this.subscriptionModel.deleteMany({}),
+            //     this.alarmModel.deleteMany({}),
+            //     this.noticeBoardModel.deleteMany({}),
+            //     this.notificationModel.deleteMany({}),
+            //     this.userActivityModel.deleteMany({}),
+            //     this.filterPresetModel.deleteMany({}),
+            //     this.assignmentsModel.deleteMany({}),
+            //     this.locationModel.deleteMany({}),
+            //     this.productLevelModel.deleteMany({}),
+            //     this.subscriptionAddOnModel.deleteMany({}),
+            //     this.tagModel.deleteMany({}),
+            //     this.userDocumentsModel.deleteMany({}),
+            //     this.plansModel.deleteMany({}),
+            //     // Delete records in User and StatusDropdown but exclude those with adminId equal to provided id
+            //     this.userModel.deleteMany({ _id: { $ne: new Types.ObjectId(`${id}`) } }), // Do not delete users with adminId == id
+            //     // this.statusDropdownModel.deleteMany({ createdBy: { $ne: id } }) // Do not delete StatusDropdown with adminId == id
+            // ]);
 
             return { success: true, message: 'All data has been deleted from all models.' };
         } catch (error) {

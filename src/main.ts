@@ -14,6 +14,7 @@ async function bootstrap() {
       'http://localhost:5174',
       'https://saas.rittikbansal.com',
       'https://dashboard.webinarleadshub.com',
+      'https://sass-crm-frontend.vercel.app',
     ],
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
     credentials: true,

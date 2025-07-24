@@ -1153,6 +1153,7 @@ export class UsersService implements OnModuleInit {
         taxPercent: 18,
         taxAmount: gst,
         durationType: createClientDto.durationType,
+        expiryDate: new Date(currentPlanExpiry),
       },
       BillingType.NEW_PLAN,
     );

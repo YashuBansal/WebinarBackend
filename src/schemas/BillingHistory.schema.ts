@@ -9,7 +9,7 @@ export enum DurationType {
   QUARTER = 'quarterly',
   HALF_YEAR = 'halfyearly',
   ONE_YEAR = 'yearly',
-  CUSTOM = 'custom'
+  CUSTOM = 'custom',
 }
 
 export const monthMultiplier = {
@@ -26,10 +26,8 @@ export enum BillingType {
 }
 
 @Schema({ timestamps: true })
-
 export class BillingHistory extends Document {
   @Prop({ type: Types.ObjectId, ref: User.name, required: true })
-
   admin: Types.ObjectId; // Admin user
 
   @Prop({
@@ -37,6 +35,12 @@ export class BillingHistory extends Document {
     default: Date.now(),
   })
   date: Date;
+
+  @Prop({ type: Date })
+  startDate: Date;
+
+  @Prop({ type: Date })
+  expiryDate: Date;
 
   @Prop({
     type: Types.ObjectId,

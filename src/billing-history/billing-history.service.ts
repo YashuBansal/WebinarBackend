@@ -142,7 +142,7 @@ export class BillingHistoryService {
         })
         .populate({
           path: 'admin',
-          select: 'userName _id',
+          select: 'userName _id email',
         })
         .sort({ date: -1 })
         .skip(skip)
