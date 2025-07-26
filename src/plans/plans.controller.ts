@@ -42,6 +42,11 @@ export class PlansController {
     );
   }
 
+  @Get('external-uri')
+  async getExternalPlanURI() {
+    return await this.plansService.getExternalPlanURI();
+  }
+
   @Post()
   addPlan(@Body() createPlansDto: CreatePlansDto) {
     return this.plansService.addPlan(createPlansDto);

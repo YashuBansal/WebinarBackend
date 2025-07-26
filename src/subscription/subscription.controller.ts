@@ -18,6 +18,11 @@ export class SubscriptionController {
     return await this.subscriptionService.getSubscription(adminId);
   }
 
+  @Get('gst-value')
+  async getGSTValue() {
+    return await this.subscriptionService.getGSTValue();
+  }
+
   @Get('validate')
   async validateUserEligibility(
     @Id() adminId: string,

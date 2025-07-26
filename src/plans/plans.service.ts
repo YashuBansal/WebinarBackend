@@ -97,9 +97,7 @@ export class PlansService {
     try {
       return await plan.save();
     } catch (error) {
-      throw new BadRequestException(
-        `Failed to create plan: ${error.message}`,
-      );
+      throw new BadRequestException(`Failed to create plan: ${error.message}`);
     }
   }
 
@@ -107,6 +105,17 @@ export class PlansService {
     // Create the new plan
     const plan = this.plansModel.findByIdAndUpdate(id, updatePlanDto, {
       new: true,
+    });
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+    await this.subscriptionService.updateSubscriptionByPlanId({
+      planId: id,
+      data: {
+        toggleLimit: updatePlanDto.toggleLimit,
+        contactLimit: updatePlanDto.contactLimit,
+        employeeLimit: updatePlanDto.employeeCount,
+      },
     });
     return plan;
   }
@@ -154,5 +163,11 @@ export class PlansService {
       label: plan.name,
       value: plan._id,
     }));
+  }
+
+  async getExternalPlanURI(): Promise<string> {
+    const externalPlanURI = this.configService.get('EXTERNAL_PLAN_URI');
+
+    return externalPlanURI || '/';
   }
 }

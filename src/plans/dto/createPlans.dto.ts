@@ -74,7 +74,7 @@ export class CreatePlansDto {
   @IsOptional()
   @IsBoolean()
   setAlarm: boolean;
-  
+
   @IsOptional()
   @IsBoolean()
   renewalNotAllowed: boolean;

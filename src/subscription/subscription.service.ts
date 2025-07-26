@@ -22,9 +22,11 @@ import {
   monthMultiplier,
 } from 'src/schemas/BillingHistory.schema';
 import { PlanDurationConfig, Plans } from 'src/schemas/Plans.schema';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class SubscriptionService {
+   GST_VALUE: number = 0;
   constructor(
     @InjectModel(Subscription.name)
     private SubscriptionModel: Model<Subscription>,
@@ -39,10 +41,45 @@ export class SubscriptionService {
     private readonly BillingHistoryService: BillingHistoryService,
     @Inject(forwardRef(() => PlansService))
     private readonly plansService: PlansService,
+    private readonly configService: ConfigService,
   ) {}
+
+   onModuleInit(){
+    const gstValueStr = this.configService.get<number>('GST_VALUE') || 0;
+    console.log(`GST Value is ${gstValueStr}%`, typeof gstValueStr);
+
+    const gstValue = parseInt(gstValueStr.toString());
+    if (!isNaN(gstValue) && gstValue > 0) {
+      this.GST_VALUE = gstValue;
+    }
+  }
 
   async addSubscription(subscriptionDto: SubscriptionDto): Promise<any> {
     const result = await this.SubscriptionModel.create(subscriptionDto);
+    return result;
+  }
+
+  async getGSTValue() {
+    return {
+      GST_VALUE: this.GST_VALUE,
+    }
+  }
+
+  async updateSubscriptionByPlanId({
+    planId,
+    data,
+  }: {
+    planId: string;
+    data: {
+      toggleLimit: number;
+      contactLimit: number;
+      employeeLimit: number;
+    };
+  }): Promise<any> {
+    const result = await this.SubscriptionModel.updateMany(
+      { plan: new Types.ObjectId(planId) },
+      { $set: data }, // Recommended: use $set when updating fields
+    );
     return result;
   }
 
@@ -64,30 +101,27 @@ export class SubscriptionService {
     return result;
   }
 
+  async updateSubscriptionExpiryDate(
+    adminId: Types.ObjectId,
+    expiryDate: Date,
+  ): Promise<Subscription> {
+    const updatedSubscription = await this.SubscriptionModel.findOneAndUpdate(
+      { admin: adminId },
+      { expiryDate },
+      { new: true },
+    );
 
-async updateSubscriptionExpiryDate(
-  adminId: Types.ObjectId,
-  expiryDate: Date
-): Promise<Subscription> {
+    if (!updatedSubscription) {
+      throw new BadRequestException('Subscription not found');
+    }
 
-  const updatedSubscription = await this.SubscriptionModel.findOneAndUpdate(
-    { admin: adminId },
-    { expiryDate },
-    { new: true }
-  );
+    // If the expiryDate is in the past, deactivate the user
+    if (new Date(expiryDate).getTime() < Date.now()) {
+      await this.userService.deactivateUserByAdminId(adminId);
+    }
 
-  if (!updatedSubscription) {
-    throw new BadRequestException('Subscription not found');
+    return updatedSubscription;
   }
-
-  // If the expiryDate is in the past, deactivate the user
-  if (new Date(expiryDate).getTime() < Date.now()) {
-    await this.userService.deactivateUserByAdminId(adminId);
-  }
-
-  return updatedSubscription;
-}
-
 
   async getUpcomingExpiry(): Promise<Subscription[]> {
     const today = new Date();
@@ -190,7 +224,7 @@ async updateSubscriptionExpiryDate(
         itemAmount,
         taxAmount,
         totalAmount,
-        18,
+        this.GST_VALUE,
       ).catch(() => {
         throw new Error('Failed to create billing history');
       });
@@ -209,7 +243,7 @@ async updateSubscriptionExpiryDate(
   }
 
   generatePriceForAddon(amount: number) {
-    const taxAmount = amount * 0.18;
+    const taxAmount = amount * (this.GST_VALUE / 100);
     const totalAmount = amount + taxAmount;
     return {
       itemAmount: amount,
@@ -312,7 +346,7 @@ async updateSubscriptionExpiryDate(
         amount: totalWithGST,
         itemAmount: itemAmount,
         discountAmount: discountAmount,
-        taxPercent: 18,
+        taxPercent: this.GST_VALUE,
         taxAmount: gst,
         durationType: durationType,
         startDate: subscription.startDate,
@@ -358,6 +392,9 @@ async updateSubscriptionExpiryDate(
     );
   }
 
+ 
+   
+
   generatePriceForPlan(
     amount: number,
     durationType: DurationType,
@@ -368,6 +405,9 @@ async updateSubscriptionExpiryDate(
     discountAmount: number;
     gst: number;
   } {
+    
+
+
     let itemAmount = 0;
     if (durationType === 'custom') itemAmount = amount;
     else itemAmount = amount * monthMultiplier[durationType];
@@ -377,7 +417,7 @@ async updateSubscriptionExpiryDate(
         : (itemAmount * durationConfig.discountValue) / 100;
 
     const subTotal = itemAmount - discountAmount;
-    const gst = subTotal * 0.18; // 18% GST
+    const gst = subTotal * (this.GST_VALUE / 100);
     const totalWithGST = subTotal + gst;
 
     return {

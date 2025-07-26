@@ -2477,10 +2477,14 @@ export class AttendeesService {
             },
           },
           locations: {
-            $addToSet: '$location',
+            $addToSet: {
+              $cond: [{ $ne: ['$location', null] }, '$location', '$$REMOVE'],
+            },
           },
           sources: {
-            $addToSet: '$source',
+            $addToSet: {
+              $cond: [{ $ne: ['$source', null] }, '$source', '$$REMOVE'],
+            },
           },
         },
       },

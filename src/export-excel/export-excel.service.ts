@@ -348,12 +348,42 @@ export class ExportExcelService {
         sort,
       );
     console.log(aggregationResult);
+    let parsedData = [];
+
+    if (Array.isArray(aggregationResult?.data)) {
+      parsedData = aggregationResult?.data.map((item) => {
+        return {
+          ...item,
+          tags: Array.isArray(item.tags)
+            ? item.tags
+                .filter((tag) => typeof tag === 'string' && tag.trim() !== '')
+                .join(' , ')
+            : ' - ',
+          sources: Array.isArray(item.sources)
+            ? item.sources
+                .filter(
+                  (source) =>
+                    typeof source === 'string' && source.trim() !== '',
+                )
+                .join(' , ')
+            : ' - ',
+          locations: Array.isArray(item.locations)
+            ? item.locations
+                .filter(
+                  (location) =>
+                    typeof location === 'string' && location.trim() !== '',
+                )
+                .join(' , ')
+            : ' - ',
+        };
+      });
+    }
 
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
 
     const payload = {
-      data: aggregationResult?.data || [],
+      data: parsedData,
       columns: columns.map((col) => ({
         header: col,
         key: col,

@@ -1150,7 +1150,7 @@ export class UsersService implements OnModuleInit {
         amount: totalWithGST,
         itemAmount: itemAmount,
         discountAmount: discountAmount,
-        taxPercent: 18,
+        taxPercent: this.subscriptionService.GST_VALUE,
         taxAmount: gst,
         durationType: createClientDto.durationType,
         expiryDate: new Date(currentPlanExpiry),
