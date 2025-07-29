@@ -799,7 +799,6 @@ export class AttendeesService {
     } = obj;
 
     const queryFields = fields.split(',').map((a) => a.trim());
-    console.log(queryFields);
 
     const allFields = {
       email: 1,
@@ -817,6 +816,8 @@ export class AttendeesService {
       createdAt: 1,
       tags: 1,
       enrollments: '$enrollments.labels',
+      attendedCount: 1,
+      registeredCount: 1,
     };
 
     const projectStage = {
@@ -841,6 +842,10 @@ export class AttendeesService {
           projectStage.$project['timeInSession'] = 1;
         } else if (field === 'createdat') {
           projectStage.$project['createdAt'] = 1;
+        } else if (field === 'attendedcount') {
+          projectStage.$project['attendedCount'] = 1;
+        } else if (field === 'registeredcount') {
+          projectStage.$project['registeredCount'] = 1;
         } else {
           projectStage.$project[field] = 1;
         }
@@ -850,7 +855,6 @@ export class AttendeesService {
     const hasFilters = Object.keys(filters).some(
       (key) => filters[key] !== null && filters[key] !== undefined,
     );
-    console.log(filters, 'filters');
 
     const timeInSessionFilter = {};
     if (filters.timeInSession) {
@@ -874,7 +878,97 @@ export class AttendeesService {
         );
       }
     }
-    console.log(timeInSessionFilter);
+
+    const attendanceCountStages: PipelineStage[] = [
+      {
+        $lookup: {
+          from: 'attendees',
+          let: { attendeeEmail: '$email' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$email', '$$attendeeEmail'] },
+                    { $eq: ['$adminId', new Types.ObjectId(AdminId)] },
+                    { $ne: ['$isDeleted', true] },
+                  ],
+                },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                registeredCount: {
+                  $sum: { $cond: { if: '$isAttended', then: 0, else: 1 } },
+                },
+                attendedCount: {
+                  $sum: {
+                    $cond: {
+                      if: {
+                        $and: [
+                          { $eq: ['$isAttended', true] }, // Condition 1: isAttended must be true
+                          { $gt: ['$timeInSession', 0] }, // Condition 2: timeInSession must be greater than 0
+                        ],
+                      },
+                      then: 1,
+                      else: 0,
+                    },
+                  },
+                },
+              },
+            },
+          ],
+          as: 'attendanceHistory',
+        },
+      },
+      {
+        $unwind: {
+          path: '$attendanceHistory',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          registeredCount: {
+            $ifNull: ['$attendanceHistory.registeredCount', 0],
+          },
+          attendedCount: { $ifNull: ['$attendanceHistory.attendedCount', 0] },
+        },
+      },
+    ];
+
+    const attendanceCountFilter = {};
+    if (filters.registeredCount) {
+      attendanceCountFilter['registeredCount'] = {};
+      if (filters.registeredCount.$gte !== undefined) {
+        attendanceCountFilter['registeredCount']['$gte'] = parseInt(
+          `${filters.registeredCount.$gte}`,
+          10,
+        );
+      }
+      if (filters.registeredCount.$lte !== undefined) {
+        attendanceCountFilter['registeredCount']['$lte'] = parseInt(
+          `${filters.registeredCount.$lte}`,
+          10,
+        );
+      }
+    }
+    if (filters.attendedCount) {
+      attendanceCountFilter['attendedCount'] = {};
+      if (filters.attendedCount.$gte !== undefined) {
+        attendanceCountFilter['attendedCount']['$gte'] = parseInt(
+          `${filters.attendedCount.$gte}`,
+          10,
+        );
+      }
+      if (filters.attendedCount.$lte !== undefined) {
+        attendanceCountFilter['attendedCount']['$lte'] = parseInt(
+          `${filters.attendedCount.$lte}`,
+          10,
+        );
+      }
+    }
 
     const basePipeline: PipelineStage[] = [
       {
@@ -1118,6 +1212,15 @@ export class AttendeesService {
               },
             },
           ]
+        : []),
+
+      // ADD THE COUNT CALCULATION STAGES
+      ...attendanceCountStages,
+
+      // ADD THE FILTERING STAGE FOR THE NEWLY CALCULATED COUNTS
+      // This stage is only added if a filter for it exists.
+      ...(Object.keys(attendanceCountFilter).length > 0
+        ? [{ $match: attendanceCountFilter }]
         : []),
     ];
 
@@ -2362,8 +2465,6 @@ export class AttendeesService {
       this.checkLength(filters.reminderAssignedTo) ||
       this.checkLength(filters.reminderLastStatus) ||
       this.checkLength(filters.tags);
-
-    console.log('is filters ----  > ', isLastFilters, filters);
 
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [

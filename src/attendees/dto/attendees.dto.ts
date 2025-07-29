@@ -256,6 +256,14 @@ export class AttendeesFilterDto {
   timeInSession?: RangeNumberDto;
 
   @IsOptional()
+  @IsObject()
+  attendedCount?: RangeNumberDto;
+  
+  @IsOptional()
+  @IsObject()
+  registeredCount?: RangeNumberDto;
+
+  @IsOptional()
   @IsString()
   gender?: 'male' | 'female' | 'others';
 
