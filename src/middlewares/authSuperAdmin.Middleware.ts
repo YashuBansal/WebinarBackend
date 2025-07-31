@@ -35,7 +35,7 @@ export class AuthSuperAdminMiddleware implements NestMiddleware {
     try {
       if (pabbly_access_token) {
         const decodeOptions = {
-          secret: this.configService.get('PABBLY_ACCESS_TOKEN_SECRET'),
+          secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
         };
 
         const decodedToken = this.jwtService.verify(
