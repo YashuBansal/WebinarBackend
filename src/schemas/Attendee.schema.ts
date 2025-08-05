@@ -125,7 +125,7 @@ export class Attendee extends Document {
   @Prop({
     type: [String],
     default: [],
-    set: (tags: string[]) => tags.map(tag => tag.toLowerCase()),
+    set: (tags: string[]) => tags.map(tag => tag.toLowerCase().trim()),
   })
   tags: string[];
 

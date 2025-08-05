@@ -53,6 +53,7 @@ import { AttendeeLogModule } from './attendee-log/attendee-log.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { WebinarParticipantModule } from './webinar-participant/webinar-participant.module';
 import { TwoFactorAuthenticationModule } from './two-factor-authentication/two-factor-authentication.module';
+import { ApiAccessTokenModule } from './api-access-token/api-access-token.module';
 
 @Module({
   imports: [
@@ -128,6 +129,7 @@ import { TwoFactorAuthenticationModule } from './two-factor-authentication/two-f
     WebsocketModule,
     WebinarParticipantModule,
     TwoFactorAuthenticationModule,
+    ApiAccessTokenModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService],

@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Req, Res } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignInDto } from './dto/signIn.dto';
 import { CookieOptions, Response } from 'express';
@@ -7,22 +17,27 @@ import { CreateEmployeeDto } from './dto/createEmployee.dto';
 import { AdminId, Id, Plan, Role } from 'src/decorators/custom.decorator';
 import { CreateClientDto, ValidateOtpDto } from './dto/createClient.dto';
 import { GeneratePablyTokenDto } from './dto/generatePablyToken.dto';
+import mongoose, { Types } from 'mongoose';
+import { ApiAccessTokenService } from 'src/api-access-token/api-access-token.service';
+import { UsersService } from 'src/users/users.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly userService: UsersService,
+    private readonly apiTokenService: ApiAccessTokenService,
   ) {}
 
-   private getCookieOptions(): CookieOptions {
+  private getCookieOptions(): CookieOptions {
     const isProduction = this.configService.get('NODE_ENV') !== 'development';
     const cookieDomain = this.configService.get('COOKIE_DOMAIN');
 
     return {
       httpOnly: true, // Prevents client-side JS from accessing the cookie
       secure: isProduction, // Only send cookie over HTTPS in production
-      sameSite: 'none',
+      sameSite: 'strict',
       maxAge: 3600000 * 5,
     };
   }
@@ -34,17 +49,17 @@ export class AuthController {
   ) {
     const result = await this.authService.signIn(signInDto);
 
-    if(result.twoFA){
+    if (result.twoFA) {
       return {
-        twoFa: true
-      }
+        twoFa: true,
+      };
     }
 
     if (result.access_token) {
       response.cookie(
         this.configService.get('ACCESS_TOKEN_NAME'),
         result.access_token,
-        this.getCookieOptions()
+        this.getCookieOptions(),
       );
     }
     return result.userData;
@@ -62,14 +77,17 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.authService.refreshToken(body.email);
-    console.log(this.configService.get('NODE_ENV') !== 'development', "--- log ---", this.configService.get('NODE_ENV'))
+    console.log(
+      this.configService.get('NODE_ENV') !== 'development',
+      '--- log ---',
+      this.configService.get('NODE_ENV'),
+    );
     if (result.access_token) {
       response.cookie(
         this.configService.get('ACCESS_TOKEN_NAME'),
         result.access_token,
-        this.getCookieOptions()
+        this.getCookieOptions(),
       );
-      
     }
 
     return {
@@ -108,18 +126,14 @@ export class AuthController {
   }
 
   @Get('/current-user')
-  async getCurrentUser(
-    @Id() id: string,
-  ): Promise<any> {
-
+  async getCurrentUser(@Id() id: string): Promise<any> {
     const user = await this.authService.getCurrentUser(id);
 
     return {
       status: true,
       message: 'User found',
-      data: user
-    }
-
+      data: user,
+    };
   }
 
   // @Get('/token/:id')
@@ -130,13 +144,16 @@ export class AuthController {
   // }
 
   @Post('forgot-password/:email')
-  async generateOTP( @Param('email') email: string ) {
+  async generateOTP(@Param('email') email: string) {
     return this.authService.generateOtp(email);
-  } 
+  }
 
   @Post('validate-otp')
   async validateOTP(@Body() validateOtpDto: ValidateOtpDto) {
-    await this.authService.validateOTP(validateOtpDto.email, validateOtpDto.otp);
+    await this.authService.validateOTP(
+      validateOtpDto.email,
+      validateOtpDto.otp,
+    );
     return { message: 'OTP validated successfully' };
   }
 
@@ -154,10 +171,32 @@ export class AuthController {
     @Id() id: string,
     @Body() generatePablyTokenDto: GeneratePablyTokenDto,
   ): Promise<any> {
-    const result = await this.authService.pablyToken(id, generatePablyTokenDto.expiry);
-    return {
-      token: result.pabblyToken,
-      pabblyTokenExpiry: result.pabblyTokenExpiry,
-    };
+    return await this.authService.pablyToken(id, generatePablyTokenDto);
+  }
+
+  @Get('/pably-token')
+  async getpabblyToken(@Id() id: string): Promise<any> {
+    if (!mongoose.isValidObjectId(id)) {
+      throw new BadRequestException('Id Not Found');
+    }
+    return await this.apiTokenService.fetchTokens(new Types.ObjectId(`${id}`));
+  }
+
+  @Patch('/pably-token/:id')
+  async updateIsExpiredStatus(
+    @Id() id: string,
+    @Param('id') tokenId: string,
+  ): Promise<any> {
+    if (!mongoose.isValidObjectId(id) || !mongoose.isValidObjectId(tokenId)) {
+      throw new BadRequestException('Invalid Token Id or Invalid User Id');
+    }
+    const token = await this.apiTokenService.updateTokenExpiryStatus(
+      new Types.ObjectId(id),
+      new Types.ObjectId(tokenId),
+    );
+    if (token) {
+      await this.userService.loadExpiredPablyTokens();
+    }
+    return token;
   }
 }

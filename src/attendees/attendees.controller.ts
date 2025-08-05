@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -65,6 +66,21 @@ export class AttendeesController {
     const processingTime = Date.now() - start;
     console.log(`Processing time: ${processingTime} milliseconds`);
     return result ? { ...result, processingTime } : result;
+  }
+
+  @Get('invalid-tags')
+  async getInvalidTags(@Id() adminId: string) {
+    if (mongoose.isValidObjectId(adminId)) {
+      const data = await this.attendeesService.getInvalidTags(
+        new Types.ObjectId(`${adminId}`),
+      );
+
+      return {
+        success: true,
+        data,
+      };
+    }
+    throw new BadRequestException('Invalid Admin ID');
   }
 
   @Get('webinar-participants/:id')

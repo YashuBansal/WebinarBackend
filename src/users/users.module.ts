@@ -32,6 +32,7 @@ import { ProductsModule } from 'src/products/products.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
 import { ExpiredPablyToken, ExpiredPablyTokenSchema } from 'src/schemas/ExpiredPablyToken.schema';
 import { TwoFactorAuthenticationModule } from 'src/two-factor-authentication/two-factor-authentication.module';
+import { ApiAccessTokenModule } from 'src/api-access-token/api-access-token.module';
 
 @Module({
   imports: [
@@ -67,7 +68,7 @@ import { TwoFactorAuthenticationModule } from 'src/two-factor-authentication/two
     NotificationModule,
     forwardRef(() => CustomLeadTypeModule),
     forwardRef(() => ProductsModule),
-    WebsocketModule,
+    WebsocketModule, ApiAccessTokenModule,
     TwoFactorAuthenticationModule
     
   ],

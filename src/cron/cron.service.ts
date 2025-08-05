@@ -56,6 +56,9 @@ export class CronService implements OnModuleInit {
     this.logger.log('Checking for expired plans...');
     await this.userService.deactivateExpiredPlans();
 
+    this.logger.log('Checking for expired Tokens...');
+    await this.userService.deleteexpiryTOkens();
+
     this.logger.log('Resetting daily contact count...');
     await this.userService.resetDailyContactCount();
 

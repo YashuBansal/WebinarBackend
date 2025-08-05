@@ -15,6 +15,7 @@ import {
   ExpiredPablyTokenSchema,
 } from 'src/schemas/ExpiredPablyToken.schema';
 import { TwoFactorAuthenticationModule } from 'src/two-factor-authentication/two-factor-authentication.module';
+import { ApiAccessTokenModule } from 'src/api-access-token/api-access-token.module';
 
 @Module({
   imports: [
@@ -33,7 +34,8 @@ import { TwoFactorAuthenticationModule } from 'src/two-factor-authentication/two
       },
     ]),
     SubscriptionModule,
-    TwoFactorAuthenticationModule
+    TwoFactorAuthenticationModule,
+    ApiAccessTokenModule
   ],
   controllers: [AuthController],
   providers: [AuthService],
@@ -51,7 +53,7 @@ export class AuthModule {
       .apply(AuthTokenMiddleware)
       .forRoutes(
         { path: 'auth/current-user', method: RequestMethod.GET },
-        { path: 'auth/pably-token', method: RequestMethod.POST },
+        { path: 'auth/pably-token*', method: RequestMethod.ALL },
       );
   }
 }

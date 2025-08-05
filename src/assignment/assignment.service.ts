@@ -8,14 +8,8 @@ import {
   NotAcceptableException,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import {
-  ClientSession,
-  Connection,
-  Model,
-  PipelineStage,
-  Types,
-} from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { ClientSession, Model, PipelineStage, Types } from 'mongoose';
 import {
   Assignments,
   AssignmentStatus,
@@ -29,7 +23,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   AttendeesFilterDto,
-  CreateAttendeeDto,
   PreWebinarPostAttendeeDTO,
   SortOrder,
   WebinarAttendeesSortBy,
@@ -57,7 +50,6 @@ import mongoose from 'mongoose';
 export class AssignmentService {
   constructor(
     @InjectModel(Assignments.name) private assignmentsModel: Model<Assignments>,
-    @InjectConnection() private readonly mongoConnection: Connection,
 
     private readonly configService: ConfigService,
     private readonly notificationService: NotificationService,
@@ -132,6 +124,97 @@ export class AssignmentService {
           },
         },
       };
+    }
+
+    const attendanceCountStages: PipelineStage[] = [
+      {
+        $lookup: {
+          from: 'attendees',
+          let: { attendeeEmail: '$email' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$email', '$$attendeeEmail'] },
+                    { $eq: ['$adminId', new Types.ObjectId(adminId)] },
+                    { $ne: ['$isDeleted', true] },
+                  ],
+                },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                registeredCount: {
+                  $sum: { $cond: { if: '$isAttended', then: 0, else: 1 } },
+                },
+                attendedCount: {
+                  $sum: {
+                    $cond: {
+                      if: {
+                        $and: [
+                          { $eq: ['$isAttended', true] }, // Condition 1: isAttended must be true
+                          { $gt: ['$timeInSession', 0] }, // Condition 2: timeInSession must be greater than 0
+                        ],
+                      },
+                      then: 1,
+                      else: 0,
+                    },
+                  },
+                },
+              },
+            },
+          ],
+          as: 'attendanceHistory',
+        },
+      },
+      {
+        $unwind: {
+          path: '$attendanceHistory',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          registeredCount: {
+            $ifNull: ['$attendanceHistory.registeredCount', 0],
+          },
+          attendedCount: { $ifNull: ['$attendanceHistory.attendedCount', 0] },
+        },
+      },
+    ];
+
+    const attendanceCountFilter = {};
+    if (filters.registeredCount) {
+      attendanceCountFilter['registeredCount'] = {};
+      if (filters.registeredCount.$gte !== undefined) {
+        attendanceCountFilter['registeredCount']['$gte'] = parseInt(
+          `${filters.registeredCount.$gte}`,
+          10,
+        );
+      }
+      if (filters.registeredCount.$lte !== undefined) {
+        attendanceCountFilter['registeredCount']['$lte'] = parseInt(
+          `${filters.registeredCount.$lte}`,
+          10,
+        );
+      }
+    }
+    if (filters.attendedCount) {
+      attendanceCountFilter['attendedCount'] = {};
+      if (filters.attendedCount.$gte !== undefined) {
+        attendanceCountFilter['attendedCount']['$gte'] = parseInt(
+          `${filters.attendedCount.$gte}`,
+          10,
+        );
+      }
+      if (filters.attendedCount.$lte !== undefined) {
+        attendanceCountFilter['attendedCount']['$lte'] = parseInt(
+          `${filters.attendedCount.$lte}`,
+          10,
+        );
+      }
     }
 
     const skip = (page - 1) * limit;
@@ -310,6 +393,12 @@ export class AssignmentService {
               },
             },
           ]
+        : []),
+
+      ...attendanceCountStages,
+
+      ...(Object.keys(attendanceCountFilter).length > 0
+        ? [{ $match: attendanceCountFilter }]
         : []),
     ];
 
@@ -937,18 +1026,6 @@ export class AssignmentService {
       unassignedCount: unassignedCount,
     };
   }
-  // } // End of example class
-  // } // End of example class
-
-  // NOTE: You will likely need to adjust your AttendeeService
-  // to include a method like `bulkUpdateAttendees` that accepts an array of update operations
-  /*
-// Example AttendeeService method (inside AttendeeService class)
-async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> {
-   // Assuming this.attendeeModel is your Mongoose Attendee Model
-   return this.attendeeModel.bulkWrite(updates, { session });
-}
-*/
 
   formatPhoneNumber(phoneNumber: string) {
     if (!phoneNumber) return '';
@@ -1087,11 +1164,6 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
         attendee.email,
         webinarId,
       );
-    console.log(
-      'existingAttendee',
-      existingAttendee?.email,
-      existingAttendee?.webinar,
-    );
 
     if (existingAttendee) {
       if (
@@ -1156,11 +1228,7 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
         },
       ]);
 
-    if (
-      !newAttendees ||
-      !Array.isArray(newAttendees) ||
-      newAttendees.length === 0
-    ) {
+    if (!Array.isArray(newAttendees) || newAttendees.length === 0) {
       throw new InternalServerErrorException('Failed to add attendee.');
     }
 
@@ -1232,7 +1300,8 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
           return (
             employee._id.toString() === lastAssigned.assignedTo.toString() &&
             employee.role.toString() ===
-              this.configService.get('appRoles')['EMPLOYEE_REMINDER']
+              this.configService.get('appRoles')['EMPLOYEE_REMINDER'] &&
+            employee.isActive
           );
         },
       );
@@ -1299,8 +1368,6 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
       }
     }
   }
-
-  async randomAssignAttendees(data) {}
 
   async createNewAssignmentForPreWebinar(
     adminId: Types.ObjectId,
@@ -3298,7 +3365,6 @@ async bulkUpdateAttendees(updates: any[], session: ClientSession): Promise<any> 
     // Calculate the UTC Date object for YESTERDAY at 18:30 UTC.
     // This point marks the START boundary (inclusive) of the IST day we're interested in.
     const startOfISTDay = new Date(endOfISTDay.getTime() - 24 * 60 * 60 * 1000); // Subtract 24 hours
-
 
     const filter = {
       adminId,

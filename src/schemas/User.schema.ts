@@ -2,9 +2,9 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 export enum DateFormat {
-  DD_MM_YYYY = "dd-MM-yyyy",
-  MM_DD_YYYY = "MM-dd-yyyy",
-  YYYY_MM_DD = "yyyy-MM-dd",
+  DD_MM_YYYY = 'dd-MM-yyyy',
+  MM_DD_YYYY = 'MM-dd-yyyy',
+  YYYY_MM_DD = 'yyyy-MM-dd',
 }
 
 @Schema({ timestamps: true })
@@ -37,12 +37,17 @@ export class User extends Document {
   })
   phone: string; //Phone
 
-
   @Prop({
     type: Boolean,
     default: true,
   })
   isActive: boolean; //isActive
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  isDeleted: boolean;
 
   @Prop({
     type: String,
@@ -69,7 +74,7 @@ export class User extends Document {
 
   @Prop({
     type: String,
-    maxlength: 1000
+    maxlength: 1000,
   })
   address: string;
 
@@ -170,7 +175,7 @@ export class User extends Document {
   @Prop({
     type: String,
     required: false,
-    uppercase: true
+    uppercase: true,
   })
   gst: string;
 
@@ -190,15 +195,15 @@ export class User extends Document {
   @Prop({
     type: String,
     required: false,
-    select: false
+    select: false,
   })
   whatsappToken: string;
 
-    @Prop({ default: false })
-   isTwoFactorAuthenticationEnabled: boolean;
+  @Prop({ default: false })
+  isTwoFactorAuthenticationEnabled: boolean;
 
   @Prop({ nullable: true })
-   twoFactorAuthenticationSecret?: string;
+  twoFactorAuthenticationSecret?: string;
 }
 
 const UserSchema = SchemaFactory.createForClass(User);

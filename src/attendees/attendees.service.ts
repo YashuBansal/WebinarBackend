@@ -70,6 +70,7 @@ export class AttendeesService {
     private readonly attendeeLogService: AttendeeLogService,
     private readonly customLeadTypeService: CustomLeadTypeService,
     private readonly webinarParticipantService: WebinarParticipantService,
+    private readonly tagService: TagsService,
     // private readonly tagsService: TagsService,
   ) {}
 
@@ -3136,5 +3137,47 @@ export class AttendeesService {
       // Re-throw the error so the calling transaction can catch and handle it
       throw error;
     }
+  }
+
+  async getInvalidTags(adminId: Types.ObjectId) {
+    const tags = await this.tagService.getTagsArray(adminId);
+
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          adminId,
+          tags: { $exists: true, $ne: [] },
+        },
+      },
+
+      { $unwind: '$tags' },
+
+      {
+        $match: {
+          tags: { $nin: ['', null] },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          allTagsUsed: { $addToSet: '$tags' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          invalidTags: {
+            $setDifference: ['$allTagsUsed', tags],
+          },
+        },
+      },
+    ];
+
+    const result = await this.attendeeModel.aggregate(pipeline);
+    if (Array.isArray(result) && result.length > 0) {
+      return result[0].invalidTags || [];
+    }
+
+    return [];
   }
 }

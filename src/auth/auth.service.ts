@@ -25,6 +25,8 @@ import { SubscriptionService } from 'src/subscription/subscription.service';
 import { MailerService } from '@nestjs-modules/mailer';
 import { ExpiredPablyToken } from 'src/schemas/ExpiredPablyToken.schema';
 import { TwoFactorAuthenticationService } from 'src/two-factor-authentication/two-factor-authentication.service';
+import { GeneratePablyTokenDto } from './dto/generatePablyToken.dto';
+import { ApiAccessTokenService } from 'src/api-access-token/api-access-token.service';
 
 @Injectable()
 export class AuthService {
@@ -38,6 +40,7 @@ export class AuthService {
     private readonly subscriptionService: SubscriptionService,
     private readonly mailerService: MailerService,
     private readonly twoFAService: TwoFactorAuthenticationService,
+    private readonly apiTokenService: ApiAccessTokenService,
   ) {}
 
   private readonly logger = new Logger(AuthService.name);
@@ -224,19 +227,11 @@ export class AuthService {
     return this.usersService.createClient(createClientDto, creatorDetailsDto);
   }
 
-  async pablyToken(id: string, expiry?: string): Promise<any> {
+  async pablyToken(id: string, data: GeneratePablyTokenDto): Promise<any> {
+    const { expiry, label } = data;
     const user = await this.userModel.findById(id);
 
     if (!user) throw new NotFoundException('No user found with the given ID.');
-
-    if (user.pabblyToken) {
-      await this.expiredPablyTokenModel.create({
-        token: user.pabblyToken,
-        expiryDate: user.pabblyTokenExpiry,
-        user: user._id,
-      });
-      this.usersService.addExpiredToken(user.pabblyToken);
-    }
 
     const payload = {
       id: user?._id,
@@ -254,11 +249,11 @@ export class AuthService {
       ...(expiresIn && { expiresIn }),
     });
 
-    user.pabblyToken = token;
-    user.pabblyTokenExpiry = expiry ? new Date(expiry) : null;
-    await user.save({ validateBeforeSave: false });
-
-    return { pabblyToken: token, pabblyTokenExpiry: user.pabblyTokenExpiry };
+    return this.apiTokenService.createAccessToken(
+      user._id as Types.ObjectId,
+      token,
+      data,
+    );
   }
 
   async getCurrentUser(id: string): Promise<User> {

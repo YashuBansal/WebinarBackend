@@ -49,6 +49,7 @@ import { TagsModule } from 'src/tags/tags.module';
     CustomLeadTypeModule,
     WebsocketModule,
     WebinarParticipantModule,
+    TagsModule
   ],
   controllers: [AttendeesController],
   providers: [AttendeesService],
@@ -60,6 +61,7 @@ export class AttendeesModule {
       .apply(AuthAdminTokenMiddleware)
       .forRoutes(
         { path: 'attendees', method: RequestMethod.POST },
+        { path: 'attendees/invalid-tags', method: RequestMethod.GET },
         { path: 'attendees/swap', method: RequestMethod.PUT },
         { path: 'attendees/tag', method: RequestMethod.PUT },
         { path: 'attendees/webinar', method: RequestMethod.DELETE },

@@ -39,6 +39,7 @@ import { ProductsService } from 'src/products/products.service';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { ExpiredPablyToken } from 'src/schemas/ExpiredPablyToken.schema';
 import { TwoFactorAuthenticationService } from 'src/two-factor-authentication/two-factor-authentication.service';
+import { ApiAccessTokenService } from 'src/api-access-token/api-access-token.service';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -62,6 +63,7 @@ export class UsersService implements OnModuleInit {
     private readonly notificationService: NotificationService,
     private readonly socketGateway: WebsocketGateway,
     private readonly twofaService: TwoFactorAuthenticationService,
+    private readonly apiTokenService: ApiAccessTokenService,
   ) {}
 
   async onModuleInit() {
@@ -69,9 +71,7 @@ export class UsersService implements OnModuleInit {
   }
 
   async loadExpiredPablyTokens() {
-    const tokens = await this.expiredPablyTokenModel.find({
-      $or: [{ expiryDate: { $exists: false } }, { expiryDate: { $ne: null } }],
-    });
+    const tokens = await this.apiTokenService.fetchExpiredTokens();
     tokens.forEach((token) => this.expiredPablyTokens.add(token.token));
   }
 
@@ -655,10 +655,13 @@ export class UsersService implements OnModuleInit {
       }
     }
 
-    if (result && updateUserInfoDto.planExpiry){
+    if (result && updateUserInfoDto.planExpiry) {
       const planExpiryDate = new Date(updateUserInfoDto.planExpiry);
       planExpiryDate.setHours(23, 59);
-      await this.subscriptionService.updateSubscriptionExpiryDate(result._id as Types.ObjectId, planExpiryDate)
+      await this.subscriptionService.updateSubscriptionExpiryDate(
+        result._id as Types.ObjectId,
+        planExpiryDate,
+      );
     }
 
     return result;
@@ -1226,6 +1229,10 @@ export class UsersService implements OnModuleInit {
     }
   }
 
+  async deleteexpiryTOkens() {
+    await this.apiTokenService.deleteExpiredTokens();
+  }
+
   async alertAdminsForExpiry(): Promise<any> {
     const expiredAdminIds = await this.subscriptionService.getUpcomingExpiry();
     if (!Array.isArray(expiredAdminIds) || expiredAdminIds.length == 0) return;
@@ -1459,5 +1466,10 @@ export class UsersService implements OnModuleInit {
     return {
       message: 'User and associated employees deactivated successfully.',
     };
+  }
+
+  async softDeleteUser(adminId: Types.ObjectId){
+
+    
   }
 }

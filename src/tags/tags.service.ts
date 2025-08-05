@@ -45,4 +45,14 @@ export class TagsService {
     }
     return this.tagModel.find(query).sort({ createdAt: -1 });
   }
+
+  async getTagsArray(adminId: Types.ObjectId): Promise<string[]> {
+    const tags = await this.tagModel.find({ adminId }).lean();
+
+    if (Array.isArray(tags)) {
+      return tags.map((tag) => tag.name);
+    }
+
+    return [];
+  }
 }
