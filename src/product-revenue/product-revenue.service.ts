@@ -34,45 +34,79 @@ export class ProductRevenueService {
           adminId: new Types.ObjectId(adminId),
           $expr: {
             $and: [
-              { 
+              {
                 $gte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  start
-                ]
+                  start,
+                ],
               },
-              { 
+              {
                 $lte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  end
-                ]
-              }
-            ]
-          }
-        }
+                  end,
+                ],
+              },
+            ],
+          },
+        },
       },
       {
         $group: {
           _id: null,
-          totalRevenue: { $sum: '$price' }
-        }
-      }
+          totalRevenue: { $sum: '$price' },
+          totalEnrollments: { $sum: 1 },
+          uniqueAttendees: { $addToSet: '$attendee' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalRevenue: '$totalRevenue',
+          totalEnrollments: '$totalEnrollments',
+          totalCustomers: { $size: '$uniqueAttendees' },
+        },
+      },
     ]);
-    
-    return result[0]?.totalRevenue || 0;
+
+    return result[0];
   }
 
   async getRevenueByLevel(adminId: string, start: Date, end: Date) {
@@ -82,53 +116,77 @@ export class ProductRevenueService {
           adminId: new Types.ObjectId(adminId),
           $expr: {
             $and: [
-              { 
+              {
                 $gte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  start
-                ]
+                  start,
+                ],
               },
-              { 
+              {
                 $lte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  end
-                ]
-              }
-            ]
-          }
-        }
+                  end,
+                ],
+              },
+            ],
+          },
+        },
       },
       {
         $lookup: {
           from: 'products',
           localField: 'product',
           foreignField: '_id',
-          as: 'productData'
-        }
+          as: 'productData',
+        },
       },
       { $unwind: '$productData' },
       {
         $group: {
           _id: '$productData.level',
           totalRevenue: { $sum: '$price' },
-          count: { $sum: 1 }
-        }
+          count: { $sum: 1 },
+        },
       },
-      { $sort: { '_id': 1 } }
+      { $sort: { _id: 1 } },
     ]);
   }
 
@@ -138,102 +196,126 @@ export class ProductRevenueService {
         {
           $match: {
             adminId: new Types.ObjectId(adminId),
-          }
+          },
         },
         {
           $lookup: {
             from: 'products',
             localField: 'product',
             foreignField: '_id',
-            as: 'productData'
-          }
+            as: 'productData',
+          },
         },
         { $unwind: '$productData' },
         { $match: { 'productData.level': 0 } },
-        { $group: { _id: '$attendee' } }
+        { $group: { _id: '$attendee' } },
       ]),
-      
+
       this.enrollmentModel.aggregate([
         {
-          $match: { adminId: new Types.ObjectId(`${adminId}`) }
+          $match: { adminId: new Types.ObjectId(`${adminId}`) },
         },
         {
           $lookup: {
             from: 'products',
             localField: 'product',
             foreignField: '_id',
-            as: 'productData'
-          }
+            as: 'productData',
+          },
         },
         { $unwind: '$productData' },
         {
           $group: {
             _id: '$attendee',
-            maxLevel: { $max: '$productData.level' }
-          }
+            maxLevel: { $max: '$productData.level' },
+          },
         },
         {
           $match: {
-            maxLevel: { $gt: 0 }
-          }
-        }
-      ])
+            maxLevel: { $gt: 0 },
+          },
+        },
+      ]),
     ]);
 
     const totalBase = baseCustomers.length;
     const totalUpgraded = upgradedCustomers.length;
-    
+
     return {
       totalBaseCustomers: totalBase,
       totalUpgradedCustomers: totalUpgraded,
-      adoptionRate: totalBase > 0 ? (totalUpgraded / totalBase) * 100 : 0
+      adoptionRate: totalBase > 0 ? (totalUpgraded / totalBase) * 100 : 0,
     };
   }
 
-  async getTopProducts(adminId: string, start: Date, end: Date, limit = 5){
+  async getTopProducts(adminId: string, start: Date, end: Date, limit = 5) {
     return this.enrollmentModel.aggregate([
       {
         $match: {
           adminId: new Types.ObjectId(adminId),
           $expr: {
             $and: [
-              { 
+              {
                 $gte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  start
-                ]
+                  start,
+                ],
               },
-              { 
+              {
                 $lte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  end
-                ]
-              }
-            ]
-          }
-        }
+                  end,
+                ],
+              },
+            ],
+          },
+        },
       },
       {
         $lookup: {
           from: 'products',
           localField: 'product',
           foreignField: '_id',
-          as: 'productData'
-        }
+          as: 'productData',
+        },
       },
       { $unwind: '$productData' },
       {
@@ -241,44 +323,46 @@ export class ProductRevenueService {
           _id: '$product',
           name: { $first: '$productData.name' },
           totalRevenue: { $sum: '$price' },
-          totalSales: { $sum: 1 }
-        }
+          totalSales: { $sum: 1 },
+        },
       },
       { $sort: { totalRevenue: -1 } },
-      { $limit: limit }
+      { $limit: limit },
     ]);
   }
 
-  async getRevenueByWebinar(adminId: string, limit:number = 5) {
+  async getRevenueByWebinar(adminId: string, limit: number = 5) {
     return this.enrollmentModel.aggregate([
       {
         $match: {
           adminId: new Types.ObjectId(adminId),
-          }
+        },
       },
       {
         $group: {
           _id: '$webinar',
           totalRevenue: { $sum: '$price' },
-          totalEnrollments: { $sum: 1 }
-        }
+          totalEnrollments: { $sum: 1 },
+        },
       },
       {
         $lookup: {
-          from : 'webinars',
+          from: 'webinars',
           localField: '_id',
           foreignField: '_id',
-          as: 'webinarDetails'
-        }
+          as: 'webinarDetails',
+        },
       },
       { $sort: { totalRevenue: -1 } },
-      { $limit: limit},
-      { $project: {
-        _id: 1,
-        totalRevenue: 1,
-        totalEnrollments: 1,
-        webinarName: { $arrayElemAt: ['$webinarDetails.webinarName', 0] }
-      }}
+      { $limit: limit },
+      {
+        $project: {
+          _id: 1,
+          totalRevenue: 1,
+          totalEnrollments: 1,
+          webinarName: { $arrayElemAt: ['$webinarDetails.webinarName', 0] },
+        },
+      },
     ]);
   }
 
@@ -289,47 +373,71 @@ export class ProductRevenueService {
           adminId: new Types.ObjectId(adminId),
           $expr: {
             $and: [
-              { 
+              {
                 $gte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  start
-                ]
+                  start,
+                ],
               },
-              { 
+              {
                 $lte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  end
-                ]
-              }
-            ]
-          }
-        }
+                  end,
+                ],
+              },
+            ],
+          },
+        },
       },
       {
         $group: {
           _id: {
-            year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } } ,
-            month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } }
+            year: { $year: { date: '$createdAt', timezone: 'Asia/Kolkata' } },
+            month: { $month: { date: '$createdAt', timezone: 'Asia/Kolkata' } },
           },
           totalRevenue: { $sum: '$price' },
-          totalEnrollments: { $sum: 1 }
-        }
+          totalEnrollments: { $sum: 1 },
+        },
       },
-      { $sort: { '_id.year': 1, '_id.month': 1 } }
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]);
   }
 
@@ -340,68 +448,92 @@ export class ProductRevenueService {
           adminId: new Types.ObjectId(adminId),
           $expr: {
             $and: [
-              { 
+              {
                 $gte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  start
-                ]
+                  start,
+                ],
               },
-              { 
+              {
                 $lte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$createdAt", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  end
-                ]
-              }
-            ]
-          }
-        }
+                  end,
+                ],
+              },
+            ],
+          },
+        },
       },
       {
         $group: {
-          _id: "$attendee",
-          totalRevenue: { $sum: "$price" },
-          totalPurchases: { $sum: 1 }
-        }
+          _id: '$attendee',
+          totalRevenue: { $sum: '$price' },
+          totalPurchases: { $sum: 1 },
+        },
       },
       { $sort: { totalRevenue: -1 } },
-      { $limit: limit }
+      { $limit: limit },
     ]);
   }
 
-  async getEnrollmentsByProductLevel(adminId: string, level: number){
+  async getEnrollmentsByProductLevel(adminId: string, level: number) {
     return this.enrollmentModel.aggregate([
       {
         $match: {
           adminId: new Types.ObjectId(adminId),
-        }
+        },
       },
       {
         $lookup: {
           from: 'products',
           localField: 'product',
           foreignField: '_id',
-          as: 'productData'
-        }
+          as: 'productData',
+        },
       },
       { $unwind: '$productData' },
       {
         $match: {
-          'productData.level': level
-        }
+          'productData.level': level,
+        },
       },
       {
         $project: {
@@ -411,9 +543,9 @@ export class ProductRevenueService {
           createdAt: 1,
           product: 1,
           webinar: 1,
-          productData: 1
-        }
-      }
+          productData: 1,
+        },
+      },
     ]);
   }
 }

@@ -350,7 +350,7 @@ export class AttendeesService {
           tempAttendees.map((attendee) => ({
             email: attendee.email,
             tags:
-              typeof attendee.tags === 'string' ? attendee.tags.split(',') : [],
+              typeof attendee.tags === 'string' ? attendee.tags.split(',').map((tag) => tag.toLowerCase().trim()) : [],
           })),
           new Types.ObjectId(`${webinar}`),
           new Types.ObjectId(`${adminId}`),
