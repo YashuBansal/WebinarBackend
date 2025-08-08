@@ -70,6 +70,7 @@ export class EnrollmentsService {
     );
 
     const potentialEnrollments = []; // Renamed for clarity
+    console.log(potentialEnrollments);
 
     tagsData.forEach((item) => {
       const attendeeEmail = item.email;
@@ -185,7 +186,7 @@ export class EnrollmentsService {
 
     const { createdBy, webinarName, productName } = createEnrollmentDto;
 
-    if ( webinarName && productName) {
+    if (webinarName && productName) {
       this.attendeeLogService.createSingleAttendeeLog({
         attendee: result.attendee,
         item: '',
@@ -202,14 +203,20 @@ export class EnrollmentsService {
     webinar: string,
     page: number,
     limit: number,
+    productId?: Types.ObjectId,
   ): Promise<any> {
     const skip = (page - 1) * limit;
 
-    const pipeline: PipelineStage[] = [
+    const webinarObjectId = new Types.ObjectId(`${webinar}`);
+    const adminObjectId = new Types.ObjectId(`${adminId}`);
+    const productMatch = productId ? { product: productId } : {};
+
+    const mainPipeline: PipelineStage[] = [
       {
         $match: {
-          webinar: new Types.ObjectId(`${webinar}`),
-          adminId: new Types.ObjectId(`${adminId}`),
+          webinar: webinarObjectId,
+          adminId: adminObjectId,
+          ...productMatch,
         },
       },
       {
@@ -230,7 +237,7 @@ export class EnrollmentsService {
                 $expr: {
                   $and: [
                     { $eq: ['$email', '$$email'] },
-                    { $eq: ['$webinar', new Types.ObjectId(`${webinar}`)] },
+                    { $eq: ['$webinar', webinarObjectId] },
                   ],
                 },
               },
@@ -254,7 +261,7 @@ export class EnrollmentsService {
           from: 'users',
           localField: 'assignedBy',
           foreignField: '_id',
-          as: 'assignedByUser', // ✅ avoid name conflict
+          as: 'assignedByUser',
         },
       },
       {
@@ -291,17 +298,38 @@ export class EnrollmentsService {
       { $limit: limit },
     ];
 
-    const totalEnrollments = await this.enrollmentModel.countDocuments({
-      webinar: new Types.ObjectId(`${webinar}`),
-      adminId: new Types.ObjectId(`${adminId}`),
-    });
+    const revenuePipeline: PipelineStage[] = [
+      {
+        $match: {
+          webinar: webinarObjectId,
+          adminId: adminObjectId,
+          ...productMatch,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$price' },
+        },
+      },
+    ];
+
+    const [result, totalEnrollments, revenueResult] = await Promise.all([
+      this.enrollmentModel.aggregate(mainPipeline),
+      this.enrollmentModel.countDocuments({
+        webinar: webinarObjectId,
+        adminId: adminObjectId,
+        ...productMatch,
+      }),
+      this.enrollmentModel.aggregate(revenuePipeline),
+    ]);
 
     const totalPages = Math.ceil(totalEnrollments / limit);
+    const totalRevenue =
+      revenueResult.length > 0 ? revenueResult[0].totalRevenue : 0;
 
-    const result = await this.enrollmentModel.aggregate(pipeline);
-    return { page, totalPages, result };
+    return { page, totalPages, result, totalEnrollments, totalRevenue };
   }
-
   // async getAttendeeEnrollments(
   //   adminId: string,
   //   attendeeEmail: string,
@@ -309,17 +337,13 @@ export class EnrollmentsService {
   //   limit: number,
   // ): Promise<any> {
   //   const skip = (page - 1) * limit;
-
   //   const pipeline = {
   //     attendee: attendeeEmail,
   //     adminId: new Types.ObjectId(`${adminId}`),
   //   };
-
   //   const totalEnrollments =
   //     await this.enrollmentModel.countDocuments(pipeline);
-
   //   const totalPages = Math.ceil(totalEnrollments / limit);
-
   //   const result = await this.enrollmentModel
   //     .find(pipeline)
   //     .populate('webinar attendee product')

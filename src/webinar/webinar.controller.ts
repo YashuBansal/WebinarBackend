@@ -15,6 +15,7 @@ import { WebinarService } from './webinar.service';
 import { CreateWebinarDto, UpdateWebinarDto } from './dto/createWebinar.dto';
 import { WebinarFilterDTO } from './dto/webinar-filter.dto';
 import { UsersService } from 'src/users/users.service';
+import mongoose from 'mongoose';
 @Controller('webinar')
 export class WebinarController {
   constructor(
@@ -59,7 +60,26 @@ export class WebinarController {
     if (!id || !adminId) {
       throw new NotAcceptableException('Invalid request');
     }
-    return await this.webinarService.getEmployeeWebinars(employeeId|| id, adminId);
+    return await this.webinarService.getEmployeeWebinars(
+      employeeId || id,
+      adminId,
+    );
+  }
+
+  @Get(':id')
+  async getWebinarById(@Id() adminId: string, @Param('id') webinarId: string) {
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(webinarId)
+    ) {
+      throw new NotAcceptableException('Invalid Admin Id or webinar Id');
+    }
+    const result = await this.webinarService.getWebinar(webinarId, adminId);
+    return {
+      message: 'Webinar Fetched Successfully',
+      data: result,
+      success: true,
+    };
   }
 
   @Post()

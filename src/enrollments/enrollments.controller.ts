@@ -17,6 +17,7 @@ import {
   UpdateEnrollmentDto,
 } from './dto/enrollment.dto';
 import { EnrollmentsService } from './enrollments.service';
+import mongoose, { Types } from 'mongoose';
 
 @Controller('enrollments')
 export class EnrollmentsController {
@@ -37,16 +38,18 @@ export class EnrollmentsController {
   @Get('webinar/:id')
   async getEnrollment(
     @Param('id') webinarId: string,
-    @Query() query: { page?: string; limit?: string },
+    @Query() query: { page?: string; limit?: string, product: string },
     @AdminId() adminId: string,
   ): Promise<any> {
     const page = Number(query.page) ? Number(query.page) : 1;
     const limit = Number(query.limit) ? Number(query.limit) : 25;
+    const productId = mongoose.isValidObjectId(query.product) ? new Types.ObjectId(query.product) : undefined
     const enrollment = await this.enrollmentsService.getEnrollment(
       adminId,
       webinarId,
       page,
       limit,
+      productId
     );
 
     return enrollment;

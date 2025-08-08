@@ -3337,19 +3337,8 @@ export class AssignmentService {
     adminId: Types.ObjectId,
     session?: ClientSession,
   ) {
-    console.log('Getting employee daily contact count...');
-    // 1. Get the current date/time in UTC.
-    // MongoDB stores dates in UTC by default, and Date objects in JS are also time zone aware
-    // but manipulations often involve UTC or local time depending on the method.
     const now = new Date();
 
-    // 2. Calculate the start and end boundaries for "today" in IST (UTC+5:30).
-    // IST is UTC + 5 hours 30 minutes.
-    // This means midnight in IST is 18:30 UTC the *previous* day.
-    // So, "today" in IST spans from 18:30 UTC yesterday to 18:30 UTC today.
-
-    // Calculate the UTC Date object for TODAY at 18:30 UTC.
-    // This point marks the END boundary (exclusive) of the IST day we're interested in.
     const endOfISTDay = new Date(
       Date.UTC(
         now.getUTCFullYear(),
@@ -3362,16 +3351,14 @@ export class AssignmentService {
       ),
     );
 
-    // Calculate the UTC Date object for YESTERDAY at 18:30 UTC.
-    // This point marks the START boundary (inclusive) of the IST day we're interested in.
-    const startOfISTDay = new Date(endOfISTDay.getTime() - 24 * 60 * 60 * 1000); // Subtract 24 hours
+    const startOfISTDay = new Date(endOfISTDay.getTime() - 24 * 60 * 60 * 1000); 
 
     const filter = {
       adminId,
       status: AssignmentStatus.ACTIVE,
       createdAt: {
-        $gte: startOfISTDay, // Greater than or equal to the start of the IST day
-        $lt: endOfISTDay, // Less than the end of the IST day
+        $gte: startOfISTDay, 
+        $lt: endOfISTDay, 
       },
     };
     const pipeline: PipelineStage[] = [

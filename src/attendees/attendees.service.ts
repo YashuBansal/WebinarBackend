@@ -79,25 +79,6 @@ export class AttendeesService {
     return result;
   }
 
-  //   async addAttendees(
-  //   attendees: PreWebinarPostAttendeeDTO[], // Correct: Use array type `[]`
-  // ): Promise<Attendee[]> {
-  //   if (!attendees || attendees.length === 0) {
-  //     return [];
-  //   }
-
-  //   const adminId = attendees[0].adminId;
-  //   const tags = await this.tagsService.getTags(adminId);
-
-  //   const validTagsSet = new Set(tags.map((tag) => tag.name));
-
-  //   const filteredAttendees = attendees.map((attendee) => ({
-  //     ...attendee,
-  //     tags: (attendee.tags || []).filter((tag) => typeof tag === 'string' && validTagsSet.has(tag)),
-  //   }));
-
-  //   return this.attendeeModel.create(filteredAttendees);
-  // }
 
   checkLength(arr?: string[]): boolean {
     return !!(Array.isArray(arr) && arr.length);
@@ -215,7 +196,7 @@ export class AttendeesService {
             : [];
           const newTags = tags.split(',').map((tag) => tag.trim());
           tags = Array.from(new Set([...preWebinarTags, ...newTags]))
-            .filter((tag) => tag.trim() !== '') // Remove empty tags
+            .filter((tag) => tag.trim() !== '') 
             .join(',');
         }
 

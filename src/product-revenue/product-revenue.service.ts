@@ -186,7 +186,7 @@ export class ProductRevenueService {
           count: { $sum: 1 },
         },
       },
-      { $sort: { _id: 1 } },
+      { $sort: { totalRevenue: -1, count: -1 } },
     ]);
   }
 
@@ -326,7 +326,7 @@ export class ProductRevenueService {
           totalSales: { $sum: 1 },
         },
       },
-      { $sort: { totalRevenue: -1 } },
+      { $sort: { totalRevenue: -1, totalSales: -1 } },
       { $limit: limit },
     ]);
   }
@@ -353,7 +353,7 @@ export class ProductRevenueService {
           as: 'webinarDetails',
         },
       },
-      { $sort: { totalRevenue: -1 } },
+      { $sort: { totalRevenue: -1, totalEnrollments: -1 } },
       { $limit: limit },
       {
         $project: {
@@ -509,7 +509,7 @@ export class ProductRevenueService {
           totalPurchases: { $sum: 1 },
         },
       },
-      { $sort: { totalRevenue: -1 } },
+      { $sort: { totalRevenue: -1, totalPurchases: -1 } },
       { $limit: limit },
     ]);
   }
