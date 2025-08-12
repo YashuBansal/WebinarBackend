@@ -1,4 +1,12 @@
-import { IsMongoId, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsMongoId,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class CreateEnrollmentDto {
   @IsString()
@@ -12,7 +20,7 @@ export class CreateEnrollmentDto {
   @IsString()
   @IsNotEmpty()
   product: string;
-  
+
   @IsOptional()
   @IsString()
   createdBy?: string;
@@ -25,11 +33,27 @@ export class CreateEnrollmentDto {
   @IsString()
   productName?: string;
 
-
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   adminId: string;
+}
+
+export class ExportEnrollmentDTO {
+  @IsOptional()
+  @IsString()
+  product?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  columns: string[];
+
+  @IsMongoId()
+  webinarId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  fileName: string;
 }
 
 export class UpdateEnrollmentDto {
@@ -38,7 +62,6 @@ export class UpdateEnrollmentDto {
   @IsNotEmpty()
   product?: string;
 }
-
 
 export class GetEnrollmentsByProductLevelDto {
   @IsString()
@@ -55,7 +78,7 @@ export class GetEnrollmentsByEmailDto {
   email: string;
 }
 
-export class EnrollmentsByLevelOrProductDTO{
+export class EnrollmentsByLevelOrProductDTO {
   @IsOptional()
   @IsString()
   @IsNotEmpty()

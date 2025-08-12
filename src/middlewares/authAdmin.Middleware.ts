@@ -26,6 +26,7 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
     console.log(' ----seomtid---- > ', req.query);
 
     if (!access_token && !pabbly_access_token && !queryAccessToken) {
+      console.error('Auth Admin User -> Access Token not found')
       throw new UnauthorizedException('Access token not found.');
     }
 
@@ -37,7 +38,42 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
     }
 
     try {
-      if (pabbly_access_token) {
+      if (queryAccessToken) {
+        console.log('im here', queryAccessToken);
+        const decodeOptions = {
+          secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
+        };
+
+        const decodedToken = this.jwtService.verify(
+          queryAccessToken,
+          decodeOptions,
+        );
+
+        console.log(
+          this.userService.expiredPablyTokens.has(queryAccessToken),
+          this.userService.expiredPablyTokens,
+        );
+
+        if (this.userService.expiredPablyTokens.has(queryAccessToken)) {
+          throw new UnauthorizedException(
+            'Unauthorized, Invalid API access token.',
+          );
+        }
+
+        if (
+          decodedToken &&
+          decodedToken.role === this.configService.get('appRoles').ADMIN
+        ) {
+          req.id = decodedToken.id;
+          req.role = decodedToken.role;
+          req.plan = decodedToken.plan;
+          next();
+        } else {
+          throw new UnauthorizedException(
+            'Unauthorized, Invalid Pabbly access token.',
+          );
+        }
+      } else if (pabbly_access_token) {
         const decodeOptions = {
           secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
         };
@@ -83,37 +119,6 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
           next();
         } else {
           throw new UnauthorizedException('Unauthorized access token.');
-        }
-      } else if (queryAccessToken) {
-        const decodeOptions = {
-          secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
-        };
-
-        const decodedToken = this.jwtService.verify(
-          queryAccessToken,
-          decodeOptions,
-        );
-
-        console.log(this.userService.expiredPablyTokens.has(queryAccessToken), this.userService.expiredPablyTokens)
-
-        if (this.userService.expiredPablyTokens.has(queryAccessToken)) {
-          throw new UnauthorizedException(
-            'Unauthorized, Invalid API access token.',
-          );
-        }
-
-        if (
-          decodedToken &&
-          decodedToken.role === this.configService.get('appRoles').ADMIN
-        ) {
-          req.id = decodedToken.id;
-          req.role = decodedToken.role;
-          req.plan = decodedToken.plan;
-          next();
-        } else {
-          throw new UnauthorizedException(
-            'Unauthorized, Invalid Pabbly access token.',
-          );
         }
       }
     } catch (error) {

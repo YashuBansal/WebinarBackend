@@ -31,6 +31,7 @@ import { Types } from 'mongoose';
         req.cookies[this.configService.get('ACCESS_TOKEN_NAME')];
   
       if (!access_token) {
+        console.error('Get Admin Id -> Access Token not found')
         throw new UnauthorizedException('Access token not found.');
       }
   

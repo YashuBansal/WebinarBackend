@@ -28,7 +28,7 @@ async function bootstrap() {
 
   // Set global prefix
   app.setGlobalPrefix('api/v1');
-  app.useGlobalPipes(new ValidationPipe()) //  global validations for all @Body()
+  app.useGlobalPipes(new ValidationPipe()) 
 
   await app.listen(PORT);
   console.log(`process running on PORT ${PORT} ==================================== `)

@@ -24,7 +24,7 @@ import { WebinarFilterDTO } from 'src/webinar/dto/webinar-filter.dto';
 import { EmployeeFilterDTO } from 'src/users/dto/employee-filter.dto';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import * as path from 'path';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { UserActivityFilterDTO } from 'src/user-activity/dto/user-activity.dto';
 import {
   ExportEmployeeAssignmentDTO,
@@ -35,6 +35,7 @@ import {
   GetBillingHistoryDto,
 } from 'src/billing-history/dto/bililngHistory.dto';
 import { ProductRevenueExportDTO } from 'src/products/dto/product-level.dto';
+import { ExportEnrollmentDTO } from 'src/enrollments/dto/enrollment.dto';
 
 @Controller('export-excel')
 export class ExportExcelController {
@@ -445,6 +446,41 @@ export class ExportExcelController {
         adminId,
         body.fileName,
       );
+
+      // Stream the file to the client
+      res.setHeader('Content-Disposition', `attachment; filename="users.xlsx"`);
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+
+      const fileStream = fs.createReadStream(filePath.filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to download Excel file. Please try again later.',
+        error: error.message,
+      });
+    }
+  }
+
+  @Post('enrollments')
+  async downloadEnrollments(
+    @Body()
+    body: ExportEnrollmentDTO,
+    @Id() adminId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    try {
+      if (!adminId)
+        throw new BadRequestException(
+          'Admin ID is required to download Employees Excel file.',
+        );
+      const filePath =
+        await this.exportExcelService.generateExcelForEnrollments(
+          body,
+          adminId,
+        );
 
       // Stream the file to the client
       res.setHeader('Content-Disposition', `attachment; filename="users.xlsx"`);

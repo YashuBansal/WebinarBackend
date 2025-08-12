@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { Worker } from 'worker_threads';
 import * as path from 'path';
 import { GetClientsFilterDto } from 'src/users/dto/filters.dto';
@@ -30,12 +30,11 @@ import { UserActivityFilterDTO } from 'src/user-activity/dto/user-activity.dto';
 import { AssignmentService } from 'src/assignment/assignment.service';
 import { AssignmentStatus } from 'src/schemas/Assignments.schema';
 import { BillingHistoryService } from 'src/billing-history/billing-history.service';
-import {
-  ExportBillingHistoryDTO,
-  GetBillingHistoryDto,
-} from 'src/billing-history/dto/bililngHistory.dto';
+import { ExportBillingHistoryDTO } from 'src/billing-history/dto/bililngHistory.dto';
 import { ProductRevenueExportDTO } from 'src/products/dto/product-level.dto';
 import { ProductRevenueService } from 'src/product-revenue/product-revenue.service';
+import { EnrollmentsService } from 'src/enrollments/enrollments.service';
+import { ExportEnrollmentDTO } from 'src/enrollments/dto/enrollment.dto';
 @Injectable()
 export class ExportExcelService {
   constructor(
@@ -50,6 +49,7 @@ export class ExportExcelService {
     private readonly assignmentService: AssignmentService,
     private readonly billingService: BillingHistoryService,
     private readonly productRevenueService: ProductRevenueService,
+    private readonly enrollService: EnrollmentsService,
   ) {}
 
   emitProgress(socketId: null | string, value: number) {
@@ -939,6 +939,77 @@ export class ExportExcelService {
       fileName: fileName,
       fileSize: fileData.fileSize,
       filters: filterData,
+    });
+
+    updateProgress(100);
+    return fileData;
+  }
+
+  async generateExcelForEnrollments(
+    data: ExportEnrollmentDTO,
+    adminId: string,
+  ): Promise<UserDocumentResponse> {
+    const socketId = this.websocketGateway.activeUsers.get(String(adminId));
+    let lastProgress = 0;
+    const updateProgress = (current) => {
+      if (current - lastProgress >= 5) {
+        this.emitProgress(socketId, current);
+        lastProgress = current;
+      }
+    };
+
+    updateProgress(10);
+
+    const { webinarId, product, fileName, columns } = data;
+
+    const productId = mongoose.isValidObjectId(product)
+      ? new Types.ObjectId(product)
+      : undefined;
+
+    const aggregationResult = await this.enrollService.getEnrollment(
+      adminId,
+      webinarId,
+      1,
+      1000,
+      productId,
+    );
+    updateProgress(50);
+
+    const userDir = this.getUserDirectory(adminId);
+    const filePath = path.join(userDir, fileName);
+
+    let arrayData = [];
+
+    if (Array.isArray(aggregationResult.result)) {
+      arrayData = aggregationResult.result.map((item) => ({
+        ...item,
+        assignedBy: item.assignedBy ? item.assignedBy : 'API',
+      }));
+    }
+
+    const payload = {
+      data: arrayData,
+      columns: columns.map((col) => ({
+        header: col,
+        key: col,
+        width: 20,
+      })),
+      filePath,
+      isKey: true,
+    };
+
+    const workerPath = path.resolve(
+      __dirname,
+      '../workers/generate-excel.worker.js',
+    );
+    const fileData = await this.generateExcel(payload, workerPath);
+    updateProgress(80);
+    this.createUserDocuments({
+      userId: adminId,
+      filePath: filePath,
+      fileName: fileName,
+      fileSize: fileData.fileSize,
+      filters: {},
     });
 
     updateProgress(100);

@@ -49,7 +49,7 @@ import { TagsModule } from 'src/tags/tags.module';
     CustomLeadTypeModule,
     WebsocketModule,
     WebinarParticipantModule,
-    TagsModule
+    TagsModule,
   ],
   controllers: [AttendeesController],
   providers: [AttendeesService],
@@ -57,31 +57,32 @@ import { TagsModule } from 'src/tags/tags.module';
 })
 export class AttendeesModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(AuthAdminTokenMiddleware)
-      .forRoutes(
-        { path: 'attendees', method: RequestMethod.POST },
-        { path: 'attendees/invalid-tags', method: RequestMethod.GET },
-        { path: 'attendees/swap', method: RequestMethod.PUT },
-        { path: 'attendees/tag', method: RequestMethod.PUT },
-        { path: 'attendees/webinar', method: RequestMethod.DELETE },
-        {
-          path: 'attendees/webinar-participants/:id',
-          method: RequestMethod.GET,
-        },
-        { path: 'attendees/all', method: RequestMethod.DELETE },
-      );
+    consumer.apply(AuthAdminTokenMiddleware).forRoutes(
+      { path: 'attendees', method: RequestMethod.POST },
+      { path: 'attendees/invalid-tags', method: RequestMethod.GET },
+      { path: 'attendees/swap', method: RequestMethod.PUT },
+      { path: 'attendees/tag', method: RequestMethod.PUT },
+      { path: 'attendees/webinar', method: RequestMethod.DELETE },
+      {
+        path: 'attendees/webinar-participants/:id',
+        method: RequestMethod.GET,
+      },
+      { path: 'attendees/all', method: RequestMethod.DELETE },
+    );
 
     consumer
       .apply(CompressionMiddleware)
       .forRoutes(
         { path: 'attendees/webinar', method: RequestMethod.GET },
-        { path: 'attendees/grouped', method: RequestMethod.POST },
+        { path: 'attendees/grouped', method: RequestMethod.ALL },
       );
 
     consumer
       .apply(AuthTokenMiddleware, GetAdminIdMiddleware)
-      .exclude({ path: 'attendees/webinar', method: RequestMethod.GET })
+      .exclude(
+        { path: 'attendees/webinar', method: RequestMethod.GET },
+        { path: 'attendees/grouped', method: RequestMethod.ALL },
+      )
       .forRoutes(
         { path: 'attendees', method: RequestMethod.GET },
         { path: 'attendees/:email', method: RequestMethod.GET },
@@ -93,7 +94,7 @@ export class AttendeesModule {
       .apply(AuthAdminTokenMiddleware, ValidateBodyFilters)
       .forRoutes(
         { path: 'attendees/webinar', method: RequestMethod.GET },
-        { path: 'attendees/grouped', method: RequestMethod.POST },
+        { path: 'attendees/grouped', method: RequestMethod.ALL },
       );
   }
 }

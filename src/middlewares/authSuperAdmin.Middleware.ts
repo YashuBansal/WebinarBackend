@@ -22,6 +22,7 @@ export class AuthSuperAdminMiddleware implements NestMiddleware {
     const pabbly_access_token = this.extractTokenFromHeader(req);
 
     if (!access_token && !pabbly_access_token) {
+      console.error('Auth Super Admin User -> Access Token not found')
       throw new UnauthorizedException('Access token not found.');
     }
 

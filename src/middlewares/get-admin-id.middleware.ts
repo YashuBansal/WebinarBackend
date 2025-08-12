@@ -21,6 +21,7 @@ export class GetAdminIdMiddleware implements NestMiddleware {
 
 
     if (!access_token) {
+      console.error('Get Admin Id -> Access Token not found')
       throw new UnauthorizedException('Access token not found.');
     }
 

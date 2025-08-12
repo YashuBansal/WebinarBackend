@@ -19,6 +19,7 @@ import { AssignmentModule } from 'src/assignment/assignment.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
 import { BillingHistoryModule } from 'src/billing-history/billing-history.module';
 import { ProductRevenueModule } from 'src/product-revenue/product-revenue.module';
+import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
 
 @Module({
   imports: [
@@ -34,7 +35,8 @@ import { ProductRevenueModule } from 'src/product-revenue/product-revenue.module
     AssignmentModule,
     WebsocketModule,
     BillingHistoryModule,
-    ProductRevenueModule
+    ProductRevenueModule,
+    EnrollmentsModule
   ],
   controllers: [ExportExcelController],
   providers: [ExportExcelService],
@@ -68,6 +70,10 @@ export class ExportExcelModule {
       },
       {
         path: 'export-excel/employees',
+        method: RequestMethod.POST,
+      },
+      {
+        path: 'export-excel/enrollments',
         method: RequestMethod.POST,
       },
       { path: 'export-excel/user-documents', method: RequestMethod.GET },

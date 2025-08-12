@@ -13,6 +13,7 @@ export class AuthActiveUserMiddleware implements NestMiddleware {
 
   async use(req /*:  Request */, res: Response, next: NextFunction) {
     if (!req.id) {
+      console.error('Auth Active User -> Access Token not found')
       throw new UnauthorizedException('Access token not found.');
     }
 

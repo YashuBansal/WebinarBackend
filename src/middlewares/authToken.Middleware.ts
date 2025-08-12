@@ -19,6 +19,7 @@ export class AuthTokenMiddleware implements NestMiddleware {
       req.cookies[this.configService.get('ACCESS_TOKEN_NAME')];
 
     if (!access_token) {
+      console.error('Auth Token User -> Access Token not found')
       throw new UnauthorizedException('Access token not found.');
     }
 

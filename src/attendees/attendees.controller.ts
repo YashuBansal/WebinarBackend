@@ -21,6 +21,7 @@ import {
   DeleteAllAttendeesDTO,
   DeleteWebinarAttendeesDTO,
   FetchGroupedAttendeesDTO,
+  FetchGroupedAttendeesForAPIDTO,
   GetAttendeesDTO,
   ImportAttendeesDTO,
   SwapAttendeeFieldsDTO,
@@ -97,6 +98,27 @@ export class AttendeesController {
     );
   }
 
+    @Get('grouped')
+  async fechtGroupedAttendeesForAPI(
+    @Query() query: FetchGroupedAttendeesForAPIDTO,
+    @Id() adminId: string  ,
+  ) {
+    const start = Date.now();
+    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    console.log('im here', query)
+    const result = await this.attendeesService.fetchGroupedAttendees(
+      new Types.ObjectId(`${adminId}`),
+      page,
+      limit,
+      query.filters,
+      query.sort,
+    );
+    const processingTime = Date.now() - start;
+    console.log(`Processing time: ${processingTime} milliseconds`);
+    return { ...result, processingTime };
+  }
+
   @Get(':email')
   async getAttendee(
     @Param('email') email: string,
@@ -126,6 +148,8 @@ export class AttendeesController {
     console.log(`Processing time: ${processingTime} milliseconds`);
     return { ...result, processingTime };
   }
+
+
 
   @Put('tag')
   async updateAttendeeTag(

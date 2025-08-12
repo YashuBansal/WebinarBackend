@@ -79,7 +79,6 @@ export class AttendeesService {
     return result;
   }
 
-
   checkLength(arr?: string[]): boolean {
     return !!(Array.isArray(arr) && arr.length);
   }
@@ -196,7 +195,7 @@ export class AttendeesService {
             : [];
           const newTags = tags.split(',').map((tag) => tag.trim());
           tags = Array.from(new Set([...preWebinarTags, ...newTags]))
-            .filter((tag) => tag.trim() !== '') 
+            .filter((tag) => tag.trim() !== '')
             .join(',');
         }
 
@@ -331,7 +330,11 @@ export class AttendeesService {
           tempAttendees.map((attendee) => ({
             email: attendee.email,
             tags:
-              typeof attendee.tags === 'string' ? attendee.tags.split(',').map((tag) => tag.toLowerCase().trim()) : [],
+              typeof attendee.tags === 'string'
+                ? attendee.tags
+                    .split(',')
+                    .map((tag) => tag.toLowerCase().trim())
+                : [],
           })),
           new Types.ObjectId(`${webinar}`),
           new Types.ObjectId(`${adminId}`),
@@ -1903,6 +1906,81 @@ export class AttendeesService {
       this.checkLength(filters.reminderLastStatus) ||
       this.checkLength(filters.tags);
 
+    const parseNum = (val) => {
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string' && parseInt(val, 10) >= 0) {
+        return parseInt(val, 10);
+      }
+      return null;
+    };
+
+    const timeInSessionFilter = {};
+    const timeInSession = filters.timeInSession;
+
+    if (timeInSession) {
+      timeInSessionFilter['timeInSession'] = {};
+
+      if (timeInSession.$gte !== undefined) {
+        const gteValue = parseNum(timeInSession.$gte);
+        if (gteValue !== null) {
+          timeInSessionFilter['timeInSession'].$gte = gteValue;
+        }
+      }
+
+      if (timeInSession.$lte !== undefined) {
+        const lteValue = parseNum(timeInSession.$lte);
+        if (lteValue !== null) {
+          timeInSessionFilter['timeInSession'].$lte = lteValue;
+        }
+      }
+    }
+
+    const attendedWebinarCountFilter = {};
+    const attendedWebinarCount = filters.attendedWebinarCount;
+
+    if (attendedWebinarCount) {
+      attendedWebinarCountFilter['attendedWebinarCount'] = {};
+
+      if (attendedWebinarCount.$gte !== undefined) {
+        const gteValue = parseNum(attendedWebinarCount.$gte);
+        if (gteValue !== null) {
+          attendedWebinarCountFilter['attendedWebinarCount'].$gte = gteValue;
+        }
+      }
+
+      if (attendedWebinarCount.$lte !== undefined) {
+        const lteValue = parseNum(attendedWebinarCount.$lte);
+        if (lteValue !== null) {
+          attendedWebinarCountFilter['attendedWebinarCount'].$lte = lteValue;
+        }
+      }
+    }
+
+    const registeredWebinarCountFilter = {};
+    const registeredWebinarCount = filters.registeredWebinarCount;
+
+    if (registeredWebinarCount) {
+      registeredWebinarCountFilter['registeredWebinarCount'] = {};
+
+      if (registeredWebinarCount.$gte !== undefined) {
+        const gteValue = parseNum(registeredWebinarCount.$gte);
+        if (gteValue !== null) {
+          registeredWebinarCountFilter['registeredWebinarCount'].$gte =
+            gteValue;
+        }
+      }
+
+      if (registeredWebinarCount.$lte !== undefined) {
+        const lteValue = parseNum(registeredWebinarCount.$lte);
+        if (lteValue !== null) {
+          registeredWebinarCountFilter['registeredWebinarCount'].$lte =
+            lteValue;
+        }
+      }
+    }
+
+    console.log(timeInSessionFilter, attendedWebinarCountFilter, registeredWebinarCountFilter)
+
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -2025,15 +2103,9 @@ export class AttendeesService {
 
       {
         $match: {
-          ...(filters.timeInSession && {
-            timeInSession: filters.timeInSession,
-          }),
-          ...(filters.attendedWebinarCount && {
-            attendedWebinarCount: filters.attendedWebinarCount,
-          }),
-          ...(filters.registeredWebinarCount && {
-            registeredWebinarCount: filters.registeredWebinarCount,
-          }),
+          ...timeInSessionFilter,
+          ...attendedWebinarCountFilter,
+          ...registeredWebinarCountFilter,
           ...(Array.isArray(filters.locations) &&
             filters.locations.length > 0 && {
               locations: {

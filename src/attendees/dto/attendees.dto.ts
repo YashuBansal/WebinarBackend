@@ -258,7 +258,7 @@ export class AttendeesFilterDto {
   @IsOptional()
   @IsObject()
   attendedCount?: RangeNumberDto;
-  
+
   @IsOptional()
   @IsObject()
   registeredCount?: RangeNumberDto;
@@ -423,6 +423,26 @@ export class FetchGroupedAttendeesDTO {
   sort?: GroupedAttendeesSortObject;
 }
 
+export class FetchGroupedAttendeesForAPIDTO {
+  @IsNotEmpty()
+  @ValidateNested()
+  @Type(() => GroupedAttendeesFilterDto)
+  filters: GroupedAttendeesFilterDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GroupedAttendeesSortObject)
+  sort?: GroupedAttendeesSortObject;
+
+  @IsOptional()
+  @IsNumberString()
+  page?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  limit?: string;
+}
+
 export class GetAttendeesDTO {
   @IsMongoId()
   webinarId: string;
@@ -579,7 +599,6 @@ export class DeleteAllAttendeesDTO {
   attendees: string[];
 }
 
-
 export class UpdateAttendeeTagDTO {
   @IsArray()
   @IsNotEmpty()
@@ -587,7 +606,7 @@ export class UpdateAttendeeTagDTO {
   emails: string[];
 
   @IsOptional()
-  @IsMongoId( )
+  @IsMongoId()
   webinar: string;
 
   @IsString()
