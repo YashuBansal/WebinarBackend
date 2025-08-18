@@ -89,8 +89,17 @@ export class ProductRevenueController {
     @Id() adminId: string,
     @Query() params: RevenueDto,
   ) {
-    const result =
-      await this.productRevenueService.getRevenueByWebinar(adminId, parseInt(params.limit) || 5);
+    const { startDate, endDate } = this.productRevenueService.validateDate(
+      params.start,
+      params.end,
+    );
+
+    const result = await this.productRevenueService.getRevenueByWebinar(
+      adminId,
+      startDate,
+      endDate,
+      parseInt(params.limit) || 5,
+    );
 
     return {
       success: true,

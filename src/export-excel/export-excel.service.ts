@@ -661,9 +661,15 @@ export class ExportExcelService {
           header: 'Enrollments',
         },
       ];
+       const { startDate, endDate } = this.productRevenueService.validateDate(
+        startStr,
+        endStr,
+      );
 
       const result = await this.productRevenueService.getRevenueByWebinar(
         adminId,
+        startDate,
+        endDate,
         limit,
       );
 

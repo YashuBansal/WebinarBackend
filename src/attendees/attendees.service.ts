@@ -156,12 +156,31 @@ export class AttendeesService {
           },
         );
 
-        attendeesForUpdate = uniquePrevAttendeesToUpdate.map((attendee) => ({
-          ...attendee,
-          phone: attendee.phone || prevAttendeesMap.get(attendee.email).phone,
-          attendeeId: prevAttendeesMap.get(attendee.email)
-            ._id as Types.ObjectId,
-        }));
+        attendeesForUpdate = uniquePrevAttendeesToUpdate.map((attendee) => {
+          let tags = '';
+          if (typeof attendee.tags === 'string') {
+            const tagArray = Array.from(
+              new Set(
+                attendee.tags
+                  .split(',')
+                  .map((tag) => tag.toLowerCase().trim())
+                  .filter(Boolean),
+              ),
+            );
+
+            tags = tagArray.join(',');
+          }
+
+          const obj = {
+            ...attendee,
+            phone: attendee.phone || prevAttendeesMap.get(attendee.email).phone,
+            attendeeId: prevAttendeesMap.get(attendee.email)
+              ._id as Types.ObjectId,
+            tags,
+          };
+          return obj;
+        });
+        // console.log('attendes for update', attendeesForUpdate)
       }
     }
 
@@ -170,7 +189,7 @@ export class AttendeesService {
         webinar: new Types.ObjectId(`${webinar}`),
         adminId: new Types.ObjectId(`${adminId}`),
         isAttended: false,
-        email: { $in: tempAttendees.map((a) => a.email) },
+        email: { $in: attendees.map((a) => a.email) },
       });
 
       const similarPreWebinarAttendeesMap = new Map();
@@ -207,6 +226,36 @@ export class AttendeesService {
           tags,
         };
       });
+      console.log(similarPreWebinarAttendeesMap);
+
+      attendeesForUpdate = attendeesForUpdate.map((attendee) => {
+        let tags = attendee.tags || '';
+        console.log(
+          similarPreWebinarAttendeesMap.has(attendee.email),
+          attendee.tags,
+        );
+        if (similarPreWebinarAttendeesMap.has(attendee.email)) {
+          const preWebinarAttendee = similarPreWebinarAttendeesMap.get(
+            attendee.email,
+          );
+          const preWebinarTags = Array.isArray(preWebinarAttendee.tags)
+            ? preWebinarAttendee.tags
+            : [];
+          const newTags = tags.split(',').map((tag) => tag.trim());
+          console.log(preWebinarTags, newTags);
+
+          tags = Array.from(new Set([...preWebinarTags, ...newTags]))
+            .filter((tag) => tag.trim() !== '')
+            .join(',');
+        }
+
+        return {
+          ...attendee,
+          tags,
+        };
+      });
+
+      // console.log('atendd',attendeesForUpdate)
     }
 
     const allLastNamesBlank = tempAttendees.every(
@@ -286,6 +335,11 @@ export class AttendeesService {
                   timeInSession: attendee.timeInSession || undefined,
                   location: attendee.location || undefined,
                   source: attendee.source || undefined,
+                  tags:
+                    typeof attendee.tags === 'string' &&
+                    attendee.tags.trim() !== ''
+                      ? attendee.tags.split(',')
+                      : [],
                 },
               },
             },
@@ -293,6 +347,24 @@ export class AttendeesService {
           await this.attendeeModel.bulkWrite(bulkOps, {
             session: currentSession,
           });
+
+          await this.enrollService.createUpdateEnrollments(
+            attendeesForUpdate.map((attendee) => ({
+              email: attendee.email,
+              tags:
+                typeof attendee.tags === 'string'
+                  ? attendee.tags
+                      .split(',')
+                      .map((tag) => tag.toLowerCase().trim())
+                      .filter(Boolean)
+                  : [],
+            })),
+            new Types.ObjectId(`${webinar}`),
+            new Types.ObjectId(`${adminId}`),
+            currentSession,
+          );
+
+          updateProgress(50);
         }
 
         if (
@@ -334,6 +406,7 @@ export class AttendeesService {
                 ? attendee.tags
                     .split(',')
                     .map((tag) => tag.toLowerCase().trim())
+                    .filter(Boolean)
                 : [],
           })),
           new Types.ObjectId(`${webinar}`),
@@ -1979,8 +2052,6 @@ export class AttendeesService {
       }
     }
 
-    console.log(timeInSessionFilter, attendedWebinarCountFilter, registeredWebinarCountFilter)
-
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -3137,16 +3208,6 @@ export class AttendeesService {
     return this.attendeeModel.findById(new Types.ObjectId(`${attendee}`));
   }
 
-  /**
-   * Performs a bulk write operation on the Attendee collection within a transaction session.
-   * Useful for updating multiple attendees efficiently.
-   *
-   * @param updates An array of Mongoose bulk write operation objects
-   *                (e.g., { updateOne: { filter, update } }, { insertOne: { document } }, etc.).
-   *                The filter in updateOne should typically include the adminId for security.
-   * @param session The Mongoose client session to use for the transaction.
-   * @returns A promise resolving to the result object from the bulk write operation.
-   */
   async bulkUpdateAttendees(
     updates: any[], // Using 'any' for simplicity, but you could type this more strictly if needed
     session: ClientSession, // Requires a session as it's designed for use within a transaction

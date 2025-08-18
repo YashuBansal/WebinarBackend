@@ -331,11 +331,70 @@ export class ProductRevenueService {
     ]);
   }
 
-  async getRevenueByWebinar(adminId: string, limit: number = 5) {
+  async getRevenueByWebinar(
+    adminId: string,
+    start: Date,
+    end: Date,
+    limit: number = 5,
+  ) {
     return this.enrollmentModel.aggregate([
       {
         $match: {
           adminId: new Types.ObjectId(adminId),
+          $expr: {
+            $and: [
+              {
+                $gte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  start,
+                ],
+              },
+              {
+                $lte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: { date: '$createdAt', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$createdAt',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  end,
+                ],
+              },
+            ],
+          },
         },
       },
       {

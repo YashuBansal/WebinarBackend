@@ -17,7 +17,8 @@ import { UsersModule } from 'src/users/users.module';
         schema: EnrollmentSchema,
       },
     ]),
-    forwardRef(() => UsersModule)
+    forwardRef(() => UsersModule),
+    ProductsModule
 
   ],
   controllers: [ProductRevenueController],

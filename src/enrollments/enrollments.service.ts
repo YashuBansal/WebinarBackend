@@ -38,6 +38,7 @@ export class EnrollmentsService {
     webinarId: Types.ObjectId,
     adminId: Types.ObjectId,
     session: ClientSession,
+    checkExistingEnrollments: boolean = true,
   ): Promise<any[]> {
     // Adjust return type based on insertMany result
 
@@ -106,12 +107,16 @@ export class EnrollmentsService {
 
     // 2. Query the database for existing enrollments matching the webinar and any of these combinations
     // Using $or allows us to check multiple (attendee, product) pairs in one query
-    const existingEnrollments = await this.enrollmentModel
-      .find({
-        webinar: webinarId,
-        $or: combinationsToCheck,
-      })
-      .exec(); // Add .exec() if you are using Mongoose promises
+    let existingEnrollments = [];
+
+    if (checkExistingEnrollments) {
+      existingEnrollments = await this.enrollmentModel
+        .find({
+          webinar: webinarId,
+          $or: combinationsToCheck,
+        })
+        .exec();
+    }
 
     // 3. Create a Set of existing enrollment keys for quick lookup
     // A key will be a combination of attendee email and product ID string
@@ -152,6 +157,33 @@ export class EnrollmentsService {
       );
       return []; // Return empty array if no new enrollments were inserted
     }
+  }
+
+  async createUpdateEnrollments(
+    tagsData: {
+      email: string;
+      tags: string[];
+    }[],
+    webinarId: Types.ObjectId,
+    adminId: Types.ObjectId,
+    session: ClientSession,
+  ): Promise<any[]> {
+    // Adjust return type based on insertMany result
+
+    await this.enrollmentModel.deleteMany(
+      {
+        attendee: {
+          $in: tagsData.map((item) => item.email),
+        },
+        webinar: webinarId,
+        adminId,
+      },
+      {
+        session,
+      },
+    );
+
+    return await this.createEnrollments(tagsData, webinarId, adminId, session, false);
   }
   // } // End of example class
 

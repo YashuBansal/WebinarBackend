@@ -126,7 +126,9 @@ export class Attendee extends Document {
     type: [String],
     default: [],
     set: (tags: string[]) =>
-      Array.from(new Set(tags.map((tag) => tag.toLowerCase().trim()))),
+      Array.from(
+        new Set(tags.map((tag) => tag.toLowerCase().trim()).filter(Boolean)),
+      ),
   })
   tags: string[];
 
