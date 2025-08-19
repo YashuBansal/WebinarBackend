@@ -27,6 +27,8 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class SubscriptionService {
    GST_VALUE: number = 0;
+   HEADER_LABEL: string | undefined= undefined;
+
   constructor(
     @InjectModel(Subscription.name)
     private SubscriptionModel: Model<Subscription>,
@@ -46,12 +48,14 @@ export class SubscriptionService {
 
    onModuleInit(){
     const gstValueStr = this.configService.get<number>('GST_VALUE') || 0;
+    const headerLabel = this.configService.get<string | undefined>('HEADER_LABEL') || undefined;
     console.log(`GST Value is ${gstValueStr}%`, typeof gstValueStr);
 
     const gstValue = parseInt(gstValueStr.toString());
     if (!isNaN(gstValue) && gstValue > 0) {
       this.GST_VALUE = gstValue;
     }
+    this.HEADER_LABEL = headerLabel;
   }
 
   async addSubscription(subscriptionDto: SubscriptionDto): Promise<any> {
@@ -62,6 +66,7 @@ export class SubscriptionService {
   async getGSTValue() {
     return {
       GST_VALUE: this.GST_VALUE,
+      HEADER_LABEL: this.HEADER_LABEL,
     }
   }
 

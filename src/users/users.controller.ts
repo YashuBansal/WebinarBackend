@@ -3,10 +3,12 @@ import {
   Controller,
   Delete,
   Get,
+  NotAcceptableException,
   NotFoundException,
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UploadedFile,
   UploadedFiles,
@@ -16,20 +18,16 @@ import { UsersService } from './users.service';
 
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserInfoDto } from './dto/update-user.dto';
-import { AdminId, Id, Role } from 'src/decorators/custom.decorator';
+import { Id, Role } from 'src/decorators/custom.decorator';
 import { UpdatePasswordDto } from './dto/updatePassword.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { GetClientsFilterDto } from './dto/filters.dto';
-import {
-  FileFieldsInterceptor,
-  FileInterceptor,
-} from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { EmployeeFilterDTO } from './dto/employee-filter.dto';
-import { User } from 'src/schemas/User.schema';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 
-@Controller('users') // @route => /users
+@Controller('users')
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
@@ -125,6 +123,17 @@ export class UsersController {
   @Get('/clients/:id')
   async getClient(@Param('id') id: string): Promise<any> {
     const client = await this.usersService.getClient(id);
+    return client;
+  }
+
+  @Put('/clients/:id')
+  async softDelete(@Param('id') id: string): Promise<any> {
+    if (!mongoose.isValidObjectId(id)) {
+      throw new NotAcceptableException('Invalid Admin Id');
+    }
+    const client = await this.usersService.softDeleteUser(
+      new Types.ObjectId(`${id}`),
+    );
     return client;
   }
 

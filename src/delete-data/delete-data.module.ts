@@ -27,6 +27,9 @@ import { Tag, TagSchema } from 'src/schemas/tags.schema';
 import { UserDocuments, UserDocumentsSchema } from 'src/schemas/user-documents.schema';
 import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
 import { UsersModule } from 'src/users/users.module';
+import { ApiAccessToken, ApiAccessTokenSchema } from 'src/schemas/api-token.schema';
+import { AttendeeLog, AttendeeLogSchema } from 'src/schemas/attendee-logs.schema';
+import { WebinarParticipant, WebinarParticipantSchema } from 'src/schemas/webinar-participant.schema';
 
 @Module({
   imports: [
@@ -126,6 +129,19 @@ import { UsersModule } from 'src/users/users.module';
       {
         name: UserDocuments.name,
         schema: UserDocumentsSchema
+      }
+      ,
+      {
+        name: ApiAccessToken.name,
+        schema: ApiAccessTokenSchema
+      },
+      {
+        name: AttendeeLog.name,
+        schema: AttendeeLogSchema
+      },
+      {
+        name: WebinarParticipant.name,
+        schema: WebinarParticipantSchema
       }
 
     ]),

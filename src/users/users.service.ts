@@ -40,6 +40,7 @@ import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { ExpiredPablyToken } from 'src/schemas/ExpiredPablyToken.schema';
 import { TwoFactorAuthenticationService } from 'src/two-factor-authentication/two-factor-authentication.service';
 import { ApiAccessTokenService } from 'src/api-access-token/api-access-token.service';
+import { SocketEvents } from 'src/websocket/dto/socket.dto';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -300,6 +301,9 @@ export class UsersService implements OnModuleInit {
       {
         $match: {
           role: new Types.ObjectId(`${clientRoleId}`),
+          isDeleted: {
+            $ne: true
+          },
           ...matchFilters,
         },
       },
@@ -1468,8 +1472,46 @@ export class UsersService implements OnModuleInit {
     };
   }
 
-  async softDeleteUser(adminId: Types.ObjectId){
+  async softDeleteUser(adminId: Types.ObjectId) {
+    const user = await this.userModel.findOne({
+      _id: adminId,
+      isDeleted: {
+        $ne: true,
+      },
+    });
 
-    
+    if (!user) {
+      throw new NotFoundException('Admin User Not Found');
+    }
+
+    user.isDeleted = true;
+    await user.save();
+
+    this.socketGateway.emitSocketEvent(`${user._id}`, SocketEvents.LOG_OUT, {});
+
+    const employeesUpdateResult = await this.userModel.updateMany(
+      {
+        adminId: adminId,
+        isDeleted: { $ne: true }, 
+      },
+      {
+        $set: {
+          isDeleted: true,
+        },
+      },
+    );
+
+    const employeesForLogout = await this.userModel.find({
+      adminId: adminId,
+    });
+
+    employeesForLogout.forEach(employee => {
+      this.socketGateway.emitSocketEvent(`${employee._id}`, SocketEvents.LOG_OUT, {});
+    });
+
+    return {
+      success: true,
+      message: `1 Admin and ${employeesUpdateResult.modifiedCount} Employees Soft Deleted Successfully`,
+    };
   }
 }

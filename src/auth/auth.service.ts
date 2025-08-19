@@ -83,6 +83,10 @@ export class AuthService {
       throw new NotFoundException('Incorrect E-Mail');
     }
 
+    if(user.isDeleted){
+      throw new BadRequestException("Account Deleted");
+    }
+
     const role = user.role;
     const superAdminRole = this.configService.get('appRoles')['SUPER_ADMIN'];
     const adminRole = this.configService.get('appRoles')['ADMIN'];
