@@ -1778,7 +1778,13 @@ export class AttendeesService {
 
   async checkPreviousAssignment(email: string): Promise<Attendee | null> {
     const lastAssigned = await this.attendeeModel
-      .findOne({ email, isAttended: false })
+      .findOne({
+        email,
+        isAttended: false,
+        assignedTo: {
+          $ne: null,
+        },
+      })
       .sort({ createdAt: -1 })
       .exec();
 
@@ -2168,6 +2174,19 @@ export class AttendeesService {
           },
           sources: {
             $addToSet: '$source',
+          },
+          fullNames: {
+            $addToSet: {
+              $trim: {
+                input: {
+                  $concat: [
+                    { $ifNull: ['$firstName', ''] },
+                    ' ',
+                    { $ifNull: ['$lastName', ''] },
+                  ],
+                },
+              },
+            },
           },
         },
       },
@@ -2560,6 +2579,13 @@ export class AttendeesService {
           registeredWebinarCount: 1,
           locations: 1,
           sources: 1,
+          fullNames: {
+            $filter: {
+              input: '$fullNames',
+              as: 'name',
+              cond: { $ne: ['$$name', ''] },
+            },
+          },
         },
       },
     ];
@@ -2710,6 +2736,19 @@ export class AttendeesService {
           sources: {
             $addToSet: {
               $cond: [{ $ne: ['$source', null] }, '$source', '$$REMOVE'],
+            },
+          },
+          fullNames: {
+            $addToSet: {
+              $trim: {
+                input: {
+                  $concat: [
+                    { $ifNull: ['$firstName', ''] },
+                    ' ',
+                    { $ifNull: ['$lastName', ''] },
+                  ],
+                },
+              },
             },
           },
         },
@@ -3096,6 +3135,13 @@ export class AttendeesService {
           registeredWebinarCount: 1,
           locations: 1,
           sources: 1,
+          fullNames: {
+            $filter: {
+              input: '$fullNames',
+              as: 'name',
+              cond: { $ne: ['$$name', ''] },
+            },
+          },
         },
       },
       {

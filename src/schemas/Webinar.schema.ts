@@ -28,7 +28,20 @@ export class Webinar extends Document {
     type: [{ type: mongoose.Schema.Types.ObjectId, ref: User.name }],
     required: false,
   })
-  assignedEmployees: Types.ObjectId[]; // Assigned Employees
+  assignedEmployees: Types.ObjectId[];
+
+  @Prop({
+    type: [{ type: mongoose.Schema.Types.ObjectId, ref: User.name }],
+    default: [],
+  })
+  excludedEmployees: Types.ObjectId[];
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  autoAssignmentDisabled: boolean;
+  
 
   @Prop({
     type: [{ type: mongoose.Schema.Types.ObjectId, ref: Products.name }],
@@ -47,13 +60,17 @@ WebinarSchema.pre('save', function (next) {
 
   if (Array.isArray(this.productIds)) {
     this.productIds = this.productIds.map((productId) =>
-      typeof productId === 'string' ? new Types.ObjectId(`${productId}`) : productId
+      typeof productId === 'string'
+        ? new Types.ObjectId(`${productId}`)
+        : productId,
     );
   }
 
   if (Array.isArray(this.assignedEmployees)) {
     this.assignedEmployees = this.assignedEmployees.map((employee) =>
-      typeof employee === 'string' ? new Types.ObjectId(`${employee}`) : employee
+      typeof employee === 'string'
+        ? new Types.ObjectId(`${employee}`)
+        : employee,
     );
   }
 

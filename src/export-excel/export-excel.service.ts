@@ -382,9 +382,11 @@ export class ExportExcelService {
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
 
+    console.log(parsedData)
+
     const payload = {
       data: parsedData,
-      columns: columns.map((col) => ({
+      columns: ['fullNames',...columns].map((col) => ({
         header: col,
         key: col,
         width: 20,

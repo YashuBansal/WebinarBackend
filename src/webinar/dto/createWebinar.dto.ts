@@ -1,4 +1,4 @@
-import { IsArray, IsMongoId, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { Types } from 'mongoose';
 
 export class CreateWebinarDto {
@@ -46,4 +46,18 @@ export class UpdateWebinarDto {
   @IsArray()
   @IsMongoId({ each: true })
   productIds?: Types.ObjectId[];
+}
+
+
+export class UpdateWebinarSettingDto {
+  @IsBoolean()
+  autoAssignmentDisabled: boolean;
+
+  @IsMongoId()
+  webinarId: string;
+
+  @IsArray()
+  @IsMongoId({ each: true })
+  excludedEmployees : string[];
+
 }

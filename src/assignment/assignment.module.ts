@@ -18,7 +18,6 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { GetAdminIdForUserActivityMiddleware } from 'src/middlewares/getAdminIdForUserActivity.Middleware';
 import { NotificationModule } from 'src/notification/notification.module';
-import { TagsModule } from 'src/tags/tags.module';
 import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 
@@ -35,7 +34,6 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
       },
     ]),
     NotificationModule,
-    TagsModule,
     EnrollmentsModule,
     AttendeeLogModule
   ],

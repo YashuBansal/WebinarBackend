@@ -12,10 +12,14 @@ import {
 } from '@nestjs/common';
 import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { WebinarService } from './webinar.service';
-import { CreateWebinarDto, UpdateWebinarDto } from './dto/createWebinar.dto';
+import {
+  CreateWebinarDto,
+  UpdateWebinarDto,
+  UpdateWebinarSettingDto,
+} from './dto/createWebinar.dto';
 import { WebinarFilterDTO } from './dto/webinar-filter.dto';
 import { UsersService } from 'src/users/users.service';
-import mongoose from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 @Controller('webinar')
 export class WebinarController {
   constructor(
@@ -37,6 +41,22 @@ export class WebinarController {
       page,
       limit,
       body.filters,
+    );
+    return result;
+  }
+
+  @Patch('setting')
+  async updateWebinarSetting(
+    @Id() adminId: string,
+    @Body() data: UpdateWebinarSettingDto,
+  ): Promise<any> {
+    if (!mongoose.isValidObjectId(adminId)) {
+      throw new BadRequestException('Admin Id Not Found');
+    }
+
+    const result = await this.webinarService.updateWebinarSettings(
+      new Types.ObjectId(`${adminId}`),
+      data,
     );
     return result;
   }

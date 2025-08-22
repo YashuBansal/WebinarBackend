@@ -88,10 +88,55 @@ interface DataItem {
       processedColumns = [...columns];
     }
 
+    let processedColumns2: ColumnDefinition[] = [];
+    let maxfullNameColumns = 0;
+
+    const shouldExpandfullNames =
+      processedColumns.some(({ key }) => key === 'fullNames') &&
+      data.some(
+        ({ fullNames }) => Array.isArray(fullNames) && fullNames.length,
+      );
+
+    if (shouldExpandfullNames) {
+      // 1. Transform data: Flatten fullNames into item properties
+      //    and find the maximum number of fullNames for any item.
+      data.forEach((item) => {
+        if (Array.isArray(item.fullNames)) {
+          item.fullNames.forEach((_id: string, index: number) => {
+            item[`fullName-${index + 1}`] = _id; // Ensure _id is the actual fullNames string
+            maxfullNameColumns = Math.max(index + 1, maxfullNameColumns);
+          });
+        }
+      });
+
+      // 2. Create the definitions for the dynamic fullName columns
+      const dynamicfullNameColumns = Array.from(
+        { length: maxfullNameColumns },
+        (_, index) => ({
+          key: `fullName-${index + 1}`,
+          header: `fullName ${index + 1}`,
+          width: 20,
+        }),
+      );
+
+      // 3. Build the new columns array, inserting dynamic fullName columns
+      //    at the position of the original 'fullNames' column.
+      processedColumns.forEach((col) => {
+        if (col.key === 'fullNames') {
+          processedColumns2.push(...dynamicfullNameColumns); // Spread the array of fullName columns here
+        } else {
+          processedColumns2.push(col); // Add other columns as they are
+        }
+      });
+    } else {
+      // If no phone expansion is needed, just use the original columns
+      processedColumns2 = [...processedColumns];
+    }
+
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Data');
 
-    worksheet.columns = processedColumns.map((col) => ({
+    worksheet.columns = processedColumns2.map((col) => ({
       header: isKey
         ? col.header
             .replace(/([A-Z])/g, ' $1') // Add space before capital letters

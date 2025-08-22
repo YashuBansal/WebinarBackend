@@ -38,7 +38,6 @@ import {
   notificationActionType,
   notificationType,
 } from 'src/schemas/notification.schema';
-import { TagsService } from 'src/tags/tags.service';
 import { EnrollmentsService } from 'src/enrollments/enrollments.service';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
@@ -61,7 +60,6 @@ export class AssignmentService {
     private readonly attendeeService: AttendeesService,
     @Inject(forwardRef(() => UsersService))
     private readonly userService: UsersService,
-    private readonly tagsService: TagsService,
     private readonly enrollmentService: EnrollmentsService,
     private readonly attendeeLogService: AttendeeLogService,
   ) {}
@@ -567,12 +565,6 @@ export class AssignmentService {
           currentSession,
           data.recordType === RecordType.POST_WEBINAR,
         );
-
-        await this.userService.incrementCount(
-          data.user,
-          createdAssignments.length,
-          currentSession,
-        );
       });
     } catch (error) {
       throw error;
@@ -596,6 +588,11 @@ export class AssignmentService {
 
       await this.notificationService.createNotification(notification);
     }
+
+    await this.getEmployeeDailyContactCount({
+      adminId: new Types.ObjectId(`${adminId}`),
+      employeeId: new Types.ObjectId(`${data.user}`),
+    });
 
     return { success: true, message: 'Assignment created successfully' };
   }
@@ -1278,6 +1275,14 @@ export class AssignmentService {
       return AssignmentResponse;
     }
 
+    if (webinar.autoAssignmentDisabled) {
+      return {
+        success: true,
+        message: 'Attendee has been created, Auto Assignment is Disabled.',
+        data: { newAttendee },
+      };
+    }
+
     // Validate webinar assigned employees
     if (!Array.isArray(webinar.assignedEmployees)) {
       return {
@@ -1292,6 +1297,12 @@ export class AssignmentService {
     const lastAssigned = await this.attendeeService.checkPreviousAssignment(
       newAttendee.email,
     );
+
+    console.log('last assigned --> ', lastAssigned);
+
+    const excludedEmployees = Array.isArray(webinar.excludedEmployees)
+      ? webinar.excludedEmployees.map((a) => `${a}`)
+      : [];
 
     // If previously assigned, check if the same employee can be reassigned
     if (lastAssigned && lastAssigned.assignedTo) {
@@ -1315,7 +1326,8 @@ export class AssignmentService {
         // Validate employee's daily contact limit
         if (
           employee &&
-          employee.dailyContactLimit > employee.dailyContactCount
+          employee.dailyContactLimit > employee.dailyContactCount &&
+          !excludedEmployees.includes(`${employee._id}`)
         ) {
           // Create a new assignment
           return this.createNewAssignmentForPreWebinar(
@@ -1325,6 +1337,13 @@ export class AssignmentService {
             employee,
             recordType,
           );
+        } else {
+          return {
+            success: true,
+            message:
+              'Attendee has been created, No eligible employees available for assignment.',
+            data: { newAttendee },
+          };
         }
       }
     } else {
@@ -1339,12 +1358,13 @@ export class AssignmentService {
         (emp) =>
           emp.difference > 0 &&
           emp.role.toString() ===
-            this.configService.get('appRoles').EMPLOYEE_REMINDER, // Only employees with the correct role and capacity
+            this.configService.get('appRoles').EMPLOYEE_REMINDER &&
+          !excludedEmployees.includes(`${emp._id}`),
       );
 
       const employees = filteredEmployee.sort(
         (a, b) => a.dailyContactCount - b.dailyContactCount,
-      ); // Sort by the largest remaining capacity first
+      );
 
       if (employees.length > 0) {
         const employee = employees[0]; // Pick the employee with the smallest remaining capacity
@@ -1376,7 +1396,7 @@ export class AssignmentService {
     employee: User,
     recordType: string,
   ) {
-    const employeeId = employee._id;
+    const employeeId = employee._id as Types.ObjectId;
     const webinarId = webinar._id;
     const newAssignment = await this.assignmentsModel.create({
       adminId,
@@ -1394,17 +1414,10 @@ export class AssignmentService {
     }
 
     // Increment the employee's daily contact count
-    const isIncremented = await this.userService.incrementCount(
-      employeeId.toString(),
-    );
-
-    if (!isIncremented) {
-      return {
-        success: true,
-        message: 'Failed to update employee contact count.',
-        data: { newAttendee, newAssignment },
-      };
-    }
+    await this.getEmployeeDailyContactCount({
+      adminId: new Types.ObjectId(`${adminId}`),
+      employeeId,
+    });
 
     const updatedAttendee = await this.attendeeService.updateAttendeeAssign(
       newAttendee._id.toString(),
@@ -2098,12 +2111,6 @@ export class AssignmentService {
           );
         }
 
-        await this.userService.incrementCount(
-          employee._id.toString(),
-          createdAssignments.length,
-          currentSession,
-        );
-
         const webinar = await this.webinarService.getWebinarById(
           data.webinarId.toString(),
         );
@@ -2150,7 +2157,9 @@ export class AssignmentService {
           },
         });
       }
-      await this.getEmployeeDailyContactCount(new Types.ObjectId(`${adminId}`));
+      await this.getEmployeeDailyContactCount({
+        adminId: new Types.ObjectId(`${adminId}`),
+      });
       return {
         message: 'Reassignment completed successfully',
         updatedAssignmentsCount,
@@ -2222,9 +2231,9 @@ export class AssignmentService {
           );
         }
 
-        await this.getEmployeeDailyContactCount(
-          new Types.ObjectId(`${adminId}`),
-        );
+        await this.getEmployeeDailyContactCount({
+          adminId: new Types.ObjectId(`${adminId}`),
+        });
 
         const attendees = await this.attendeeService.getAttendeesByIds(
           new Types.ObjectId(`${adminId}`),
@@ -3333,10 +3342,15 @@ export class AssignmentService {
     return {};
   }
 
-  async getEmployeeDailyContactCount(
-    adminId: Types.ObjectId,
-    session?: ClientSession,
-  ) {
+  async getEmployeeDailyContactCount({
+    adminId,
+    employeeId,
+    session,
+  }: {
+    adminId: Types.ObjectId;
+    employeeId?: Types.ObjectId;
+    session?: ClientSession;
+  }) {
     const now = new Date();
 
     const endOfISTDay = new Date(
@@ -3351,16 +3365,29 @@ export class AssignmentService {
       ),
     );
 
-    const startOfISTDay = new Date(endOfISTDay.getTime() - 24 * 60 * 60 * 1000); 
+    const startOfISTDay = new Date(endOfISTDay.getTime() - 24 * 60 * 60 * 1000);
 
     const filter = {
       adminId,
       status: AssignmentStatus.ACTIVE,
       createdAt: {
-        $gte: startOfISTDay, 
-        $lt: endOfISTDay, 
+        $gte: startOfISTDay,
+        $lt: endOfISTDay,
       },
     };
+
+    if (mongoose.isValidObjectId(employeeId)) {
+      filter['user'] = employeeId;
+
+      const totalAssignments =
+        await this.assignmentsModel.countDocuments(filter);
+
+      return await this.userService.updateDailyContactCountSingle(
+        totalAssignments,
+        employeeId,
+      );
+    }
+
     const pipeline: PipelineStage[] = [
       {
         $match: filter,

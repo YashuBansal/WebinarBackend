@@ -51,8 +51,6 @@ export class UsersService implements OnModuleInit {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Roles.name) private rolesModel: Model<Roles>,
     @InjectModel(Plans.name) private plansModel: Model<Plans>,
-    @InjectModel(ExpiredPablyToken.name)
-    private expiredPablyTokenModel: Model<ExpiredPablyToken>,
     private configService: ConfigService,
     private readonly billingHistoryService: BillingHistoryService,
     @Inject(forwardRef(() => SubscriptionService))
@@ -302,7 +300,7 @@ export class UsersService implements OnModuleInit {
         $match: {
           role: new Types.ObjectId(`${clientRoleId}`),
           isDeleted: {
-            $ne: true
+            $ne: true,
           },
           ...matchFilters,
         },
@@ -1404,6 +1402,17 @@ export class UsersService implements OnModuleInit {
     return this.userModel.bulkWrite(operations, { ordered: false, session });
   }
 
+  async updateDailyContactCountSingle(
+    totalAssignments: number,
+    empId: Types.ObjectId,
+  ) {
+    return await this.userModel.findByIdAndUpdate(empId, {
+      $set: {
+        dailyContactCount: totalAssignments
+      }
+    })
+  }
+
   async bulkUpdateUsersDailyContactCount(
     updates: any[], // Using 'any' for simplicity, can be typed as (BulkWriteOptions | AnyBulkWriteOperation)[]
     session: ClientSession, // Requires a session as it's designed for use within a transaction
@@ -1492,7 +1501,7 @@ export class UsersService implements OnModuleInit {
     const employeesUpdateResult = await this.userModel.updateMany(
       {
         adminId: adminId,
-        isDeleted: { $ne: true }, 
+        isDeleted: { $ne: true },
       },
       {
         $set: {
@@ -1505,8 +1514,12 @@ export class UsersService implements OnModuleInit {
       adminId: adminId,
     });
 
-    employeesForLogout.forEach(employee => {
-      this.socketGateway.emitSocketEvent(`${employee._id}`, SocketEvents.LOG_OUT, {});
+    employeesForLogout.forEach((employee) => {
+      this.socketGateway.emitSocketEvent(
+        `${employee._id}`,
+        SocketEvents.LOG_OUT,
+        {},
+      );
     });
 
     return {

@@ -8,7 +8,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
 import { Webinar } from 'src/schemas/Webinar.schema';
-import { CreateWebinarDto, UpdateWebinarDto } from './dto/createWebinar.dto';
+import { CreateWebinarDto, UpdateWebinarDto, UpdateWebinarSettingDto } from './dto/createWebinar.dto';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { WebinarFilterDTO } from './dto/webinar-filter.dto';
 import { NotificationService } from 'src/notification/notification.service';
@@ -67,6 +67,26 @@ export class WebinarService {
     }
 
     return result;
+  }
+
+  async updateWebinarSettings(adminId: Types.ObjectId, data: UpdateWebinarSettingDto){
+    const webinarid = new Types.ObjectId(data.webinarId);
+
+    const webinar = await this.webinarModel.findOne({
+      _id: webinarid,
+      adminId
+    });
+
+    if(!webinar){
+      throw new NotFoundException("Webinar Not Found");
+    }
+
+    webinar.autoAssignmentDisabled = data.autoAssignmentDisabled;
+    webinar.excludedEmployees = data.excludedEmployees.map(a => new Types.ObjectId(a));
+
+    await webinar.save();
+
+    return webinar;
   }
 
   async getWebinars(

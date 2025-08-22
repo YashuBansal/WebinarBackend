@@ -58,11 +58,7 @@ import { ApiAccessTokenModule } from 'src/api-access-token/api-access-token.modu
       {
         name: Roles.name,
         schema: RolesSchema,
-      },
-       {
-        name: ExpiredPablyToken.name,
-        schema: ExpiredPablyTokenSchema,
-      },
+      }
     ]),
     BillingHistoryModule,
     NotificationModule,
