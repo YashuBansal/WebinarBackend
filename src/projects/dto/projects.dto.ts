@@ -1,0 +1,65 @@
+import { Type } from 'class-transformer';
+import {
+  IsNotEmpty,
+  IsString,
+  MinLength,
+  IsInt,
+  IsOptional,
+  Min,
+} from 'class-validator';
+
+export class CreateProjectDto {
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(3)
+  readonly projectName: string;
+}
+
+export class UpdateProjectDto {
+
+  @IsString()
+  @MinLength(3)
+  @IsOptional()
+  readonly projectName?: string;
+
+  @IsString()
+  @IsOptional()
+  readonly phone?: string;
+
+  // WhatsApp Business Account fields (all optional)
+  @IsString()
+  @IsOptional()
+  readonly appId?: string;
+
+  @IsString()
+  @IsOptional()
+  readonly appSecret?: string;
+
+  @IsString()
+  @IsOptional()
+  readonly wabaId?: string;
+
+  @IsString()
+  @IsOptional()
+  readonly phoneNumberId?: string;
+
+  @IsString()
+  @IsOptional()
+  readonly permanentAccessToken?: string;
+}
+
+
+export class PaginationQueryDto {
+  @IsOptional()
+  @Type(() => Number) // Transform query string to number
+  @IsInt()
+  @Min(1)
+  page: number = 1;
+
+  @IsOptional()
+  @Type(() => Number) // Transform query string to number
+  @IsInt()
+  @Min(1)
+  limit: number = 10;
+}

@@ -7,30 +7,44 @@ import * as express from 'express';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors({
-    origin: [
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      'http://domain1.local:5173',
+      'http://domain2.local:5174',
+      'http://localhost:5173',
+      'http://127.0.0.1:5174',
+      'http://127.0.0.1:5173',
+      'http://localhost:5174',
+      'https://localhost:5174',
+      'https://localhost:5173',
       'http://localhost:3000',
       'http://localhost:3001',
-      'http://localhost:5173',
-      'http://localhost:5174',
-      'https://saas.rittikbansal.com',
-      'https://dashboard.webinarleadshub.com',
-      'https://sass-crm-frontend.vercel.app',
-    ],
-    methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
-    credentials: true,
-  });
+    ];
 
-
-  const PORT = process.env.PORT ?? 3000
+    // allow requests with no origin (e.g., Postman)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET','POST','PATCH','PUT','DELETE','OPTIONS'],
+  credentials: true, // important for sending cookies
+  preflightContinue: false,
+});
+  const PORT = process.env.PORT ?? 3000;
 
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
 
   // Set global prefix
   app.setGlobalPrefix('api/v1');
-  app.useGlobalPipes(new ValidationPipe()) 
+  app.useGlobalPipes(new ValidationPipe());
 
   await app.listen(PORT);
-  console.log(`process running on PORT ${PORT} ==================================== `)
+  console.log(
+    `process running on PORT ${PORT} ==================================== `,
+  );
 }
 bootstrap();

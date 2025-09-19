@@ -23,7 +23,6 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
       req.cookies[this.configService.get('ACCESS_TOKEN_NAME')];
     const pabbly_access_token = this.extractTokenFromHeader(req);
 
-    console.log(' ----seomtid---- > ', req.query);
 
     if (!access_token && !pabbly_access_token && !queryAccessToken) {
       console.error('Auth Admin User -> Access Token not found')
@@ -39,7 +38,6 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
 
     try {
       if (queryAccessToken) {
-        console.log('im here', queryAccessToken);
         const decodeOptions = {
           secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
         };
@@ -49,10 +47,6 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
           decodeOptions,
         );
 
-        console.log(
-          this.userService.expiredPablyTokens.has(queryAccessToken),
-          this.userService.expiredPablyTokens,
-        );
 
         if (this.userService.expiredPablyTokens.has(queryAccessToken)) {
           throw new UnauthorizedException(
@@ -122,7 +116,6 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
         }
       }
     } catch (error) {
-      console.log(error);
       throw new UnauthorizedException('Invalid or expired access token.');
     }
   }

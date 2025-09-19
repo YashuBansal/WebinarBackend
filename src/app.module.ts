@@ -54,6 +54,8 @@ import { WebsocketModule } from './websocket/websocket.module';
 import { WebinarParticipantModule } from './webinar-participant/webinar-participant.module';
 import { TwoFactorAuthenticationModule } from './two-factor-authentication/two-factor-authentication.module';
 import { ApiAccessTokenModule } from './api-access-token/api-access-token.module';
+import { ProjectsModule } from './projects/projects.module';
+import { ContactsModule } from './contacts/contacts.module';
 
 @Module({
   imports: [
@@ -130,6 +132,8 @@ import { ApiAccessTokenModule } from './api-access-token/api-access-token.module
     WebinarParticipantModule,
     TwoFactorAuthenticationModule,
     ApiAccessTokenModule,
+    ProjectsModule,
+    ContactsModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService],

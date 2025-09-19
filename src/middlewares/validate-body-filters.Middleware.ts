@@ -85,7 +85,6 @@ export class ValidateBodyFilters implements NestMiddleware {
       };
     }
 
-    console.log(req.query, 'skdflsdfksdjf')
 
     // Proceed to the next middleware or route handler
     next();

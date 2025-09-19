@@ -36,8 +36,8 @@ export class AuthController {
 
     return {
       httpOnly: true, // Prevents client-side JS from accessing the cookie
-      secure: isProduction, // Only send cookie over HTTPS in production
-      sameSite: 'strict',
+      secure: true, // Only send cookie over HTTPS in production
+      sameSite: 'none',
       maxAge: 3600000 * 5,
     };
   }
@@ -67,7 +67,12 @@ export class AuthController {
 
   @Post('logout')
   async logout(@Res({ passthrough: true }) response: Response) {
-    response.clearCookie(this.configService.get('ACCESS_TOKEN_NAME')); // Unset the access token cookie
+    const cookieOptions = this.getCookieOptions();
+    const accessTokenName = this.configService.get('ACCESS_TOKEN_NAME');
+    response.clearCookie(accessTokenName, {
+      ...cookieOptions,
+      maxAge: 0, // A common practice to explicitly expire it
+    });
     return { message: 'Successfully logged out' };
   }
 
