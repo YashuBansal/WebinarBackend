@@ -14,7 +14,7 @@ import {
   CreateContactDto,
   UpdateContactDto,
   BulkCreateContactsDto,
-  CursorPaginationQueryDto,
+  PaginationQueryDto,
   ContactFiltersDto,
 } from './dto/contacts.dto';
 import { Id } from 'src/decorators/custom.decorator';
@@ -50,7 +50,7 @@ export class ContactsController {
   async findAll(
     @Id() adminId: string,
     @Query(new ValidationPipe({ transform: true, transformOptions: { enableImplicitConversion: true } }))
-    paginationQuery: CursorPaginationQueryDto,
+    paginationQuery: PaginationQueryDto,
     @Query(new ValidationPipe({ transform: true, transformOptions: { enableImplicitConversion: true } }))
     filters: ContactFiltersDto,
   ) {
@@ -71,7 +71,7 @@ export class ContactsController {
     @Id() adminId: string,
     @Param('projectId') projectId: string,
     @Query(new ValidationPipe({ transform: true, transformOptions: { enableImplicitConversion: true } }))
-    paginationQuery: CursorPaginationQueryDto,
+    paginationQuery: PaginationQueryDto,
   ) {
     return this.contactsService.getContactsByProject(
       new Types.ObjectId(adminId),
@@ -101,6 +101,18 @@ export class ContactsController {
       new Types.ObjectId(adminId),
       new Types.ObjectId(contactId),
       updateContactDto,
+    );
+  }
+
+  @Delete('bulk')
+  async bulkRemove(
+    @Id() adminId: string,
+    @Body() bulkDeleteDto: { contactIds: string[] },
+  ) {
+    console.log('bulkDeleteDto', bulkDeleteDto, adminId);
+    return this.contactsService.bulkRemove(
+      new Types.ObjectId(`${adminId}`),
+      bulkDeleteDto.contactIds.map(id => new Types.ObjectId(id)),
     );
   }
 

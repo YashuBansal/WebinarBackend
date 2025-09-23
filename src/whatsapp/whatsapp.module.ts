@@ -5,9 +5,16 @@ import { UsersModule } from 'src/users/users.module';
 import { WhatsappController } from './whatsapp.controller';
 import { ProjectsModule } from 'src/projects/projects.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
+import { MongooseModule } from '@nestjs/mongoose';
+import { MediaAsset, MediaAssetSchema } from './schemas/media-asset.schema';
 
 @Module({
-  imports: [HttpModule, forwardRef(() => UsersModule), ProjectsModule],
+  imports: [
+    HttpModule, 
+    forwardRef(() => UsersModule), 
+    ProjectsModule,
+    MongooseModule.forFeature([{ name: MediaAsset.name, schema: MediaAssetSchema }])
+  ],
   providers: [WhatsappService],
   exports: [WhatsappService],
   controllers: [WhatsappController],

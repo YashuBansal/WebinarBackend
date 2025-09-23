@@ -1,4 +1,4 @@
-import { IsArray, IsPhoneNumber, IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsArray, IsPhoneNumber, IsString, IsNotEmpty, IsOptional, IsMongoId } from 'class-validator';
 
 export class AlarmMsgDto {
   @IsString()
@@ -53,11 +53,52 @@ export class ReminderMsgDto {
   
     @IsString()
     @IsOptional()
-    language?: string; // e.g., "en_US", "en_GB", "es_ES"
+    language?: string; // Defaults to template's language if not provided
   
     @IsArray()
     @IsString({ each: true })
     @IsOptional()
     bodyVariables?: string[]; // e.g., ["John Doe", "AB-123"]
+
+    @IsOptional()
+    @IsMongoId()
+    headerMediaAssetId?: string; // ID of the media asset to use for header
+  }
+
+  export class ContactDto {
+    @IsNotEmpty()
+    @IsString()
+    contactId: string;
+
+    @IsNotEmpty()
+    @IsPhoneNumber()
+    phoneNumber: string;
+  }
+
+  export class SendBulkTemplateMessageDto {
+    @IsNotEmpty()
+    @IsString()
+    projectId: string;
+  
+    @IsArray()
+    @IsNotEmpty()
+    contacts: ContactDto[];
+  
+    @IsNotEmpty()
+    @IsString()
+    templateName: string;
+  
+    @IsString()
+    @IsOptional()
+    language?: string; // Defaults to template's language if not provided
+  
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    bodyVariables?: string[]; // e.g., ["John Doe", "AB-123"]
+
+    @IsOptional()
+    @IsMongoId()
+    headerMediaAssetId?: string; // ID of the media asset to use for header
   }
   

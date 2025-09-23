@@ -56,6 +56,8 @@ import { TwoFactorAuthenticationModule } from './two-factor-authentication/two-f
 import { ApiAccessTokenModule } from './api-access-token/api-access-token.module';
 import { ProjectsModule } from './projects/projects.module';
 import { ContactsModule } from './contacts/contacts.module';
+import { WabaTagsModule } from './waba-tags/waba-tags.module';
+import { WhatsappEmbedModule } from './whatsapp-embed/whatsapp-embed.module';
 
 @Module({
   imports: [
@@ -134,6 +136,8 @@ import { ContactsModule } from './contacts/contacts.module';
     ApiAccessTokenModule,
     ProjectsModule,
     ContactsModule,
+    WabaTagsModule,
+    WhatsappEmbedModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService],

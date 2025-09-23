@@ -9,11 +9,11 @@ export type ContactDocument = Contact & Document;
 export class Contact extends Document {
   @Prop({
     type: String,
-    required: [true, 'Full name is required'],
+    required: [true, 'First name is required'],
     trim: true,
     maxlength: 100,
   })
-  fullName: string;
+  firstName: string;
 
   @Prop({
     type: String,

@@ -8,7 +8,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Contact, ContactDocument } from 'src/schemas/Contact.schema';
-import { CreateContactDto, UpdateContactDto, BulkCreateContactsDto, CursorPaginationQueryDto, ContactFiltersDto } from './dto/contacts.dto';
+import { CreateContactDto, UpdateContactDto, BulkCreateContactsDto, PaginationQueryDto, ContactFiltersDto } from './dto/contacts.dto';
 
 @Injectable()
 export class ContactsService {
@@ -48,32 +48,74 @@ export class ContactsService {
   async bulkCreate(
     bulkCreateContactsDto: BulkCreateContactsDto,
     adminId: Types.ObjectId,
-  ): Promise<{ created: Contact[]; failed: any[] }> {
+  )  {
     const { contacts } = bulkCreateContactsDto;
-    const created: Contact[] = [];
-    const failed: any[] = [];
+    
+    try {
+      // First, check for existing contacts to avoid duplicates
+      const emails = contacts.map(c => c.email);
+      const phones = contacts.map(c => c.phone);
+      
+      const existingContacts = await this.contactModel.find({
+        adminId,
+        $or: [
+          { email: { $in: emails } },
+          { phone: { $in: phones } }
+        ],
+        isDeleted: false,
+      }).exec();
 
-    for (const contactData of contacts) {
-      try {
-        const contact = await this.create(contactData, adminId);
-        created.push(contact);
-      } catch (error) {
-        failed.push({
-          contact: contactData,
-          error: error.message,
-        });
-      }
+      const existingEmails = new Set(existingContacts.map(c => c.email));
+      const existingPhones = new Set(existingContacts.map(c => c.phone));
+
+      // Separate contacts into valid and invalid
+      const validContacts = [];
+      const failed = [];
+
+      contacts.forEach(contactData => {
+        if (existingEmails.has(contactData.email) || existingPhones.has(contactData.phone)) {
+          failed.push({
+            contact: contactData,
+            error: 'Contact with this email or phone already exists',
+          });
+        } else {
+          validContacts.push({
+            ...contactData,
+            projectId: new Types.ObjectId(contactData.projectId),
+            adminId,
+            isActive: true,
+            isDeleted: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      });
+
+      // Use insertMany for valid contacts
+      const created = validContacts.length > 0 
+        ? await this.contactModel.insertMany(validContacts)
+        : [];
+
+      return { created, failed };
+    } catch (error) {
+      // If insertMany fails, add all contacts to failed
+      const failed = contacts.map(contactData => ({
+        contact: contactData,
+        error: error.message,
+      }));
+
+      return { created: [], failed };
     }
-
-    return { created, failed };
   }
 
   async findAll(
     adminId: Types.ObjectId,
-    paginationOptions: CursorPaginationQueryDto,
+    paginationOptions: PaginationQueryDto,
     filters?: ContactFiltersDto,
   ) {
-    const { cursor, limit } = paginationOptions;
+    const { page, limit } = paginationOptions;
+    const skip = (page - 1) * limit;
+    
     const filter: any = { 
       adminId, 
       isDeleted: false 
@@ -83,7 +125,7 @@ export class ContactsService {
     if (filters) {
       if (filters.search) {
         filter.$or = [
-          { fullName: { $regex: filters.search, $options: 'i' } },
+          { firstName: { $regex: filters.search, $options: 'i' } },
           { lastName: { $regex: filters.search, $options: 'i' } },
           { email: { $regex: filters.search, $options: 'i' } },
           { phone: { $regex: filters.search, $options: 'i' } },
@@ -103,27 +145,31 @@ export class ContactsService {
       }
     }
 
-    // Cursor-based pagination
-    if (cursor) {
-      filter._id = { $lt: new Types.ObjectId(cursor) };
-    }
-
-    const results = await this.contactModel
+    // Get total count for pagination
+    const totalCount = await this.contactModel.countDocuments(filter);
+    
+    // Get paginated results
+    const contacts = await this.contactModel
       .find(filter)
-      .populate('projectId', 'projectName')
       .sort({ _id: -1 })
-      .limit(limit + 1) // Get one extra to check if there are more
+      .skip(skip)
+      .limit(limit)
       .exec();
 
-    const hasNextPage = results.length > limit;
-    const contacts = hasNextPage ? results.slice(0, -1) : results;
-    const nextCursor = hasNextPage ? contacts[contacts.length - 1]._id.toString() : null;
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
 
     return {
       contacts,
-      hasNextPage,
-      nextCursor,
-      limit,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
+      },
     };
   }
 
@@ -208,13 +254,68 @@ export class ContactsService {
   async getContactsByProject(
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
-    paginationOptions: CursorPaginationQueryDto,
+    paginationOptions: PaginationQueryDto,
   ) {
     const filters: ContactFiltersDto = {
       projectId: projectId.toString(),
     };
 
     return this.findAll(adminId, paginationOptions, filters);
+  }
+
+  async bulkRemove(
+    adminId: Types.ObjectId,
+    contactIds: Types.ObjectId[],
+  ): Promise<{ deleted: Contact[]; failed: any[] }> {
+    console.log('contactIds', contactIds, adminId);
+
+    try {
+      // First, get the contacts that will be deleted for the response
+      const contactsToDelete = await this.contactModel.find({
+        _id: { $in: contactIds },
+        adminId,
+        isDeleted: false,
+      }).exec();
+
+      // Use deleteMany for bulk soft delete
+      const result = await this.contactModel.updateMany(
+        {
+          _id: { $in: contactIds },
+          adminId,
+          isDeleted: false,
+        },
+        {
+          $set: { isDeleted: true }
+        }
+      );
+
+      // Return the contacts that were successfully deleted
+      const deleted = contactsToDelete;
+      const failed = [];
+
+      // If some contacts weren't found or already deleted, add them to failed
+      if (result.matchedCount < contactIds.length) {
+        const deletedIds = contactsToDelete.map(contact => contact._id.toString());
+        const notFoundIds = contactIds.filter(id => !deletedIds.includes(id.toString()));
+        
+        notFoundIds.forEach(id => {
+          failed.push({
+            contactId: id.toString(),
+            error: 'Contact not found or already deleted',
+          });
+        });
+      }
+
+      return { deleted, failed };
+    } catch (error) {
+      // If the entire operation fails, return all as failed
+      const failed = contactIds.map(id => ({
+        contactId: id.toString(),
+        error: error.message,
+      }));
+      
+      return { deleted: [], failed };
+    }
   }
 
   async getContactStats(adminId: Types.ObjectId) {

@@ -32,7 +32,8 @@ export enum HeaderFormat {
   TEXT = 'TEXT',
   IMAGE = 'IMAGE',
   VIDEO = 'VIDEO',
-  DOCUMENT = 'DOCUMENT'
+  DOCUMENT = 'DOCUMENT',
+  LOCATION = 'LOCATION'
 }
 
 // Button Types
@@ -72,6 +73,10 @@ export class ButtonDto {
   @IsOptional()
   @IsString()
   phone_number?: string;
+
+  @IsOptional()
+  @IsString()
+  otp_type?: string;
 }
 
 // Example DTO for template examples
@@ -216,6 +221,10 @@ export class GetTemplatesQueryDto {
   @IsOptional()
   @IsString()
   limit?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
 }
 
 // Delete Template DTO

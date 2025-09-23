@@ -17,7 +17,7 @@ export class CreateContactDto {
   @IsNotEmpty()
   @MinLength(1)
   @MaxLength(100)
-  readonly fullName: string;
+  readonly firstName: string;
 
   @IsString()
   @IsOptional()
@@ -51,7 +51,7 @@ export class UpdateContactDto {
   @IsOptional()
   @MinLength(1)
   @MaxLength(100)
-  readonly fullName?: string;
+  readonly firstName?: string;
 
   @IsString()
   @IsOptional()
@@ -86,14 +86,13 @@ export class BulkCreateContactsDto {
   readonly contacts: CreateContactDto[];
 }
 
-export class CursorPaginationQueryDto {
+export class PaginationQueryDto {
   @IsOptional()
-  @IsString()
-  readonly cursor?: string;
+  @Type(() => Number)
+  page: number = 1;
 
   @IsOptional()
   @Type(() => Number)
-  @IsOptional()
   limit: number = 10;
 }
 

@@ -8,6 +8,7 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom, lastValueFrom, map } from 'rxjs';
@@ -23,7 +24,9 @@ import {
   DeleteTemplateDto,
   TemplateResponseDto
 } from './dto/template.dto';
-import { SendTemplateMessageDto } from './dto/msg.dto';
+import { SendTemplateMessageDto, SendBulkTemplateMessageDto } from './dto/msg.dto';
+import { v2 as cloudinary } from 'cloudinary';
+import { MediaAsset, MediaAssetDocument } from './schemas/media-asset.schema';
 
 @Injectable()
 export class WhatsappService {
@@ -36,7 +39,9 @@ export class WhatsappService {
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
-    private readonly projectService: ProjectsService
+    private readonly projectService: ProjectsService,
+    @InjectModel(MediaAsset.name)
+    private readonly mediaAssetModel: Model<MediaAssetDocument>,
   ) {
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
@@ -51,6 +56,15 @@ export class WhatsappService {
     }
 
     this.ENCRYPTION_KEY = key;
+
+    // Configure Cloudinary
+    cloudinary.config({
+      cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
+      api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
+      api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
+    });
+
+    console.log('cloudinary config', this.configService.get<string>('CLOUDINARY_CLOUD_NAME'), this.configService.get<string>('CLOUDINARY_API_KEY'), this.configService.get<string>('CLOUDINARY_API_SECRET'));
   }
 
   url = this.configService.get('AISENSY_URL');
@@ -394,6 +408,7 @@ export class WhatsappService {
     if (query.category) params.category = query.category;
     if (query.language) params.language = query.language;
     if (query.limit) params.limit = query.limit;
+    if (query.name) params.name = query.name;
 
     this.logger.log(
       `Fetching templates for WABA ${wabaId} with params: ${JSON.stringify(params)}`,
@@ -667,7 +682,7 @@ export class WhatsappService {
     adminId: Types.ObjectId,
     sendTemplateDto: SendTemplateMessageDto,
   ): Promise<any> {
-    const { projectId, recipientPhoneNumber, templateName, bodyVariables } =
+    const { projectId, recipientPhoneNumber, templateName, bodyVariables, headerMediaAssetId } =
       sendTemplateDto;
 
     this.logger.log(
@@ -693,7 +708,7 @@ export class WhatsappService {
 
     // --- CONSTRUCT THE META PAYLOAD ---
     // This structure is very specific and must be followed exactly.
-    const metaPayload = {
+    const metaPayload: any = {
       messaging_product: 'whatsapp',
       to: recipientPhoneNumber,
       type: 'template',
@@ -702,27 +717,89 @@ export class WhatsappService {
         language: {
           code: sendTemplateDto.language || 'en_US',
         },
-        components: [
-          {
-            type: 'body',
-            parameters: bodyVariables?.map((variable) => ({
-              type: 'text',
-              text: variable,
-            })),
-          },
-        ],
+        components: [],
       },
     };
 
-    // Remove the components array if there are no variables to send
-    if (!bodyVariables || bodyVariables.length === 0) {
-      delete metaPayload.template.components;
+    // Add body component if there are variables
+    if (bodyVariables && bodyVariables.length > 0) {
+      metaPayload.template.components.push({
+        type: 'body',
+        parameters: bodyVariables.map((variable) => ({
+          type: 'text',
+          text: variable,
+        })),
+      });
     }
 
+    // Add header component if media asset is provided
+    if (headerMediaAssetId) {
+      const mediaAsset = await this.mediaAssetModel.findById(headerMediaAssetId);
+      if (!mediaAsset) {
+        throw new NotFoundException('Media asset not found');
+      }
+
+      // Get template details to determine header format
+      const templates = await this.getTemplatesForWaba(
+        adminId,
+        new Types.ObjectId(projectId),
+        { name: templateName }
+      );
+      
+      if (!templates || templates.length === 0) {
+        throw new NotFoundException(`Template '${templateName}' not found`);
+      }
+      
+      const templateDetails = templates[0];
+
+      const headerComponent = templateDetails.components.find(c => c.type === 'HEADER');
+      if (headerComponent) {
+        const headerFormat = headerComponent.format;
+        let headerParameter: any;
+
+        switch (headerFormat) {
+          case 'IMAGE':
+            headerParameter = {
+              type: 'image',
+              image: {
+                link: mediaAsset.filePath,
+              },
+            };
+            break;
+          case 'VIDEO':
+            headerParameter = {
+              type: 'video',
+              video: {
+                link: mediaAsset.filePath,
+              },
+            };
+            break;
+          case 'DOCUMENT':
+            headerParameter = {
+              type: 'document',
+              document: {
+                link: mediaAsset.filePath,
+                filename: mediaAsset.fileName,
+              },
+            };
+            break;
+          default:
+            throw new BadRequestException(`Unsupported header format: ${headerFormat}`);
+        }
+
+        metaPayload.template.components.push({
+          type: 'header',
+          parameters: [headerParameter],
+        });
+      }
+    }
+
+    // Remove the components array if it's empty
+    if (metaPayload.template.components.length === 0) {
+      delete metaPayload.template.components;
+    }
+    console.log(JSON.stringify(metaPayload, null, 2));
     try {
-      console.log(url);
-      console.log(metaPayload);
-      console.log(account.permanentAccessToken);
       const response = await firstValueFrom(
         this.httpService.post(url, metaPayload, {
           headers: { Authorization: `Bearer ${account.permanentAccessToken}` },
@@ -742,6 +819,181 @@ export class WhatsappService {
         'Could not send template message.',
       );
     }
+  }
+
+  async sendBulkTemplateMessage(
+    adminId: Types.ObjectId,
+    sendBulkTemplateDto: SendBulkTemplateMessageDto,
+  ): Promise<any> {
+    const { projectId, contacts, templateName, bodyVariables, headerMediaAssetId } = sendBulkTemplateDto;
+
+    this.logger.log(
+      `Attempting to send bulk template '${templateName}' from WABA ${projectId} to ${contacts.length} contacts`,
+    );
+
+    const account = await this.projectService.findOne(adminId, new Types.ObjectId(projectId));
+    if (!account) {
+      throw new UnauthorizedException(
+        'You do not have permission to access this WABA.',
+      );
+    }
+
+    // We need the Phone Number ID from the WABA to send a message
+    const fromPhoneNumberId = account.phoneNumberId;
+    if (!fromPhoneNumberId) {
+      throw new NotFoundException(
+        'No sending phone number found for this WABA.',
+      );
+    }
+
+    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
+
+    // Prepare the template structure
+    const templateStructure: any = {
+      name: templateName,
+      language: {
+        code: sendBulkTemplateDto.language || 'en_US',
+      },
+      components: [],
+    };
+
+    // Add body component if there are variables
+    if (bodyVariables && bodyVariables.length > 0) {
+      templateStructure.components.push({
+        type: 'body',
+        parameters: bodyVariables.map((variable) => ({
+          type: 'text',
+          text: variable,
+        })),
+      });
+    }
+
+    // Add header component if media asset is provided
+    if (headerMediaAssetId) {
+      const mediaAsset = await this.mediaAssetModel.findById(headerMediaAssetId);
+      if (!mediaAsset) {
+        throw new NotFoundException('Media asset not found');
+      }
+
+      // Get template details to determine header format
+      const templates = await this.getTemplatesForWaba(
+        adminId,
+        new Types.ObjectId(projectId),
+        { name: templateName }
+      );
+      
+      if (!templates || templates.length === 0) {
+        throw new NotFoundException(`Template '${templateName}' not found`);
+      }
+      
+      const templateDetails = templates[0];
+
+      const headerComponent = templateDetails.components.find(c => c.type === 'HEADER');
+      if (headerComponent) {
+        const headerFormat = headerComponent.format;
+        let headerParameter: any;
+
+        switch (headerFormat) {
+          case 'IMAGE':
+            headerParameter = {
+              type: 'image',
+              image: {
+                link: mediaAsset.filePath,
+              },
+            };
+            break;
+          case 'VIDEO':
+            headerParameter = {
+              type: 'video',
+              video: {
+                link: mediaAsset.filePath,
+              },
+            };
+            break;
+          case 'DOCUMENT':
+            headerParameter = {
+              type: 'document',
+              document: {
+                link: mediaAsset.filePath,
+                filename: mediaAsset.fileName,
+              },
+            };
+            break;
+          default:
+            throw new BadRequestException(`Unsupported header format: ${headerFormat}`);
+        }
+
+        templateStructure.components.push({
+          type: 'header',
+          parameters: [headerParameter],
+        });
+      }
+    }
+
+    // Remove components if empty
+    if (templateStructure.components.length === 0) {
+      delete templateStructure.components;
+    }
+
+    const results = {
+      sent: 0,
+      failed: 0,
+      errors: [] as any[],
+      messageIds: [] as string[],
+    };
+
+    // Send messages to each contact
+    for (const contact of contacts) {
+      try {
+        const metaPayload = {
+          messaging_product: 'whatsapp',
+          to: contact.phoneNumber,
+          type: 'template',
+          template: templateStructure,
+        };
+
+        this.logger.log(`Sending message to ${contact.phoneNumber} (Contact ID: ${contact.contactId})`);
+
+        const response = await firstValueFrom(
+          this.httpService.post(url, metaPayload, {
+            headers: { Authorization: `Bearer ${account.permanentAccessToken}` },
+          }),
+        );
+
+        results.sent++;
+        results.messageIds.push(response.data.messages[0].id);
+        
+        this.logger.log(
+          `Message sent successfully to ${contact.phoneNumber}. Message ID: ${response.data.messages[0].id}`,
+        );
+
+        // Add a small delay between messages to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          contactId: contact.contactId,
+          phoneNumber: contact.phoneNumber,
+          error: error.response?.data?.error || error.message,
+        });
+
+        this.logger.error(
+          `Failed to send template message to ${contact.phoneNumber} (Contact ID: ${contact.contactId})`,
+          error.response?.data?.error,
+        );
+      }
+    }
+
+    this.logger.log(
+      `Bulk message sending completed. Sent: ${results.sent}, Failed: ${results.failed}`,
+    );
+
+    return {
+      ...results,
+      totalContacts: contacts.length,
+    };
   }
 
   async getWabaDetailsTest(): Promise<any> {
@@ -1139,5 +1391,129 @@ export class WhatsappService {
     const { permanentAccessToken, wabaId } = account;
 
     return this.subscribeAppToWaba(wabaId, permanentAccessToken);
+  }
+
+  /**
+   * Uploads a sample file to Cloudinary and then to Meta to get a header handle
+   * @param fileBuffer The file buffer to upload
+   * @param mimeType The MIME type of the file
+   * @param originalName The original filename
+   * @returns The header handle ID from Meta
+   */
+  async uploadSampleToMetaViaCloudinary(
+    fileBuffer: Buffer,
+    mimeType: string,
+    originalName: string,
+  ): Promise<string> {
+    try {
+      this.logger.log(`Starting Cloudinary upload for file: ${originalName}`);
+
+      // Upload to Cloudinary
+      const cloudinaryResult = await new Promise<any>((resolve, reject) => {
+        cloudinary.uploader.upload_stream(
+          {
+            resource_type: mimeType.startsWith('image/') ? 'image' : 
+                          mimeType.startsWith('video/') ? 'video' : 'raw',
+            folder: 'whatsapp-templates/samples',
+            public_id: `sample_${Date.now()}_${originalName.replace(/[^a-zA-Z0-9]/g, '_')}`,
+          },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        ).end(fileBuffer);
+      });
+
+      this.logger.log(`Cloudinary upload successful: ${cloudinaryResult.secure_url}`);
+
+      // Upload to Meta using the Cloudinary URL
+      const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+      const url = `https://graph.facebook.com/${apiVersion}/media`;
+
+      const metaPayload = {
+        file_url: cloudinaryResult.secure_url,
+        type: mimeType,
+      };
+
+      this.logger.log(`Uploading to Meta with URL: ${cloudinaryResult.secure_url}`);
+
+      const response = await firstValueFrom(
+        this.httpService.post(url, metaPayload, {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+
+      this.logger.log(`Meta upload successful, header handle: ${response.data.id}`);
+      return response.data.id;
+
+    } catch (error) {
+      this.logger.error(JSON.stringify(error));
+      this.logger.error(`Failed to upload sample to Meta via Cloudinary: ${error.message}`);
+      throw new InternalServerErrorException(
+        `Failed to upload sample media: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Uploads a media asset for sending in messages
+   * @param file The uploaded file
+   * @param userId The user ID
+   * @param projectId The project ID
+   * @returns The created MediaAsset document
+   */
+  async uploadMediaAsset(
+    file: Express.Multer.File,
+    userId: Types.ObjectId,
+    projectId: Types.ObjectId,
+  ): Promise<MediaAssetDocument> {
+    try {
+      this.logger.log(`Starting media asset upload for user ${userId}, project ${projectId}`);
+
+      // Create directory structure if it doesn't exist
+      const fs = require('fs');
+      const path = require('path');
+      const uploadDir = path.join(process.cwd(), 'public', 'exports', userId.toString());
+      
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      // Generate unique filename
+      const timestamp = Date.now();
+      const fileExtension = path.extname(file.originalname);
+      const fileName = `${timestamp}_${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const filePath = path.join(uploadDir, fileName);
+
+      // Save file to disk
+      fs.writeFileSync(filePath, file.buffer);
+
+      // Construct public URL
+      const baseUrl = this.configService.get<string>('BASE_URL') || 'http://localhost:3000';
+      const publicUrl = `${baseUrl}/exports/${userId}/${fileName}`;
+
+      // Create MediaAsset document
+      const mediaAsset = new this.mediaAssetModel({
+        userId,
+        projectId,
+        fileName: file.originalname,
+        filePath: publicUrl,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+      });
+
+      const savedMediaAsset = await mediaAsset.save();
+
+      this.logger.log(`Media asset uploaded successfully: ${savedMediaAsset._id}`);
+      return savedMediaAsset;
+
+    } catch (error) {
+      this.logger.error(`Failed to upload media asset: ${error.message}`);
+      throw new InternalServerErrorException(
+        `Failed to upload media asset: ${error.message}`,
+      );
+    }
   }
 }
