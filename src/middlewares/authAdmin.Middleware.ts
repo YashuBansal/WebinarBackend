@@ -6,7 +6,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { NextFunction, Response } from 'express';
-import { AuthService } from 'src/auth/auth.service';
 import { UsersService } from 'src/users/users.service';
 
 @Injectable()
@@ -23,9 +22,8 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
       req.cookies[this.configService.get('ACCESS_TOKEN_NAME')];
     const pabbly_access_token = this.extractTokenFromHeader(req);
 
-
     if (!access_token && !pabbly_access_token && !queryAccessToken) {
-      console.error('Auth Admin User -> Access Token not found')
+      console.error('Auth Admin User -> Access Token not found');
       throw new UnauthorizedException('Access token not found.');
     }
 
@@ -46,7 +44,6 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
           queryAccessToken,
           decodeOptions,
         );
-
 
         if (this.userService.expiredPablyTokens.has(queryAccessToken)) {
           throw new UnauthorizedException(

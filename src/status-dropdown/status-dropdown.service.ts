@@ -4,9 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, SchemaTypes, Types } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { StatusDropdown } from '../schemas/StatusDropdown.schema';
-import { Roles } from 'src/schemas/Roles.schema';
 import { RolesService } from 'src/roles/roles.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 

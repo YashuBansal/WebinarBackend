@@ -27,10 +27,10 @@ export class WabaMessage extends Document {
   @Prop({
     type: Types.ObjectId,
     ref: Campaign.name,
-    required: [true, 'Campaign ID is required'],
+    required: false,
     index: true,
   })
-  campaignId: Types.ObjectId;
+  campaignId?: Types.ObjectId;
 
   @Prop({
     type: Types.ObjectId,
@@ -54,6 +54,13 @@ export class WabaMessage extends Document {
     required: [true, 'Status is required'],
   })
   status: string;
+
+  @Prop({
+    type: String,
+    enum: ['campaign', 'individual', 'template'],
+    default: 'individual',
+  })
+  messageType: string;
 
   @Prop({
     type: [StatusHistory],
@@ -99,7 +106,7 @@ const WabaMessageSchema = SchemaFactory.createForClass(WabaMessage);
 
 // Pre-save middleware to convert string IDs to ObjectIds
 WabaMessageSchema.pre('save', function (next) {
-  if (typeof this.campaignId === 'string') {
+  if (this.campaignId && typeof this.campaignId === 'string') {
     this.campaignId = new Types.ObjectId(`${this.campaignId}`);
   }
   if (typeof this.contactId === 'string') {

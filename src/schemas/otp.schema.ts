@@ -10,8 +10,7 @@ export class Otp extends Document {
   user: Types.ObjectId;
 
   @Prop({ type: Date, default: Date.now(), expires: 300 })
-
   date: Date;
 }
 
-export const OtpSchema = SchemaFactory.createForClass(Otp)
+export const OtpSchema = SchemaFactory.createForClass(Otp);

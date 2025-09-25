@@ -1,9 +1,9 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class RevenueDto {
   @IsDateString()
   start: string;
-  
+
   @IsDateString()
   end: string;
 

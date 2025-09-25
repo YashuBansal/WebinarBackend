@@ -1,4 +1,4 @@
-import { forwardRef, MiddlewareConsumer, Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module } from '@nestjs/common';
 import { AttendeeLogController } from './attendee-log.controller';
 import { AttendeeLogService } from './attendee-log.service';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -7,7 +7,6 @@ import {
   AttendeeLogSchema,
 } from 'src/schemas/attendee-logs.schema';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
-import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
@@ -23,10 +22,7 @@ import { UsersModule } from 'src/users/users.module';
   exports: [AttendeeLogService],
 })
 export class AttendeeLogModule {
-    configure(consumer: MiddlewareConsumer) {
-      consumer
-        .apply(GetAdminIdMiddleware)
-        .forRoutes(AttendeeLogController
-      );
-    }
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(GetAdminIdMiddleware).forRoutes(AttendeeLogController);
+  }
 }

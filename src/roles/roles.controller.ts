@@ -3,18 +3,17 @@ import { RolesService } from './roles.service';
 
 @Controller('roles')
 export class RolesController {
-    constructor(private rolesService: RolesService) {}
+  constructor(private rolesService: RolesService) {}
 
-    @Get()
-    getRoles() {
-      const result = this.rolesService.getRoles();
-      return result;
-    }
+  @Get()
+  getRoles() {
+    const result = this.rolesService.getRoles();
+    return result;
+  }
 
-
-    @Post()
-    addRole(@Body() name: string) {
-      const result = this.rolesService.addRole(name);
-      return result;
-    }
+  @Post()
+  addRole(@Body() name: string) {
+    const result = this.rolesService.addRole(name);
+    return result;
+  }
 }

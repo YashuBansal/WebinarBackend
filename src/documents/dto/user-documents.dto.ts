@@ -1,15 +1,13 @@
-import { 
-  IsMongoId, 
-  IsString, 
-  IsNumber, 
-  IsDateString, 
-  IsOptional, 
-  IsObject, 
+import {
+  IsMongoId,
+  IsString,
+  IsNumber,
+  IsDateString,
+  IsOptional,
+  IsObject,
   IsNotEmpty,
-  min,
-  Min
+  Min,
 } from 'class-validator';
-import { Expose, Type } from 'class-transformer';
 
 export class CreateUserDocumentDto {
   @IsMongoId()
@@ -45,4 +43,3 @@ export interface UserDocumentResponse {
   fileSize: number;
   success: boolean;
 }
-

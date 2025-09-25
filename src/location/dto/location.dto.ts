@@ -71,8 +71,6 @@ export class UpdateLocationDto {
   @IsString()
   @IsNotEmpty()
   note?: string;
-
-  
 }
 
 export class AdminVerificationDto {

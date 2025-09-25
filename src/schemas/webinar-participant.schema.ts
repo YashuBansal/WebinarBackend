@@ -51,7 +51,6 @@ export class WebinarParticipant extends Document {
     required: [true, 'adminId is required'],
   })
   adminId: Types.ObjectId;
-
 }
 
 export const WebinarParticipantSchema =

@@ -5,7 +5,6 @@ import {
   Get,
   Param,
   Post,
-  Query,
 } from '@nestjs/common';
 import { AttendeeAssociationService } from './attendee-association.service';
 import { AttendeeAssociationDto } from './dto/attendee-association.dto';
@@ -31,7 +30,7 @@ export class AttendeeAssociationController {
       adminId,
       body.leadType,
       body.leadTypeLabel,
-      body.createdBy
+      body.createdBy,
     );
     return association;
   }

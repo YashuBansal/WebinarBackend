@@ -19,9 +19,8 @@ export class GetAdminIdMiddleware implements NestMiddleware {
     const access_token =
       req.cookies[this.configService.get('ACCESS_TOKEN_NAME')];
 
-
     if (!access_token) {
-      console.error('Get Admin Id -> Access Token not found')
+      console.error('Get Admin Id -> Access Token not found');
       throw new UnauthorizedException('Access token not found.');
     }
 
@@ -38,18 +37,15 @@ export class GetAdminIdMiddleware implements NestMiddleware {
         req.id = decodedToken.id;
         next();
       } else {
-
-        
-        if(mongoose.isValidObjectId(decodedToken.adminId))
-        
-        req.adminId = new Types.ObjectId(`${decodedToken.adminId}`);
+        if (mongoose.isValidObjectId(decodedToken.adminId))
+          req.adminId = new Types.ObjectId(`${decodedToken.adminId}`);
         else {
-          return  res.status(200).json({
+          return res.status(200).json({
             status: false,
             message: 'Invalid admin ID in token.',
           });
         }
-         
+
         req.id = decodedToken.id;
         next();
       }

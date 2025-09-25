@@ -9,7 +9,7 @@ import { UsersModule } from 'src/users/users.module';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Contact.name, schema: ContactSchema }]),
-    UsersModule
+    UsersModule,
   ],
   providers: [ContactsService],
   controllers: [ContactsController],

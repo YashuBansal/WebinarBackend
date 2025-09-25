@@ -1,5 +1,10 @@
 // addon.service.ts
-import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AddOn } from '../schemas/addon.schema';
@@ -56,8 +61,9 @@ export class AddOnService {
   }
 
   async getAdminAddons(adminId: string) {
-    const subscription: any = await this.subscriptionService.getSubscription(adminId);
-    if(!subscription) throw new NotFoundException('Subscription not found');
-    return await this.subscriptionAddonService.getUserAddons( subscription._id);
+    const subscription: any =
+      await this.subscriptionService.getSubscription(adminId);
+    if (!subscription) throw new NotFoundException('Subscription not found');
+    return await this.subscriptionAddonService.getUserAddons(subscription._id);
   }
 }

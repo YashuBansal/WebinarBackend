@@ -1,7 +1,12 @@
-import { IsNumber, Min, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsNumber,
+  Min,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateAddOnDto {
-
   @IsString()
   @IsNotEmpty()
   addonName: string;
@@ -34,7 +39,7 @@ export class UpdateAddOnDto {
 
   @IsOptional()
   @IsNumber()
-  @Min(0) 
+  @Min(0)
   contactLimit?: number;
 
   @IsOptional()
@@ -44,6 +49,6 @@ export class UpdateAddOnDto {
 
   @IsOptional()
   @IsNotEmpty()
-  @Min(1) 
+  @Min(1)
   validityInDays?: number;
 }

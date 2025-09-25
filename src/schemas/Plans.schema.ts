@@ -21,7 +21,6 @@ export type PlanDurationConfig = {
 };
 
 @Schema({ timestamps: true })
-
 export class Plans extends Document {
   @Prop({
     type: String,
@@ -142,13 +141,16 @@ export class Plans extends Document {
     }),
     required: true,
   })
-  planDurationConfig: Map<
-    string,
-    PlanDurationConfig
-  >;
+  planDurationConfig: Map<string, PlanDurationConfig>;
 
   static async validatePlanDurationConfig(this: Plans) {
-    const requiredDurations = ['monthly', 'quarterly', 'halfyearly', 'yearly', 'custom'];
+    const requiredDurations = [
+      'monthly',
+      'quarterly',
+      'halfyearly',
+      'yearly',
+      'custom',
+    ];
     const durationDays = {
       monthly: 30,
       quarterly: 90,
@@ -206,4 +208,3 @@ PlansSchema.pre('save', async function (next) {
 PlansSchema.index({ name: 1 });
 
 PlansSchema.index({ amount: 1 });
- 

@@ -66,8 +66,8 @@ export class AssignmentController {
       employeeId = employee;
       adminId = id;
     }
-    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
-    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    const page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
 
     const result = await this.assignmentService.getAssignments(
       adminId,
@@ -76,12 +76,12 @@ export class AssignmentController {
       limit,
       body.filters,
       {
-       webinarId: query.webinarId,
-      validCall: body.validCall,
-      assignmentStatus: body.assignmentStatus,
-      sort: body.sort,
-      validCallFlag: body.validCallFlag,
-      }
+        webinarId: query.webinarId,
+        validCall: body.validCall,
+        assignmentStatus: body.assignmentStatus,
+        sort: body.sort,
+        validCallFlag: body.validCallFlag,
+      },
     );
     return result;
   }
@@ -92,18 +92,18 @@ export class AssignmentController {
     @Body() body: GetAssignmentDTO,
     @Query() query: { page?: string; limit?: string },
   ) {
-    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
-    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    const page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
     const result = await this.assignmentService.getAssignments(
       admin,
       '',
       page,
       limit,
       body.filters,
-     {
-       webinarId: body.webinarId,
-      assignmentStatus: AssignmentStatus.REASSIGN_REQUESTED,
-     }
+      {
+        webinarId: body.webinarId,
+        assignmentStatus: AssignmentStatus.REASSIGN_REQUESTED,
+      },
     );
     return result;
   }
@@ -127,47 +127,47 @@ export class AssignmentController {
   ): Promise<any> {
     // check if employee is of this admin
 
-    if(body.user){
+    if (body.user) {
       const employee = await this.usersService.getUserById(body.user);
 
-    if (!employee)
-      throw new NotFoundException('No Employee found with this ID');
+      if (!employee)
+        throw new NotFoundException('No Employee found with this ID');
 
-    if (String(employee.adminId) !== String(adminId)) {
-      throw new BadRequestException(
-        'Admin can only assign to their employees.',
+      if (String(employee.adminId) !== String(adminId)) {
+        throw new BadRequestException(
+          'Admin can only assign to their employees.',
+        );
+      }
+      let role = '';
+      if (body.recordType === 'preWebinar') {
+        role = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
+      } else {
+        role = this.configService.get('appRoles')['EMPLOYEE_SALES'];
+      }
+
+      if (String(employee.role) !== String(role)) {
+        throw new BadRequestException('Invalid Employee Role.');
+      }
+
+      const empContactLimit = employee?.dailyContactLimit ?? 0;
+      const empContactCount = employee?.dailyContactCount ?? 0;
+      const attendeeCount = body.attendees.length;
+
+      if (
+        empContactCount + attendeeCount > empContactLimit &&
+        !body.forceAssign
+      ) {
+        throw new BadRequestException('Daily Contact Limit Exceeded');
+      }
+
+      return await this.assignmentService.addAssignment(
+        body,
+        adminId,
+        employee,
       );
-    }
-    let role = '';
-    if (body.recordType === 'preWebinar') {
-      role = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
     } else {
-      role = this.configService.get('appRoles')['EMPLOYEE_SALES'];
+      return await this.assignmentService.addRandomAssignment(body, adminId);
     }
-
-    if (String(employee.role) !== String(role)) {
-      throw new BadRequestException('Invalid Employee Role.');
-    }
-
-    const empContactLimit = employee?.dailyContactLimit ?? 0;
-    const empContactCount = employee?.dailyContactCount ?? 0;
-    const attendeeCount = body.attendees.length;
-
-    if (
-      empContactCount + attendeeCount > empContactLimit &&
-      !body.forceAssign
-    ) {
-      throw new BadRequestException('Daily Contact Limit Exceeded');
-    }
-
-    return await this.assignmentService.addAssignment(body, adminId, employee);
-    }
-    else {
-     return await this.assignmentService.addRandomAssignment(body, adminId);
-    }
-    
-
-    
   }
 
   @Post('/prewebinar')
@@ -203,7 +203,7 @@ export class AssignmentController {
       body.webinarId,
       body.requestReason,
       role,
-      body.attendeeEmails
+      body.attendeeEmails,
     );
   }
 
@@ -214,14 +214,13 @@ export class AssignmentController {
     @Id() userId: string,
     @Role() role: string,
   ) {
-
     return await this.assignmentService.cancelRequestReAssignements(
       userId,
       adminId,
       body.assignments,
       body.webinarId,
       role,
-      body.attendeeEmails
+      body.attendeeEmails,
     );
   }
 
@@ -240,7 +239,7 @@ export class AssignmentController {
       body.status,
       body.userId,
       body.webinarId,
-      body.attendeeEmails
+      body.attendeeEmails,
     );
   }
 
@@ -269,8 +268,8 @@ export class AssignmentController {
     @Id() adminId: string,
     @Query() query: { page?: string; limit?: string },
   ) {
-    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
-    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    const page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
     return await this.assignmentService.getReAssignments(
       adminId,
       body.webinarId,

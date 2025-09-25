@@ -4,7 +4,6 @@ import {
   Controller,
   Get,
   InternalServerErrorException,
-  Param,
   Post,
   Query,
   UnauthorizedException,
@@ -18,9 +17,7 @@ import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { unlinkSync } from 'fs';
 import { AdminId, Id, Role } from 'src/decorators/custom.decorator';
 import { ConfigService } from '@nestjs/config';
-import mongoose, { Model, Types } from 'mongoose';
-import { InjectModel } from '@nestjs/mongoose';
-import { Attendee } from 'src/schemas/Attendee.schema';
+import mongoose, { Types } from 'mongoose';
 import { UsersService } from 'src/users/users.service';
 import { AttendeesService } from 'src/attendees/attendees.service';
 
@@ -31,7 +28,7 @@ export class NotesController {
     private readonly cloudinaryService: CloudinaryService,
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
-    private readonly attendeeService: AttendeesService
+    private readonly attendeeService: AttendeesService,
   ) {}
 
   @Post()
@@ -40,21 +37,23 @@ export class NotesController {
     @UploadedFiles() files: { image: Express.Multer.File[] },
     @Body() body: CreateNoteDto,
     @Id() createdBy: string,
-    @AdminId() adminId: string
+    @AdminId() adminId: string,
   ) {
     if (!createdBy) {
       throw new BadRequestException('UserID is required.');
     }
 
-    const attendee = await this.attendeeService.fetchAttendeeById(new Types.ObjectId(`${body.attendee}`));
+    const attendee = await this.attendeeService.fetchAttendeeById(
+      new Types.ObjectId(`${body.attendee}`),
+    );
 
     if (
       !attendee ||
-      !([
+      ![
         String(attendee.assignedTo),
         String(attendee.adminId),
-        String(attendee.tempAssignedTo)
-      ].includes(createdBy))
+        String(attendee.tempAssignedTo),
+      ].includes(createdBy)
     ) {
       throw new UnauthorizedException(
         'Only Admin or assigned attendee is allowed to update attendee data.',
@@ -94,10 +93,17 @@ export class NotesController {
   async getDashboardNotes(
     @Id() userId: string,
     @Role() role: string,
-    @Query() query: { startDate: string; endDate: string; employeeId: undefined | string },
+    @Query()
+    query: {
+      startDate: string;
+      endDate: string;
+      employeeId: undefined | string;
+    },
   ) {
-
-    const { startDate, endDate } = this.notesService.validateDate(query.startDate, query.endDate);
+    const { startDate, endDate } = this.notesService.validateDate(
+      query.startDate,
+      query.endDate,
+    );
 
     let isAdminAllowed = false;
     if (query.employeeId) {
@@ -135,13 +141,16 @@ export class NotesController {
     }
   }
 
-    @Get('/dashboard/admin')
+  @Get('/dashboard/admin')
   async getAdminDashboardData(
     @Id() userId: string,
-    @Query() query: { startDate: string; endDate: string; webinarId?: undefined | string },
+    @Query()
+    query: {
+      startDate: string;
+      endDate: string;
+      webinarId?: undefined | string;
+    },
   ) {
-
-
     if (!userId || !mongoose.isValidObjectId(userId)) {
       throw new BadRequestException('UserID is required.');
     }
@@ -150,8 +159,7 @@ export class NotesController {
       new Types.ObjectId(`${userId}`),
       query.startDate,
       query.endDate,
-query.webinarId
-    )
-    
+      query.webinarId,
+    );
   }
 }

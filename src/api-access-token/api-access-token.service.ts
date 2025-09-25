@@ -24,7 +24,7 @@ export class ApiAccessTokenService {
       user: id,
       label: data.label,
       isExpired: false,
-      isDeleted: false
+      isDeleted: false,
     });
 
     if (existingToken) {
@@ -48,14 +48,14 @@ export class ApiAccessTokenService {
   async fetchTokens(id: Types.ObjectId) {
     return this.apiTokenModel.find({
       user: id,
-      isDeleted: false
+      isDeleted: false,
     });
   }
 
   async fetchExpiredTokens() {
     return this.apiTokenModel.find({
       isExpired: true,
-      isDeleted: false
+      isDeleted: false,
     });
   }
 

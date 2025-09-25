@@ -1,7 +1,4 @@
-
-
-import { IsString, IsNotEmpty, IsEnum } from 'class-validator';
-import { Usecase } from 'src/schemas/tags.schema';
+import { IsString, IsNotEmpty } from 'class-validator';
 
 export class CreateTagDto {
   @IsString()

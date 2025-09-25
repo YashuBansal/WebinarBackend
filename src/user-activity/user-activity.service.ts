@@ -25,7 +25,7 @@ export class UserActivityService {
     private readonly notificationService: NotificationService,
     private readonly socketGateway: WebsocketGateway,
     private readonly configService: ConfigService,
-    private readonly userService: UsersService
+    private readonly userService: UsersService,
   ) {}
 
   async addUserActivity(
@@ -61,34 +61,28 @@ export class UserActivityService {
       );
 
       if (dto.action === 'reActive') {
-        console.log('reActive event',activity);
+        console.log('reActive event', activity);
 
         const employee = await this.userService.getUserById(user);
 
-        if(employee) {
-
+        if (employee) {
           // replace 'User' with employee.userName
-          const details = activity.details.replace (
-            'User',
-            employee.userName,
-          );
+          const details = activity.details.replace('User', employee.userName);
 
-
-        this.notificationService.createNotification({
-          recipient: adminId,
-          title: 'User Reactivated',
-          message: details,
-          type: notificationType.INFO,
-          actionType: notificationActionType.USER_ACTIVITY,
-          metadata: {
-            userId: user,
-            email: employee.email,
-            userName: employee.userName,
-            role,
-          },
-        });
-
-      }
+          this.notificationService.createNotification({
+            recipient: adminId,
+            title: 'User Reactivated',
+            message: details,
+            type: notificationType.INFO,
+            actionType: notificationActionType.USER_ACTIVITY,
+            metadata: {
+              userId: user,
+              email: employee.email,
+              userName: employee.userName,
+              role,
+            },
+          });
+        }
       }
     }
   }

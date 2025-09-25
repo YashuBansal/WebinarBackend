@@ -5,12 +5,10 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  Min,
   Length,
   Matches,
 } from 'class-validator';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
-import { PlanDuration } from 'src/schemas/Plans.schema';
 import { DateFormat } from 'src/schemas/User.schema';
 
 export class CreateClientDto {
@@ -34,7 +32,7 @@ export class CreateClientDto {
   @IsString()
   @Length(13, 13, { message: 'Phone number must be 13 characters long' })
   @Matches(/^\+91\d{10}$/, {
-    message: 'Phone number must start with +91 followed by 10 digits'
+    message: 'Phone number must start with +91 followed by 10 digits',
   })
   phone: string;
 
@@ -48,7 +46,7 @@ export class CreateClientDto {
 
   @IsNumber()
   @IsOptional()
-  currentPlanExpiry?: Number;
+  currentPlanExpiry?: number;
 
   @IsEnum(DurationType, {
     message: 'Duration type must be one of the allowed values.',
@@ -71,4 +69,3 @@ export class ValidateOtpDto {
   @IsNotEmpty()
   otp: string;
 }
-

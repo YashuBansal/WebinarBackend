@@ -1,4 +1,9 @@
-import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import {
+  forwardRef,
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+} from '@nestjs/common';
 import { LandingpageController } from './landingpage.controller';
 import { LandingpageService } from './landingpage.service';
 import { MulterModule } from '@nestjs/platform-express';
@@ -20,7 +25,7 @@ import { UsersModule } from 'src/users/users.module';
         },
       }),
     }),
-    forwardRef(() =>UsersModule),
+    forwardRef(() => UsersModule),
     MongooseModule.forFeature([
       {
         name: LandingPage.name,

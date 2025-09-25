@@ -3,9 +3,8 @@ import { TwoFactorAuthenticationController } from './two-factor-authentication.c
 import { TwoFactorAuthenticationService } from './two-factor-authentication.service';
 
 @Module({
-
   controllers: [TwoFactorAuthenticationController],
   providers: [TwoFactorAuthenticationService],
-  exports: [TwoFactorAuthenticationService]
+  exports: [TwoFactorAuthenticationService],
 })
 export class TwoFactorAuthenticationModule {}

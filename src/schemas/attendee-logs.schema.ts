@@ -3,27 +3,26 @@ import { Document, Types } from 'mongoose';
 import { User } from './User.schema';
 
 export enum AttendeeAction {
-    REGISTERED = 'Registered',
-    NOTE = 'Note',
-    LEAD_TYPE = 'Lead Type',
-    ALARM = 'Alarm',
-    ALARM_CANCELLED = 'Alarm Cancelled',
-    UPDATE_ATTENDEE = 'Update Attendee',
-    Enrollment_CREATED = "Enrollment Created",
-    ADDED = 'Added',
-    ASSIGNMENT = 'Assignment',
-    REASSIGNMENT_REQUEST = 'Reassignment Request',
-    REASSIGNMENT_APPROVED = 'Pullback Approved',
-    REASSIGNMENT_REJECTED = 'Reassignment Rejected',
-    REASSIGNMENT = 'Reassignment',
-    PULLBACK = 'Pullback',
-    COlUMN_SWAP = 'Column Swapped'
-  }
-  
+  REGISTERED = 'Registered',
+  NOTE = 'Note',
+  LEAD_TYPE = 'Lead Type',
+  ALARM = 'Alarm',
+  ALARM_CANCELLED = 'Alarm Cancelled',
+  UPDATE_ATTENDEE = 'Update Attendee',
+  Enrollment_CREATED = 'Enrollment Created',
+  ADDED = 'Added',
+  ASSIGNMENT = 'Assignment',
+  REASSIGNMENT_REQUEST = 'Reassignment Request',
+  REASSIGNMENT_APPROVED = 'Pullback Approved',
+  REASSIGNMENT_REJECTED = 'Reassignment Rejected',
+  REASSIGNMENT = 'Reassignment',
+  PULLBACK = 'Pullback',
+  COlUMN_SWAP = 'Column Swapped',
+}
 
 @Schema({ timestamps: true })
 export class AttendeeLog extends Document {
-  @Prop({ type: String,  required: true })
+  @Prop({ type: String, required: true })
   attendee: string;
 
   @Prop({ required: true })

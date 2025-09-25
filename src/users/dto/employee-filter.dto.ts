@@ -1,7 +1,6 @@
 import { IsOptional, IsString, IsObject, IsMongoId } from 'class-validator';
 import { RangeNumberDto } from './filters.dto';
 
-
 export class EmployeeFilterDTO {
   @IsOptional()
   @IsString()

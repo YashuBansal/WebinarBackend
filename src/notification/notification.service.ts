@@ -145,6 +145,6 @@ export class NotificationService {
           { 'metadata.webinarId': webinarId.toString() },
         ],
       })
-      .session(session);  
+      .session(session);
   }
 }

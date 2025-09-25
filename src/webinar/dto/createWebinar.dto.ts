@@ -1,4 +1,11 @@
-import { IsArray, IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { Types } from 'mongoose';
 
 export class CreateWebinarDto {
@@ -15,7 +22,6 @@ export class CreateWebinarDto {
   @IsOptional()
   @IsNotEmpty()
   adminId?: string;
-
 
   @IsOptional()
   @IsArray()
@@ -48,7 +54,6 @@ export class UpdateWebinarDto {
   productIds?: Types.ObjectId[];
 }
 
-
 export class UpdateWebinarSettingDto {
   @IsBoolean()
   autoAssignmentDisabled: boolean;
@@ -58,6 +63,5 @@ export class UpdateWebinarSettingDto {
 
   @IsArray()
   @IsMongoId({ each: true })
-  excludedEmployees : string[];
-
+  excludedEmployees: string[];
 }

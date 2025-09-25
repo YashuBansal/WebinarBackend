@@ -1,10 +1,4 @@
-import {
-  Body,
-  Controller,
-  Post,
-  Query,
-  Redirect,
-} from '@nestjs/common';
+import { Body, Controller, Post, Query, Redirect } from '@nestjs/common';
 import { RazorpayService } from './razorpay.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import {

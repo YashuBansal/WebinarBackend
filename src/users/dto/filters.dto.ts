@@ -1,24 +1,24 @@
-import { IsOptional, IsString, IsBoolean, IsObject, IsNumber } from 'class-validator';
+import { IsOptional, IsString, IsObject, IsNumber } from 'class-validator';
 
 export class RangeStringDto {
-    @IsOptional()
-    @IsString() // 
-    $gte?: string;
-  
-    @IsOptional()
-    @IsString()
-    $lte?: string;
-  }
+  @IsOptional()
+  @IsString() //
+  $gte?: string;
 
-  export class RangeNumberDto {
-    @IsOptional()
-    @IsNumber()  
-    $gte?: number;
-  
-    @IsOptional()
-    @IsNumber()
-    $lte?: number;
-  }
+  @IsOptional()
+  @IsString()
+  $lte?: string;
+}
+
+export class RangeNumberDto {
+  @IsOptional()
+  @IsNumber()
+  $gte?: number;
+
+  @IsOptional()
+  @IsNumber()
+  $lte?: number;
+}
 
 export class GetClientsFilterDto {
   @IsOptional()
@@ -69,11 +69,9 @@ export class GetClientsFilterDto {
   @IsObject()
   usedContactsCount?: RangeNumberDto;
 
-
   @IsOptional()
   @IsObject()
   totalEmployees?: RangeNumberDto;
-
 
   @IsOptional()
   @IsObject()

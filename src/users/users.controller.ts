@@ -10,7 +10,6 @@ import {
   Post,
   Put,
   Query,
-  UploadedFile,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
@@ -159,8 +158,8 @@ export class UsersController {
     @Query() query: { page: string; limit: string },
     @Body() body: { filters: EmployeeFilterDTO },
   ) {
-    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
-    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    const page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
     return this.usersService.getEmployees(id, page, limit, body.filters);
   }
 

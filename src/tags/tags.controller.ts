@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query } from '@nestjs/common';
 import { CreateTagDto } from './dto/tags.dto';
 import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { TagsService } from './tags.service';
@@ -26,7 +26,7 @@ export class TagsController {
     @AdminId() adminId: string,
     @Query('usecase') usecase: Usecase | undefined,
   ) {
-    if(!adminId) return null;
+    if (!adminId) return null;
     const tags = await this.tagsService.getTags(
       new Types.ObjectId(`${adminId}`),
       usecase,

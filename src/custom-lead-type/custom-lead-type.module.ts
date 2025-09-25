@@ -1,4 +1,9 @@
-import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import {
+  forwardRef,
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+} from '@nestjs/common';
 import { CustomLeadTypeController } from './custom-lead-type.controller';
 import { CustomLeadTypeService } from './custom-lead-type.service';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -18,12 +23,11 @@ import { UsersModule } from 'src/users/users.module';
         schema: CustomLeadTypeSchema,
       },
     ]),
-    forwardRef(() => UsersModule)
-
+    forwardRef(() => UsersModule),
   ],
   controllers: [CustomLeadTypeController],
   providers: [CustomLeadTypeService],
-  exports: [CustomLeadTypeService]
+  exports: [CustomLeadTypeService],
 })
 export class CustomLeadTypeModule {
   configure(consumer: MiddlewareConsumer) {

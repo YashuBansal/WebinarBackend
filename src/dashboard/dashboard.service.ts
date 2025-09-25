@@ -2,7 +2,6 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
-import { start } from 'repl';
 import { AssignmentService } from 'src/assignment/assignment.service';
 import { NotesService } from 'src/notes/notes.service';
 import { Attendee } from 'src/schemas/Attendee.schema';
@@ -545,7 +544,7 @@ export class DashboardService {
       webinarId,
     );
 
-    let notes = [];
+    const notes = [];
 
     // if (assignmentsCount.length > 0) {
     //   let attendees = [];

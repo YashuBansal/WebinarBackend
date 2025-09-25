@@ -10,7 +10,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { NotificationModule } from 'src/notification/notification.module';
 import { ConfigService } from '@nestjs/config';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
-import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { UsersModule } from 'src/users/users.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
@@ -25,7 +24,7 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
     }),
     NotificationModule,
     UsersModule,
-    WebsocketModule
+    WebsocketModule,
   ],
   controllers: [UserActivityController],
   providers: [UserActivityService, ConfigService],

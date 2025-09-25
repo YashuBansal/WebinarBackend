@@ -18,8 +18,7 @@ import { UsersModule } from 'src/users/users.module';
       },
     ]),
     forwardRef(() => UsersModule),
-    ProductsModule
-
+    ProductsModule,
   ],
   controllers: [ProductRevenueController],
   providers: [ProductRevenueService],

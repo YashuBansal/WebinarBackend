@@ -8,13 +8,19 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { WabaTag, WabaTagDocument } from 'src/schemas/waba-tags.schema';
-import { CreateWabaTagDto, UpdateWabaTagDto, WabaTagFiltersDto } from './dto/waba-tags.dto';
+import {
+  CreateWabaTagDto,
+  UpdateWabaTagDto,
+  WabaTagFiltersDto,
+} from './dto/waba-tags.dto';
 
 @Injectable()
 export class WabaTagsService {
   private readonly logger = new Logger(WabaTagsService.name);
 
-  constructor(@InjectModel(WabaTag.name) private wabaTagModel: Model<WabaTagDocument>) {}
+  constructor(
+    @InjectModel(WabaTag.name) private wabaTagModel: Model<WabaTagDocument>,
+  ) {}
 
   async createWabaTag(
     createWabaTagDto: CreateWabaTagDto,
@@ -26,7 +32,9 @@ export class WabaTagsService {
       .replace(/[^a-z0-9_\-\.]/g, '');
 
     if (!sanitizedName) {
-      throw new BadRequestException('Tag name contains only invalid characters');
+      throw new BadRequestException(
+        'Tag name contains only invalid characters',
+      );
     }
 
     const existingTag = await this.wabaTagModel.findOne({
@@ -36,7 +44,9 @@ export class WabaTagsService {
     });
 
     if (existingTag) {
-      throw new ConflictException('Tag with this name already exists in this project');
+      throw new ConflictException(
+        'Tag with this name already exists in this project',
+      );
     }
 
     const wabaTag = new this.wabaTagModel({
@@ -65,15 +75,20 @@ export class WabaTagsService {
     return this.wabaTagModel.find(query).sort({ createdAt: -1 });
   }
 
-  async getWabaTagById(tagId: string, adminId: Types.ObjectId): Promise<WabaTag> {
+  async getWabaTagById(
+    tagId: string,
+    adminId: Types.ObjectId,
+  ): Promise<WabaTag> {
     if (!Types.ObjectId.isValid(tagId)) {
       throw new BadRequestException('Invalid tag ID');
     }
 
-    const wabaTag = await this.wabaTagModel.findOne({
-      _id: new Types.ObjectId(tagId),
-      adminId,
-    }).populate('projectId', 'name');
+    const wabaTag = await this.wabaTagModel
+      .findOne({
+        _id: new Types.ObjectId(tagId),
+        adminId,
+      })
+      .populate('projectId', 'name');
 
     if (!wabaTag) {
       throw new NotFoundException('Tag not found');
@@ -107,7 +122,9 @@ export class WabaTagsService {
         .replace(/[^a-z0-9_\-\.]/g, '');
 
       if (!sanitizedName) {
-        throw new BadRequestException('Tag name contains only invalid characters');
+        throw new BadRequestException(
+          'Tag name contains only invalid characters',
+        );
       }
 
       // Check if another tag with the same name exists in the same project
@@ -119,7 +136,9 @@ export class WabaTagsService {
       });
 
       if (existingTag) {
-        throw new ConflictException('Tag with this name already exists in this project');
+        throw new ConflictException(
+          'Tag with this name already exists in this project',
+        );
       }
 
       wabaTag.name = sanitizedName;
@@ -128,7 +147,10 @@ export class WabaTagsService {
     return await wabaTag.save();
   }
 
-  async deleteWabaTag(tagId: string, adminId: Types.ObjectId): Promise<WabaTag> {
+  async deleteWabaTag(
+    tagId: string,
+    adminId: Types.ObjectId,
+  ): Promise<WabaTag> {
     if (!Types.ObjectId.isValid(tagId)) {
       throw new BadRequestException('Invalid tag ID');
     }
@@ -150,9 +172,11 @@ export class WabaTagsService {
     projectId: string,
     adminId: Types.ObjectId,
   ): Promise<WabaTag[]> {
-    return this.wabaTagModel.find({
-      projectId: new Types.ObjectId(projectId),
-      adminId,
-    }).sort({ createdAt: -1 });
+    return this.wabaTagModel
+      .find({
+        projectId: new Types.ObjectId(projectId),
+        adminId,
+      })
+      .sort({ createdAt: -1 });
   }
 }

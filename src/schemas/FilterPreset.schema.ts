@@ -9,8 +9,8 @@ export class FilterPreset extends Document {
   @Prop({ type: Types.ObjectId, ref: 'users', required: true })
   userId: Types.ObjectId; // Admin user
 
-//   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'users', required: true })
-//   userId: MongooseSchema.Types.ObjectId;
+  //   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'users', required: true })
+  //   userId: MongooseSchema.Types.ObjectId;
 
   @Prop({ required: true })
   tableName: string;

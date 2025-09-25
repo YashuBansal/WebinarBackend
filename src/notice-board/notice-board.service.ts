@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { NoticeBoard } from '../schemas/notice-board.schema';
@@ -28,16 +28,20 @@ export class NoticeBoardService {
 
     let role = '';
 
-    if( notice.type === 'sales') {
+    if (notice.type === 'sales') {
       role = this.configService.get('appRoles')['EMPLOYEE_SALES'];
     } else if (notice.type === 'reminder') {
       role = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
     }
     console.log('Role:', role);
-    
 
     for (const employee of employees) {
-      console.log('Employee:', employee.role, employee.isActive, employee.userName);
+      console.log(
+        'Employee:',
+        employee.role,
+        employee.isActive,
+        employee.userName,
+      );
       if (employee.isActive && String(employee.role) === role) {
         const notification = {
           recipient: String(employee._id),
@@ -81,7 +85,9 @@ export class NoticeBoardService {
 
   // Get the current notice board content
   async find(adminId: Types.ObjectId, type: string): Promise<NoticeBoard> {
-    const notice = await this.noticeBoardModel.findOne({ adminId, type }).exec();
+    const notice = await this.noticeBoardModel
+      .findOne({ adminId, type })
+      .exec();
 
     return notice ? notice : null;
   }

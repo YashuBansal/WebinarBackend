@@ -53,7 +53,7 @@ export class Notes extends Document {
     default: 0,
     min: 0,
   })
-  callDuration: Number;
+  callDuration: number;
 
   @Prop({
     type: String,

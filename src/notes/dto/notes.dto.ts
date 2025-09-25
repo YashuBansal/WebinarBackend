@@ -2,14 +2,11 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
-  IsArray,
   ValidateNested,
   IsMongoId,
-  IsBoolean,
   IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { Types } from 'mongoose';
 
 enum BooleanString {
   True = 'true',

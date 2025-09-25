@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -83,8 +82,8 @@ export class AuthService {
       throw new NotFoundException('Incorrect E-Mail');
     }
 
-    if(user.isDeleted){
-      throw new BadRequestException("Account Deleted");
+    if (user.isDeleted) {
+      throw new BadRequestException('Account Deleted');
     }
 
     const role = user.role;

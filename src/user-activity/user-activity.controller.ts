@@ -4,7 +4,6 @@ import {
   Body,
   Controller,
   Get,
-  NotFoundException,
   Param,
   Post,
   Put,
@@ -28,7 +27,7 @@ export class UserActivityController {
   constructor(
     private readonly userActivityService: UserActivityService,
     private readonly configService: ConfigService,
-    private readonly userService: UsersService
+    private readonly userService: UsersService,
   ) {}
 
   @Post()
@@ -36,13 +35,13 @@ export class UserActivityController {
     @Body() dto: CreateUserActivityDto,
     @AdminId() adminId: string,
     @Id() id: string,
-    @Role() role: string
+    @Role() role: string,
   ) {
     const newLog = await this.userActivityService.addUserActivity(
       id,
       adminId,
       dto,
-      role
+      role,
     );
 
     return {

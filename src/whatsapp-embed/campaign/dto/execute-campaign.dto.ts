@@ -1,4 +1,10 @@
-import { IsArray, IsString, IsNotEmpty, IsOptional, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CampaignContactDto {
@@ -37,4 +43,8 @@ export class ExecuteCampaignDto {
   @IsString()
   @IsOptional()
   language?: string; // Defaults to template's language if not provided
+
+  @IsString()
+  @IsOptional()
+  headerMediaAssetId?: string; // Media asset ID for header
 }

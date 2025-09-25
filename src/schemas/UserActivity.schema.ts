@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { User } from './User.schema'; 
+import { User } from './User.schema';
 
 @Schema({ timestamps: true })
 export class UserActivity extends Document {
@@ -10,7 +10,7 @@ export class UserActivity extends Document {
   @Prop({ required: true })
   action: string;
 
-  @Prop({ 
+  @Prop({
     type: String,
     required: false,
   })
@@ -22,8 +22,6 @@ export class UserActivity extends Document {
   @Prop({ type: Types.ObjectId, ref: User.name, required: true })
   adminId: Types.ObjectId;
 }
-
-
 
 export const UserActivitySchema = SchemaFactory.createForClass(UserActivity);
 UserActivitySchema.pre('save', function (next) {

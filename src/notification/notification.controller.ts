@@ -28,6 +28,9 @@ export class NotificationController {
     @Id() recipient: string,
     @Body('important') important: boolean,
   ) {
-    return await this.notificationService.resetUserUnseenCount(recipient, important);
+    return await this.notificationService.resetUserUnseenCount(
+      recipient,
+      important,
+    );
   }
 }

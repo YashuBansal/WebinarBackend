@@ -17,16 +17,21 @@ import { AxiosError } from 'axios';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ProjectsService } from 'src/projects/projects.service';
+import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
 import {
   CreateTemplateDto,
   UpdateTemplateDto,
   GetTemplatesQueryDto,
   DeleteTemplateDto,
-  TemplateResponseDto
+  TemplateResponseDto,
 } from './dto/template.dto';
-import { SendTemplateMessageDto, SendBulkTemplateMessageDto } from './dto/msg.dto';
+import {
+  SendTemplateMessageDto,
+  SendBulkTemplateMessageDto,
+} from './dto/msg.dto';
 import { v2 as cloudinary } from 'cloudinary';
 import { MediaAsset, MediaAssetDocument } from './schemas/media-asset.schema';
+import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 
 @Injectable()
 export class WhatsappService {
@@ -42,6 +47,8 @@ export class WhatsappService {
     private readonly projectService: ProjectsService,
     @InjectModel(MediaAsset.name)
     private readonly mediaAssetModel: Model<MediaAssetDocument>,
+    private readonly cloudinaryService: CloudinaryService,
+    private readonly wabaMessageService: WabaMessageService,
   ) {
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
@@ -64,7 +71,12 @@ export class WhatsappService {
       api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
     });
 
-    console.log('cloudinary config', this.configService.get<string>('CLOUDINARY_CLOUD_NAME'), this.configService.get<string>('CLOUDINARY_API_KEY'), this.configService.get<string>('CLOUDINARY_API_SECRET'));
+    console.log(
+      'cloudinary config',
+      this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
+      this.configService.get<string>('CLOUDINARY_API_KEY'),
+      this.configService.get<string>('CLOUDINARY_API_SECRET'),
+    );
   }
 
   url = this.configService.get('AISENSY_URL');
@@ -104,17 +116,76 @@ export class WhatsappService {
    * @param payload The body of the POST request from Meta's webhook.
    */
   processWebhookPayload(payload: any): void {
-    // For now, we just log the payload.
-    // In the future, this is where you'll parse the body to find message IDs, statuses, etc.,
-    // and then update your MongoDB database.
-    console.log('Received webhook payload:', JSON.stringify(payload, null, 2));
+    console.log(JSON.stringify(payload, null, 2));
+    this.logger.log('Processing webhook payload for WhatsApp messages');
 
-    // Example of future logic:
-    // if (payload.entry?.[0]?.changes?.[0]?.value?.statuses) {
-    //   // handle status update
-    // } else if (payload.entry?.[0]?.changes?.[0]?.value?.messages) {
-    //   // handle incoming message
-    // }
+    try {
+      // Process status updates
+      if (payload.entry?.[0]?.changes?.[0]?.value?.statuses) {
+        const statuses = payload.entry[0].changes[0].value.statuses;
+
+        for (const status of statuses) {
+          // Process status updates asynchronously to avoid blocking the webhook response
+          this.updateMessageStatus(
+            status.id,
+            status.status,
+            status.timestamp,
+            status.errors?.[0]?.message,
+          ).catch(error => {
+            this.logger.error(`Failed to process status update for ${status.id}:`, error);
+          });
+        }
+      }
+
+      // Process incoming messages (if needed)
+      if (payload.entry?.[0]?.changes?.[0]?.value?.messages) {
+        const messages = payload.entry[0].changes[0].value.messages;
+        this.logger.log(`Received ${messages.length} incoming messages`);
+        // Handle incoming messages if needed
+      }
+    } catch (error) {
+      this.logger.error('Error processing webhook payload', error);
+    }
+  }
+
+  /**
+   * Update message status for individual messages
+   */
+  private async updateMessageStatus(
+    wabaMessageId: string,
+    status: string,
+    timestamp: string,
+    failureReason?: string,
+  ): Promise<void> {
+    try {
+      // Update WABA message status
+      await this.wabaMessageService.updateStatus(
+        wabaMessageId,
+        status,
+        failureReason,
+      );
+
+      // Get the message to check if it's a campaign or individual message
+      const message = await this.wabaMessageService.findByWabaMessageId(wabaMessageId);
+
+      if (message) {
+        if (message.campaignId) {
+          // This is a campaign message - campaign service will handle analytics
+          this.logger.log(`Campaign message ${wabaMessageId} status updated to ${status} via WhatsApp service`);
+        } else {
+          // This is an individual message
+          this.logger.log(`Individual message ${wabaMessageId} status updated to ${status}`);
+          // You could add individual message analytics here if needed
+        }
+      } else {
+        this.logger.warn(`WABA message ${wabaMessageId} not found in database`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to update message status for ${wabaMessageId}`,
+        error,
+      );
+    }
   }
 
   /**
@@ -187,35 +258,51 @@ export class WhatsappService {
       console.log('wabaId', wabaId);
 
       const wabaDetails = await this.getWabaDetails(wabaId, accessToken);
-      console.log('waba details', wabaDetails?.phone_numbers.data[0]?.id, wabaDetails?.phone_numbers.data[0]?.display_phone_number);
+      console.log(
+        'waba details',
+        wabaDetails?.phone_numbers.data[0]?.id,
+        wabaDetails?.phone_numbers.data[0]?.display_phone_number,
+      );
 
       console.log(' token', accessToken);
       const phoneNumberId = wabaDetails?.phone_numbers.data[0]?.id;
-      const phoneNumber = wabaDetails?.phone_numbers.data[0]?.display_phone_number;
+      const phoneNumber =
+        wabaDetails?.phone_numbers.data[0]?.display_phone_number;
       this.logger.log(`Saving connection details for WABA ID: ${wabaId}`);
-      const newWabaConnection = await this.projectService.update(adminId, projectId, {
-        permanentAccessToken: accessToken,
-        wabaId: wabaId,
-        phoneNumberId: phoneNumberId,
-        phone: phoneNumber,
-        appId: this.configService.get('META_APP_ID'),
-        appSecret: this.configService.get('META_APP_SECRET'),
-      });
+      const newWabaConnection = await this.projectService.update(
+        adminId,
+        projectId,
+        {
+          permanentAccessToken: accessToken,
+          wabaId: wabaId,
+          phoneNumberId: phoneNumberId,
+          phone: phoneNumber,
+          appId: this.configService.get('META_APP_ID'),
+          appSecret: this.configService.get('META_APP_SECRET'),
+        },
+      );
 
       this.logger.log(
         `Successfully connected WABA ${wabaId} for admin ${adminId}`,
       );
 
-      if(newWabaConnection) {
+      if (newWabaConnection) {
         try {
           // Register the phone number with PIN
-          const registrationData = await this.registerPhoneNumber(phoneNumberId, accessToken, '123456');
+          const registrationData = await this.registerPhoneNumber(
+            phoneNumberId,
+            accessToken,
+            '123456',
+          );
           console.log('Phone number registration data:', registrationData);
-          
+
           // Subscribe the app to the WABA for webhook notifications
-          const subscriptionData = await this.subscribeAppToWaba(wabaId, accessToken);
+          const subscriptionData = await this.subscribeAppToWaba(
+            wabaId,
+            accessToken,
+          );
           console.log('App subscription data:', subscriptionData);
-          
+
           this.logger.log(
             `Successfully completed WABA setup: registration and app subscription for WABA ${wabaId}`,
           );
@@ -229,8 +316,6 @@ export class WhatsappService {
         }
       }
 
-
-      
       return newWabaConnection;
     } catch (error) {
       const axiosError = error as AxiosError;
@@ -379,7 +464,7 @@ export class WhatsappService {
     projectId: Types.ObjectId,
     query: GetTemplatesQueryDto = {},
   ): Promise<TemplateResponseDto[]> {
-    const account = await this.projectService.findOne(adminId, projectId)
+    const account = await this.projectService.findOne(adminId, projectId);
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this project.',
@@ -400,7 +485,9 @@ export class WhatsappService {
     // Build query parameters
     const params: any = {
       access_token: permanentAccessToken,
-      fields: query.fields || 'name,status,category,language,components,quality_score,rejected_reason',
+      fields:
+        query.fields ||
+        'name,status,category,language,components,quality_score,rejected_reason',
     };
 
     // Add optional filters
@@ -426,14 +513,11 @@ export class WhatsappService {
       return response.data.data || []; // Return empty array if no data
     } catch (error) {
       const axiosError = error as AxiosError;
-      this.logger.error(
-        `Failed to fetch templates for WABA ${wabaId}`,
-        {
-          status: axiosError.response?.status,
-          data: axiosError.response?.data,
-          message: axiosError.message,
-        },
-      );
+      this.logger.error(`Failed to fetch templates for WABA ${wabaId}`, {
+        status: axiosError.response?.status,
+        data: axiosError.response?.data,
+        message: axiosError.message,
+      });
 
       // Provide more specific error messages
       if (axiosError.response?.status === 401) {
@@ -463,7 +547,9 @@ export class WhatsappService {
     projectId: Types.ObjectId,
     createTemplateDto: CreateTemplateDto,
   ): Promise<TemplateResponseDto> {
-    const account = await this.projectService.findOne(adminId, projectId)
+    const account = await this.projectService.findOne(adminId, projectId);
+    console.log('account info', account, JSON.stringify(createTemplateDto
+      , null, 2));
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this project.',
@@ -482,9 +568,57 @@ export class WhatsappService {
     const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/message_templates`;
 
     // Validate that BODY component exists
-    const bodyComponent = createTemplateDto.components.find(c => c.type === 'BODY');
+    const bodyComponent = createTemplateDto.components.find(
+      (c) => c.type === 'BODY',
+    );
     if (!bodyComponent) {
-      throw new InternalServerErrorException('BODY component is required for all templates');
+      throw new InternalServerErrorException(
+        'BODY component is required for all templates',
+      );
+    }
+
+    // Process components to handle header_handle properly
+    const processedComponents = [];
+
+    for (const component of createTemplateDto.components) {
+      if (component.type === 'HEADER' && component.example) {
+        // For HEADER components with media, ensure header_handle is properly formatted
+        const processedComponent = { ...component };
+
+        if (component.example.header_text) {
+          // For TEXT headers, keep header_text as is
+          processedComponent.example = {
+            header_text: component.example.header_text,
+          };
+        } else if (component.example.header_handle) {
+          // For media headers, ensure header_handle is an array of strings
+          const headerHandles = Array.isArray(component.example.header_handle)
+            ? component.example.header_handle
+            : [component.example.header_handle];
+
+          // Validate that all header handles are valid (non-empty strings)
+          const validHandles = headerHandles.filter(
+            (handle) =>
+              handle && typeof handle === 'string' && handle.trim().length > 0,
+          );
+
+          if (validHandles.length === 0) {
+            throw new BadRequestException(
+              'Invalid header_handle: must contain at least one valid media handle',
+            );
+          }
+
+
+          processedComponent.example = {
+            header_handle: validHandles.map((handle) => String(handle).trim()),
+          };
+        }
+
+        processedComponents.push(processedComponent);
+      } else {
+        // For non-HEADER components, return as is
+        processedComponents.push(component);
+      }
     }
 
     // Build the Meta API payload according to WhatsApp Business Management API
@@ -492,10 +626,17 @@ export class WhatsappService {
       name: createTemplateDto.name,
       category: createTemplateDto.category,
       language: createTemplateDto.language,
-      components: createTemplateDto.components,
-      ...(createTemplateDto.parameter_format && { parameter_format: createTemplateDto.parameter_format }),
-      ...(createTemplateDto.library_template_name && { library_template_name: createTemplateDto.library_template_name }),
-      ...(createTemplateDto.library_template_button_inputs && { library_template_button_inputs: createTemplateDto.library_template_button_inputs }),
+      components: processedComponents,
+      ...(createTemplateDto.parameter_format && {
+        parameter_format: createTemplateDto.parameter_format,
+      }),
+      ...(createTemplateDto.library_template_name && {
+        library_template_name: createTemplateDto.library_template_name,
+      }),
+      ...(createTemplateDto.library_template_button_inputs && {
+        library_template_button_inputs:
+          createTemplateDto.library_template_button_inputs,
+      }),
     };
 
     this.logger.log(
@@ -503,24 +644,27 @@ export class WhatsappService {
     );
 
     try {
+      // CORRECTED API CALL
       const response = await firstValueFrom(
         this.httpService.post(url, metaPayload, {
-          params: { access_token: permanentAccessToken },
+          headers: {
+            // <-- Use headers instead of params
+            Authorization: `Bearer ${permanentAccessToken}`,
+          },
         }),
       );
 
-      this.logger.log(`Template created successfully with ID: ${response.data.id}`);
+      this.logger.log(
+        `Template created successfully with ID: ${response.data.id}`,
+      );
       return response.data;
     } catch (error) {
       const axiosError = error as AxiosError;
-      this.logger.error(
-        `Failed to create template for WABA ${wabaId}`,
-        {
-          status: axiosError.response?.status,
-          data: axiosError.response?.data,
-          message: axiosError.message,
-        },
-      );
+      this.logger.error(`Failed to create template for WABA ${wabaId}`, {
+        status: axiosError.response?.status,
+        data: axiosError.response?.data,
+        message: axiosError.message,
+      });
 
       // Provide more specific error messages
       if (axiosError.response?.status === 401) {
@@ -532,7 +676,8 @@ export class WhatsappService {
           'Access denied. Please check your WhatsApp Business Account permissions.',
         );
       } else if (axiosError.response?.status === 400) {
-        const errorMessage = axiosError.response?.data || 'Invalid template data';
+        const errorMessage =
+          axiosError.response?.data || 'Invalid template data';
         throw new InternalServerErrorException(
           `Template validation failed: ${errorMessage}`,
         );
@@ -550,7 +695,7 @@ export class WhatsappService {
     templateId: string,
     updateTemplateDto: UpdateTemplateDto,
   ): Promise<{ success: boolean }> {
-    const account = await this.projectService.findOne(adminId, projectId)
+    const account = await this.projectService.findOne(adminId, projectId);
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this WABA.',
@@ -563,8 +708,10 @@ export class WhatsappService {
 
     // Build the Meta API payload for updating
     const metaPayload: any = {};
-    if (updateTemplateDto.category) metaPayload.category = updateTemplateDto.category;
-    if (updateTemplateDto.components) metaPayload.components = updateTemplateDto.components;
+    if (updateTemplateDto.category)
+      metaPayload.category = updateTemplateDto.category;
+    if (updateTemplateDto.components)
+      metaPayload.components = updateTemplateDto.components;
 
     this.logger.log(
       `Updating template ${templateId}: ${JSON.stringify(metaPayload, null, 2)}`,
@@ -596,7 +743,7 @@ export class WhatsappService {
     deleteTemplateDto: DeleteTemplateDto,
   ): Promise<{ success: boolean }> {
     console.log('deleteTemplateDto', deleteTemplateDto);
-    const account = await this.projectService.findOne(adminId, projectId)
+    const account = await this.projectService.findOne(adminId, projectId);
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this WABA.',
@@ -631,10 +778,7 @@ export class WhatsappService {
       this.logger.log(`Template deleted successfully`);
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `Failed to delete template`,
-        error.response?.data,
-      );
+      this.logger.error(`Failed to delete template`, error.response?.data);
       throw new InternalServerErrorException(
         error.response?.data?.error?.message || 'Could not delete template.',
       );
@@ -646,7 +790,7 @@ export class WhatsappService {
     projectId: Types.ObjectId,
     templateId: string,
   ): Promise<TemplateResponseDto> {
-    const account = await this.projectService.findOne(adminId, projectId)
+    const account = await this.projectService.findOne(adminId, projectId);
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this WABA.',
@@ -662,7 +806,8 @@ export class WhatsappService {
         this.httpService.get(url, {
           params: {
             access_token: permanentAccessToken,
-            fields: 'name,status,category,language,components,quality_score,rejected_reason',
+            fields:
+              'name,status,category,language,components,quality_score,rejected_reason',
           },
         }),
       );
@@ -682,14 +827,22 @@ export class WhatsappService {
     adminId: Types.ObjectId,
     sendTemplateDto: SendTemplateMessageDto,
   ): Promise<any> {
-    const { projectId, recipientPhoneNumber, templateName, bodyVariables, headerMediaAssetId } =
-      sendTemplateDto;
+    const {
+      projectId,
+      recipientPhoneNumber,
+      templateName,
+      bodyVariables,
+      headerMediaAssetId,
+    } = sendTemplateDto;
 
     this.logger.log(
       `Attempting to send template '${templateName}' from WABA ${projectId} to ${recipientPhoneNumber}`,
     );
 
-    const account = await this.projectService.findOne(adminId, new Types.ObjectId(projectId))
+    const account = await this.projectService.findOne(
+      adminId,
+      new Types.ObjectId(projectId),
+    );
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this WABA.',
@@ -734,7 +887,8 @@ export class WhatsappService {
 
     // Add header component if media asset is provided
     if (headerMediaAssetId) {
-      const mediaAsset = await this.mediaAssetModel.findById(headerMediaAssetId);
+      const mediaAsset =
+        await this.mediaAssetModel.findById(headerMediaAssetId);
       if (!mediaAsset) {
         throw new NotFoundException('Media asset not found');
       }
@@ -743,16 +897,18 @@ export class WhatsappService {
       const templates = await this.getTemplatesForWaba(
         adminId,
         new Types.ObjectId(projectId),
-        { name: templateName }
+        { name: templateName },
       );
-      
+
       if (!templates || templates.length === 0) {
         throw new NotFoundException(`Template '${templateName}' not found`);
       }
-      
+
       const templateDetails = templates[0];
 
-      const headerComponent = templateDetails.components.find(c => c.type === 'HEADER');
+      const headerComponent = templateDetails.components.find(
+        (c) => c.type === 'HEADER',
+      );
       if (headerComponent) {
         const headerFormat = headerComponent.format;
         let headerParameter: any;
@@ -784,7 +940,9 @@ export class WhatsappService {
             };
             break;
           default:
-            throw new BadRequestException(`Unsupported header format: ${headerFormat}`);
+            throw new BadRequestException(
+              `Unsupported header format: ${headerFormat}`,
+            );
         }
 
         metaPayload.template.components.push({
@@ -808,6 +966,21 @@ export class WhatsappService {
       this.logger.log(
         `Message sent successfully. Message ID: ${JSON.stringify(response.data.messages[0])}`,
       );
+
+      // Create WABA message record for individual message
+      if (sendTemplateDto.contactId) {
+        try {
+          await this.wabaMessageService.create({
+            contactId: sendTemplateDto.contactId,
+            wabaMessageId: response.data.messages[0].id,
+            messageType: 'individual',
+          });
+        } catch (error) {
+          this.logger.error('Failed to create WABA message record:', error);
+          // Don't throw error here as the message was sent successfully
+        }
+      }
+
       return response.data;
     } catch (error) {
       this.logger.error(
@@ -816,7 +989,7 @@ export class WhatsappService {
       );
       throw new InternalServerErrorException(
         error.response?.data?.error?.message ||
-        'Could not send template message.',
+          'Could not send template message.',
       );
     }
   }
@@ -825,13 +998,22 @@ export class WhatsappService {
     adminId: Types.ObjectId,
     sendBulkTemplateDto: SendBulkTemplateMessageDto,
   ): Promise<any> {
-    const { projectId, contacts, templateName, bodyVariables, headerMediaAssetId } = sendBulkTemplateDto;
+    const {
+      projectId,
+      contacts,
+      templateName,
+      bodyVariables,
+      headerMediaAssetId,
+    } = sendBulkTemplateDto;
 
     this.logger.log(
       `Attempting to send bulk template '${templateName}' from WABA ${projectId} to ${contacts.length} contacts`,
     );
 
-    const account = await this.projectService.findOne(adminId, new Types.ObjectId(projectId));
+    const account = await this.projectService.findOne(
+      adminId,
+      new Types.ObjectId(projectId),
+    );
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this WABA.',
@@ -871,7 +1053,8 @@ export class WhatsappService {
 
     // Add header component if media asset is provided
     if (headerMediaAssetId) {
-      const mediaAsset = await this.mediaAssetModel.findById(headerMediaAssetId);
+      const mediaAsset =
+        await this.mediaAssetModel.findById(headerMediaAssetId);
       if (!mediaAsset) {
         throw new NotFoundException('Media asset not found');
       }
@@ -880,16 +1063,18 @@ export class WhatsappService {
       const templates = await this.getTemplatesForWaba(
         adminId,
         new Types.ObjectId(projectId),
-        { name: templateName }
+        { name: templateName },
       );
-      
+
       if (!templates || templates.length === 0) {
         throw new NotFoundException(`Template '${templateName}' not found`);
       }
-      
+
       const templateDetails = templates[0];
 
-      const headerComponent = templateDetails.components.find(c => c.type === 'HEADER');
+      const headerComponent = templateDetails.components.find(
+        (c) => c.type === 'HEADER',
+      );
       if (headerComponent) {
         const headerFormat = headerComponent.format;
         let headerParameter: any;
@@ -921,7 +1106,9 @@ export class WhatsappService {
             };
             break;
           default:
-            throw new BadRequestException(`Unsupported header format: ${headerFormat}`);
+            throw new BadRequestException(
+              `Unsupported header format: ${headerFormat}`,
+            );
         }
 
         templateStructure.components.push({
@@ -953,24 +1140,39 @@ export class WhatsappService {
           template: templateStructure,
         };
 
-        this.logger.log(`Sending message to ${contact.phoneNumber} (Contact ID: ${contact.contactId})`);
+        this.logger.log(
+          `Sending message to ${contact.phoneNumber} (Contact ID: ${contact.contactId})`,
+        );
 
         const response = await firstValueFrom(
           this.httpService.post(url, metaPayload, {
-            headers: { Authorization: `Bearer ${account.permanentAccessToken}` },
+            headers: {
+              Authorization: `Bearer ${account.permanentAccessToken}`,
+            },
           }),
         );
 
         results.sent++;
         results.messageIds.push(response.data.messages[0].id);
-        
+
         this.logger.log(
           `Message sent successfully to ${contact.phoneNumber}. Message ID: ${response.data.messages[0].id}`,
         );
 
-        // Add a small delay between messages to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Create WABA message record for bulk individual message
+        try {
+          await this.wabaMessageService.create({
+            contactId: contact.contactId,
+            wabaMessageId: response.data.messages[0].id,
+            messageType: 'individual',
+          });
+        } catch (error) {
+          this.logger.error('Failed to create WABA message record:', error);
+          // Don't throw error here as the message was sent successfully
+        }
 
+        // Add a small delay between messages to avoid rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 100));
       } catch (error) {
         results.failed++;
         results.errors.push({
@@ -1048,7 +1250,8 @@ export class WhatsappService {
       );
     }
 
-    const accessToken = 'EAASkZB5UKWQ8BPRFoH9Bw3K9PuuoCXeUEFU92pZALNF3gQj15saVwjdi3MpBpaRETF10UZBnj8lDceFKTzBRXOqMZAuOCQArAL7ldp2QYAmpNDUzwZAyNl7FZCTRCF7j0eDDxH7uDBf26dMODL9SFf4LK15ZBpVZCPTB9hDJnV8qCE8cZBq3ZCKyUmN6gDbYUZA5zFRz8FwE6QQmGEKHj7V1LUSoRZC8WBRqtd3eYLzst2DuNcgZD';
+    const accessToken =
+      'EAASkZB5UKWQ8BPRFoH9Bw3K9PuuoCXeUEFU92pZALNF3gQj15saVwjdi3MpBpaRETF10UZBnj8lDceFKTzBRXOqMZAuOCQArAL7ldp2QYAmpNDUzwZAyNl7FZCTRCF7j0eDDxH7uDBf26dMODL9SFf4LK15ZBpVZCPTB9hDJnV8qCE8cZBq3ZCKyUmN6gDbYUZA5zFRz8FwE6QQmGEKHj7V1LUSoRZC8WBRqtd3eYLzst2DuNcgZD';
     const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
     const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
 
@@ -1096,11 +1299,10 @@ export class WhatsappService {
       );
       throw new InternalServerErrorException(
         error.response?.data?.error?.message ||
-        'Could not send template message.',
+          'Could not send template message.',
       );
     }
   }
-
 
   async sendTemplateMessagetest2(): Promise<any> {
     const wabaId = '1055988183368296';
@@ -1159,7 +1361,7 @@ export class WhatsappService {
       );
       throw new InternalServerErrorException(
         error.response?.data?.error?.message ||
-        'Could not send template message.',
+          'Could not send template message.',
       );
     }
   }
@@ -1226,20 +1428,15 @@ export class WhatsappService {
         }),
       );
 
-      this.logger.log(
-        `Phone number ${phoneNumberId} registered successfully`,
-      );
+      this.logger.log(`Phone number ${phoneNumberId} registered successfully`);
       return response.data;
     } catch (error) {
       const axiosError = error as AxiosError;
-      this.logger.error(
-        `Failed to register phone number ${phoneNumberId}`,
-        {
-          status: axiosError.response?.status,
-          data: axiosError.response?.data,
-          message: axiosError.message,
-        },
-      );
+      this.logger.error(`Failed to register phone number ${phoneNumberId}`, {
+        status: axiosError.response?.status,
+        data: axiosError.response?.data,
+        message: axiosError.message,
+      });
 
       // Provide specific error messages based on status codes
       if (axiosError.response?.status === 400) {
@@ -1261,8 +1458,9 @@ export class WhatsappService {
       }
 
       throw new InternalServerErrorException(
-        typeof axiosError.response?.data === 'string' ? axiosError.response?.data :
-          'Could not register phone number.',
+        typeof axiosError.response?.data === 'string'
+          ? axiosError.response?.data
+          : 'Could not register phone number.',
       );
     }
   }
@@ -1304,10 +1502,7 @@ export class WhatsappService {
    * @param accessToken The access token for authentication
    * @returns Promise with subscription result
    */
-  async subscribeAppToWaba(
-    wabaId: string,
-    accessToken: string,
-  ): Promise<any> {
+  async subscribeAppToWaba(wabaId: string, accessToken: string): Promise<any> {
     const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
     const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/subscribed_apps`;
 
@@ -1315,28 +1510,27 @@ export class WhatsappService {
 
     try {
       const response = await firstValueFrom(
-        this.httpService.post(url, {}, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
+        this.httpService.post(
+          url,
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
           },
-        }),
+        ),
       );
 
-      this.logger.log(
-        `App successfully subscribed to WABA ${wabaId}`,
-      );
+      this.logger.log(`App successfully subscribed to WABA ${wabaId}`);
       return response.data;
     } catch (error) {
       const axiosError = error as AxiosError;
-      this.logger.error(
-        `Failed to subscribe app to WABA ${wabaId}`,
-        {
-          status: axiosError.response?.status,
-          data: axiosError.response?.data,
-          message: axiosError.message,
-        },
-      );
+      this.logger.error(`Failed to subscribe app to WABA ${wabaId}`, {
+        status: axiosError.response?.status,
+        data: axiosError.response?.data,
+        message: axiosError.message,
+      });
 
       // Provide specific error messages based on status codes
       if (axiosError.response?.status === 400) {
@@ -1358,8 +1552,9 @@ export class WhatsappService {
       }
 
       throw new InternalServerErrorException(
-        typeof axiosError.response?.data === 'string' ? axiosError.response?.data :
-          'Could not subscribe app to WABA.',
+        typeof axiosError.response?.data === 'string'
+          ? axiosError.response?.data
+          : 'Could not subscribe app to WABA.',
       );
     }
   }
@@ -1394,69 +1589,104 @@ export class WhatsappService {
   }
 
   /**
-   * Uploads a sample file to Cloudinary and then to Meta to get a header handle
+   * Uploads a sample file to Meta using WhatsApp Media Upload API to get a media ID for templates
    * @param fileBuffer The file buffer to upload
    * @param mimeType The MIME type of the file
    * @param originalName The original filename
-   * @returns The header handle ID from Meta
+   * @returns The media ID from Meta for use in template header_handle field
    */
-  async uploadSampleToMetaViaCloudinary(
+  async getMetaHeaderHandle(
     fileBuffer: Buffer,
     mimeType: string,
     originalName: string,
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
   ): Promise<string> {
     try {
-      this.logger.log(`Starting Cloudinary upload for file: ${originalName}`);
+      this.logger.log(`Uploading sample file to Meta using WhatsApp Media API: ${originalName}`);
 
-      // Upload to Cloudinary
-      const cloudinaryResult = await new Promise<any>((resolve, reject) => {
-        cloudinary.uploader.upload_stream(
-          {
-            resource_type: mimeType.startsWith('image/') ? 'image' : 
-                          mimeType.startsWith('video/') ? 'video' : 'raw',
-            folder: 'whatsapp-templates/samples',
-            public_id: `sample_${Date.now()}_${originalName.replace(/[^a-zA-Z0-9]/g, '_')}`,
-          },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          }
-        ).end(fileBuffer);
-      });
+      const project = await this.projectService.findOne(adminId, projectId);
+      console.log('project info', project);
 
-      this.logger.log(`Cloudinary upload successful: ${cloudinaryResult.secure_url}`);
+      // Get WABA credentials from your configuration
+      const apiVersion = this.configService.get('GRAPH_API_VERSION', 'v23.0');
+      const phoneNumberId = project.phoneNumberId;
+      const accessToken = project.permanentAccessToken;
+      const appId = project.appId;
 
-      // Upload to Meta using the Cloudinary URL
-      const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
-      const url = `https://graph.facebook.com/${apiVersion}/media`;
+      if (!phoneNumberId) {
+        throw new InternalServerErrorException('WABA Phone Number ID is not configured.');
+      }
 
-      const metaPayload = {
-        file_url: cloudinaryResult.secure_url,
-        type: mimeType,
+      // Step 1: Start an upload session
+      const createSessionUrl = `https://graph.facebook.com/${apiVersion}/${appId}/uploads`;
+      
+      const sessionParams = {
+        file_name: originalName,
+        file_length: fileBuffer.length.toString(),
+        file_type: mimeType,
+        access_token: accessToken,
       };
 
-      this.logger.log(`Uploading to Meta with URL: ${cloudinaryResult.secure_url}`);
+      this.logger.log(
+        `Creating upload session: ${originalName} (${fileBuffer.length} bytes, ${mimeType})`,
+      );
 
-      const response = await firstValueFrom(
-        this.httpService.post(url, metaPayload, {
+      const sessionResponse = await firstValueFrom(
+        this.httpService.post(createSessionUrl, null, {
+          params: sessionParams,
+        }),
+      );
+
+      this.logger.log(
+        `Upload session created: ${JSON.stringify(sessionResponse.data, null, 2)}`,
+      );
+
+      const uploadSessionId = sessionResponse.data.id;
+      if (!uploadSessionId || !uploadSessionId.startsWith('upload:')) {
+        throw new Error('Invalid upload session ID received from Meta');
+      }
+
+      // Step 2: Upload the file data
+      const uploadUrl = `https://graph.facebook.com/${apiVersion}/${uploadSessionId}`;
+      
+      this.logger.log(`Uploading file data to session: ${uploadSessionId}`);
+
+      const uploadResponse = await firstValueFrom(
+        this.httpService.post(uploadUrl, fileBuffer, {
           headers: {
-            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+            'file_offset': '0',
+            'Content-Type': mimeType,
           },
         }),
       );
 
-      this.logger.log(`Meta upload successful, header handle: ${response.data.id}`);
-      return response.data.id;
+      this.logger.log(
+        `File upload completed: ${JSON.stringify(uploadResponse.data, null, 2)}`,
+      );
+
+      const fileHandle = uploadResponse.data.h;
+      if (!fileHandle) {
+        throw new Error('No file handle received from Meta upload');
+      }
+
+      this.logger.log(`File uploaded successfully, handle: ${fileHandle}`);
+      
+      return fileHandle;
 
     } catch (error) {
-      this.logger.error(JSON.stringify(error));
-      this.logger.error(`Failed to upload sample to Meta via Cloudinary: ${error.message}`);
+      // Log the detailed error from Meta's API
+      this.logger.error(
+        'Meta Resumable Upload Failed. Response:',
+        JSON.stringify(error.response?.data),
+      );
+      this.logger.error(`Failed to upload sample to Meta: ${error.message}`);
       throw new InternalServerErrorException(
-        `Failed to upload sample media: ${error.message}`,
+        `Failed to get Meta header handle: ${error.response?.data?.error?.message || error.message}`,
       );
     }
   }
-
   /**
    * Uploads a media asset for sending in messages
    * @param file The uploaded file
@@ -1470,45 +1700,42 @@ export class WhatsappService {
     projectId: Types.ObjectId,
   ): Promise<MediaAssetDocument> {
     try {
-      this.logger.log(`Starting media asset upload for user ${userId}, project ${projectId}`);
+      this.logger.log(
+        `Starting media asset upload for user ${userId}, project ${projectId}`,
+      );
 
-      // Create directory structure if it doesn't exist
-      const fs = require('fs');
-      const path = require('path');
-      const uploadDir = path.join(process.cwd(), 'public', 'exports', userId.toString());
+      // Generate unique filename for Cloudinary
+      const timestamp = Date.now();
+      const fileExtension = file.originalname.split('.').pop();
+      const fileName = `${timestamp}_${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
       
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
+      // Upload to Cloudinary
+      const cloudinaryResult = await this.cloudinaryService.uploadFromBuffer(
+        file.buffer,
+        `whatsapp-media/${userId.toString()}`,
+        fileName,
+      );
+
+      if (!cloudinaryResult || !cloudinaryResult.secure_url) {
+        throw new Error('Failed to upload file to Cloudinary');
       }
 
-      // Generate unique filename
-      const timestamp = Date.now();
-      const fileExtension = path.extname(file.originalname);
-      const fileName = `${timestamp}_${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const filePath = path.join(uploadDir, fileName);
-
-      // Save file to disk
-      fs.writeFileSync(filePath, file.buffer);
-
-      // Construct public URL
-      const baseUrl = this.configService.get<string>('BASE_URL') || 'http://localhost:3000';
-      const publicUrl = `${baseUrl}/exports/${userId}/${fileName}`;
-
-      // Create MediaAsset document
+      // Create MediaAsset document with Cloudinary URL
       const mediaAsset = new this.mediaAssetModel({
         userId,
         projectId,
         fileName: file.originalname,
-        filePath: publicUrl,
+        filePath: cloudinaryResult.secure_url, // Use Cloudinary URL
         fileSize: file.size,
         mimeType: file.mimetype,
       });
 
       const savedMediaAsset = await mediaAsset.save();
 
-      this.logger.log(`Media asset uploaded successfully: ${savedMediaAsset._id}`);
+      this.logger.log(
+        `Media asset uploaded successfully to Cloudinary: ${savedMediaAsset._id}`,
+      );
       return savedMediaAsset;
-
     } catch (error) {
       this.logger.error(`Failed to upload media asset: ${error.message}`);
       throw new InternalServerErrorException(

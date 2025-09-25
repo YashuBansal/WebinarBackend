@@ -13,21 +13,22 @@ export class AuthActiveUserMiddleware implements NestMiddleware {
 
   async use(req /*:  Request */, res: Response, next: NextFunction) {
     if (!req.id) {
-      console.error('Auth Active User -> Access Token not found')
+      console.error('Auth Active User -> Access Token not found');
       throw new UnauthorizedException('Access token not found.');
     }
 
     try {
       const user = await this.usersService.getUserById(req?.id);
-      if(!user){
+      if (!user) {
         throw new UnauthorizedException('User not found / Invalid Token.');
       }
 
       if (user.isActive) {
-       
         next();
       } else {
-        throw new BadRequestException('Plan Expired, kindly renew your plan or contact the administrator.');
+        throw new BadRequestException(
+          'Plan Expired, kindly renew your plan or contact the administrator.',
+        );
       }
     } catch (error) {
       throw error;

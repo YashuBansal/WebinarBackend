@@ -15,22 +15,14 @@ import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middlew
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { Roles, RolesSchema } from 'src/schemas/Roles.schema';
-import {
-  Subscription,
-  SubscriptionSchema,
-} from 'src/schemas/Subscription.schema';
+
 import { diskStorage } from 'multer';
 import { MulterModule } from '@nestjs/platform-express';
-import { CustomLeadTypeService } from 'src/custom-lead-type/custom-lead-type.service';
-import {
-  CustomLeadType,
-  CustomLeadTypeSchema,
-} from 'src/schemas/custom-lead-type.schema';
+
 import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.module';
 import { NotificationModule } from 'src/notification/notification.module';
 import { ProductsModule } from 'src/products/products.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
-import { ExpiredPablyToken, ExpiredPablyTokenSchema } from 'src/schemas/ExpiredPablyToken.schema';
 import { TwoFactorAuthenticationModule } from 'src/two-factor-authentication/two-factor-authentication.module';
 import { ApiAccessTokenModule } from 'src/api-access-token/api-access-token.module';
 
@@ -58,15 +50,15 @@ import { ApiAccessTokenModule } from 'src/api-access-token/api-access-token.modu
       {
         name: Roles.name,
         schema: RolesSchema,
-      }
+      },
     ]),
     BillingHistoryModule,
     NotificationModule,
     forwardRef(() => CustomLeadTypeModule),
     forwardRef(() => ProductsModule),
-    WebsocketModule, ApiAccessTokenModule,
-    TwoFactorAuthenticationModule
-    
+    WebsocketModule,
+    ApiAccessTokenModule,
+    TwoFactorAuthenticationModule,
   ],
   controllers: [UsersController],
   providers: [UsersService],
@@ -89,15 +81,13 @@ export class UsersModule {
         { path: 'users/super-admin', method: RequestMethod.GET },
       );
 
-    consumer
-      .apply(AuthSuperAdminMiddleware)
-      .forRoutes(
-        { path: 'users/clients/*', method: RequestMethod.ALL },
-        { path: 'users/secret', method: RequestMethod.ALL },
-        {
-          path: 'users/super-admin/whatsapp-token',
-          method: RequestMethod.PATCH,
-        },
-      );
+    consumer.apply(AuthSuperAdminMiddleware).forRoutes(
+      { path: 'users/clients/*', method: RequestMethod.ALL },
+      { path: 'users/secret', method: RequestMethod.ALL },
+      {
+        path: 'users/super-admin/whatsapp-token',
+        method: RequestMethod.PATCH,
+      },
+    );
   }
 }

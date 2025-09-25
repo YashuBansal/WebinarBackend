@@ -30,6 +30,35 @@ export class CloudinaryService {
     });
   }
 
+  async uploadFromBuffer(
+    buffer: Buffer,
+    folderName: string = 'whatsapp-media',
+    fileName?: string,
+  ): Promise<UploadApiErrorResponse | UploadApiResponse> {
+    console.log(
+      'cloudinary service - uploading from buffer',
+      process.env.CLOUDINARY_CLOUD_NAME,
+      process.env.CLOUDINARY_API_KEY,
+      process.env.CLOUDINARY_API_SECRET,
+    );
+
+    return new Promise((resolve, reject) => {
+      const uploadOptions: any = { 
+        folder: folderName,
+        resource_type: 'auto'
+      };
+      
+      if (fileName) {
+        uploadOptions.public_id = fileName;
+      }
+
+      v2.uploader.upload_stream(uploadOptions, (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }).end(buffer);
+    });
+  }
+
   async deleteFile(public_id: string, folder?: string) {
     const fullId = folder ? `${folder}/${public_id}` : public_id;
     return new Promise((resolve, reject) => {

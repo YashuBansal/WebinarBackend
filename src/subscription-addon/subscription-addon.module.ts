@@ -1,7 +1,10 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { SubscriptionAddonService } from './subscription-addon.service';
 import { MongooseModule } from '@nestjs/mongoose';
-import { SubscriptionAddOn, SubscriptionAddOnSchema } from 'src/schemas/SubscriptionAddon.schema';
+import {
+  SubscriptionAddOn,
+  SubscriptionAddOnSchema,
+} from 'src/schemas/SubscriptionAddon.schema';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 
 @Module({
@@ -10,8 +13,8 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
       { name: SubscriptionAddOn.name, schema: SubscriptionAddOnSchema },
     ]),
     forwardRef(() => SubscriptionModule),
-  ],  
+  ],
   providers: [SubscriptionAddonService],
-  exports: [SubscriptionAddonService]
+  exports: [SubscriptionAddonService],
 })
 export class SubscriptionAddonModule {}

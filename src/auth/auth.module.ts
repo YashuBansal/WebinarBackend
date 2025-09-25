@@ -35,7 +35,7 @@ import { ApiAccessTokenModule } from 'src/api-access-token/api-access-token.modu
     ]),
     SubscriptionModule,
     TwoFactorAuthenticationModule,
-    ApiAccessTokenModule
+    ApiAccessTokenModule,
   ],
   controllers: [AuthController],
   providers: [AuthService],

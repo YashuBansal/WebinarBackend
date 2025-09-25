@@ -97,7 +97,7 @@ export class BillingHistoryService {
     data: BillingHistory[];
   }> {
     const { page, limit, adminId, startDate, endDate } = queryDto;
-    console.log(queryDto)
+    console.log(queryDto);
 
     // 1. Build the dynamic filter query object
     const filter: FilterQuery<BillingHistory> = {};
@@ -117,13 +117,13 @@ export class BillingHistoryService {
         // Set to the beginning of the start day
         const start = new Date(startDate);
         filter.date.$gte = start;
-        console.log('state - ',start)
+        console.log('state - ', start);
       }
       if (endDate) {
         // Set to the end of the end day for an inclusive search
         const end = new Date(endDate);
         filter.date.$lte = end;
-        console.log('state - ',end)
+        console.log('state - ', end);
       }
     }
 

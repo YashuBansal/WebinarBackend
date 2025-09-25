@@ -1,4 +1,3 @@
-import { PartialType } from '@nestjs/mapped-types';
 import {
   IsDateString,
   IsEnum,
@@ -83,7 +82,6 @@ export class UpdateExpiryDateDTO {
   @IsNotEmpty()
   @IsDateString()
   expiryDate: string;
-  
 }
 
 export class AddAddOnDTO {

@@ -58,4 +58,4 @@ export class LandingPage extends Document {
   buttonWidth: number;
 }
 
-export const LandingPageSchema = SchemaFactory.createForClass(LandingPage)
+export const LandingPageSchema = SchemaFactory.createForClass(LandingPage);

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -13,7 +12,6 @@ import {
   CreateEnrollmentDto,
   EnrollmentsByLevelOrProductDTO,
   GetEnrollmentsByEmailDto,
-  GetEnrollmentsByProductLevelDto,
   UpdateEnrollmentDto,
 } from './dto/enrollment.dto';
 import { EnrollmentsService } from './enrollments.service';
@@ -30,26 +28,30 @@ export class EnrollmentsController {
     @Body() createEnrollmentDto: CreateEnrollmentDto,
   ): Promise<any> {
     createEnrollmentDto.adminId = adminId;
-    const enrollment =
-      await this.enrollmentsService.createEnrollment(createEnrollmentDto, userId);
+    const enrollment = await this.enrollmentsService.createEnrollment(
+      createEnrollmentDto,
+      userId,
+    );
     return enrollment;
   }
 
   @Get('webinar/:id')
   async getEnrollment(
     @Param('id') webinarId: string,
-    @Query() query: { page?: string; limit?: string, product: string },
+    @Query() query: { page?: string; limit?: string; product: string },
     @AdminId() adminId: string,
   ): Promise<any> {
     const page = Number(query.page) ? Number(query.page) : 1;
     const limit = Number(query.limit) ? Number(query.limit) : 25;
-    const productId = mongoose.isValidObjectId(query.product) ? new Types.ObjectId(query.product) : undefined
+    const productId = mongoose.isValidObjectId(query.product)
+      ? new Types.ObjectId(query.product)
+      : undefined;
     const enrollment = await this.enrollmentsService.getEnrollment(
       adminId,
       webinarId,
       page,
       limit,
-      productId
+      productId,
     );
 
     return enrollment;
@@ -112,10 +114,9 @@ export class EnrollmentsController {
     @AdminId() adminId: string,
     @Query() query: GetEnrollmentsByEmailDto,
   ): Promise<any> {
- 
     const result = await this.enrollmentsService.getEnrollmentsByEmail(
       adminId,
-      query.email
+      query.email,
     );
     return result;
   }

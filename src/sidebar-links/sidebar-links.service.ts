@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model, mongo, Types } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { SidebarLinks } from '../schemas/SidebarLinks.schema'; // Import your SidebarLinks schema
 import {
   CreateSidebarLinkDto,
@@ -27,7 +27,7 @@ export class SidebarLinksService {
   }
 
   async findAll(role: string): Promise<SidebarLinks[]> {
-    if(!mongoose.isValidObjectId(role)) return [];
+    if (!mongoose.isValidObjectId(role)) return [];
     const query = {
       $or: [
         {
@@ -53,7 +53,7 @@ export class SidebarLinksService {
     id: string,
     updateSidebarLinkDto: UpdateSidebarLinkDto,
   ): Promise<any> {
-    let result = await this.sidebarLinksModel
+    const result = await this.sidebarLinksModel
       .findByIdAndUpdate(id, updateSidebarLinkDto, { new: true })
       .exec();
     return result;

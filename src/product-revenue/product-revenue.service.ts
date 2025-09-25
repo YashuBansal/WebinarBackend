@@ -2,7 +2,6 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Enrollment } from '../schemas/Enrollments.schema';
-import { Products } from '../schemas/Products.schema';
 
 @Injectable()
 export class ProductRevenueService {

@@ -19,7 +19,7 @@ import { UsersModule } from 'src/users/users.module';
         schema: BillingHistorySchema,
       },
     ]),
-    forwardRef(() => UsersModule)
+    forwardRef(() => UsersModule),
   ],
   providers: [BillingHistoryService],
   controllers: [BillingHistoryController],

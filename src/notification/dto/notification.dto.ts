@@ -1,5 +1,16 @@
-import { IsNotEmpty, IsString, IsEnum, IsOptional, IsBoolean, IsObject, IsMongoId } from 'class-validator';
-import { notificationActionType, notificationType } from '../../schemas/notification.schema';
+import {
+  IsNotEmpty,
+  IsString,
+  IsEnum,
+  IsOptional,
+  IsBoolean,
+  IsObject,
+  IsMongoId,
+} from 'class-validator';
+import {
+  notificationActionType,
+  notificationType,
+} from '../../schemas/notification.schema';
 
 export class CreateNotificationDto {
   @IsNotEmpty()

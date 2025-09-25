@@ -35,7 +35,7 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
     ]),
     NotificationModule,
     EnrollmentsModule,
-    AttendeeLogModule
+    AttendeeLogModule,
   ],
   providers: [AssignmentService],
   controllers: [AssignmentController],
@@ -43,15 +43,16 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 })
 export class AssignmentModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(GetAdminIdForUserActivityMiddleware).forRoutes({
-      path: 'assignment/reassign',
-      method: RequestMethod.PATCH,
-    },
-    {
-      path: 'assignment/reassign',
-      method: RequestMethod.PUT,
-    },
-  );
+    consumer.apply(GetAdminIdForUserActivityMiddleware).forRoutes(
+      {
+        path: 'assignment/reassign',
+        method: RequestMethod.PATCH,
+      },
+      {
+        path: 'assignment/reassign',
+        method: RequestMethod.PUT,
+      },
+    );
 
     consumer.apply(GetAdminIdMiddleware).forRoutes({
       path: 'assignment/data/:empId',
@@ -103,13 +104,15 @@ export class AssignmentModule {
       method: RequestMethod.GET,
     });
 
-    consumer.apply(AuthAdminTokenMiddleware).forRoutes({
-      path: 'assignment/reassign/fetch',
-      method: RequestMethod.GET,
-    },
-    {
-      path: 'assignment/reassign/fetch',
-      method: RequestMethod.POST,
-    },);
+    consumer.apply(AuthAdminTokenMiddleware).forRoutes(
+      {
+        path: 'assignment/reassign/fetch',
+        method: RequestMethod.GET,
+      },
+      {
+        path: 'assignment/reassign/fetch',
+        method: RequestMethod.POST,
+      },
+    );
   }
 }

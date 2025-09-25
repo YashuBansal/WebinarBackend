@@ -1,6 +1,4 @@
-import { Controller, Post, Req } from '@nestjs/common';
+import { Controller } from '@nestjs/common';
 
 @Controller('two-factor-authentication')
-export class TwoFactorAuthenticationController {
-
-}
+export class TwoFactorAuthenticationController {}

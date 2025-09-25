@@ -25,7 +25,7 @@ export class AttendeeAssociationService {
         { email, adminId },
         {
           $set: {
-            leadType: new Types.ObjectId(`${leadTypeId}`), 
+            leadType: new Types.ObjectId(`${leadTypeId}`),
           },
         },
         {
@@ -41,8 +41,8 @@ export class AttendeeAssociationService {
         item: '',
         action: AttendeeAction.LEAD_TYPE,
         details: `<span>Lead Type Updated by <strong>${createdBy}</strong> : <strong>${leadTypeLabel}</strong>.</span>`,
-        adminId: new Types.ObjectId(`${adminId}`)
-     })
+        adminId: new Types.ObjectId(`${adminId}`),
+      });
     }
     return updatedAssociation;
   }

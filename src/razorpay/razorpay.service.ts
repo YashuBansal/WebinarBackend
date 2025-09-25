@@ -5,15 +5,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Types } from 'mongoose';
 import Razorpay from 'razorpay';
 import { AddOnService } from 'src/addon/addon.service';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { PlansService } from 'src/plans/plans.service';
-import {
-  DurationType,
-  monthMultiplier,
-} from 'src/schemas/BillingHistory.schema';
+import { DurationType } from 'src/schemas/BillingHistory.schema';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { UsersService } from 'src/users/users.service';
 
@@ -58,7 +54,7 @@ export class RazorpayService {
 
     if (!isEligible) {
       throw new BadRequestException('You cannot downgrade the plan');
-    } 
+    }
 
     const result = await this.createOrder(totalWithGST);
     return { planData, result };

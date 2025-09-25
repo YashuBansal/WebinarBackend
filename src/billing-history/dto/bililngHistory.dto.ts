@@ -13,7 +13,6 @@ import {
   IsString,
   Min,
 } from 'class-validator';
-import { Types } from 'mongoose';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
 
 export class BillingHistoryDto {
@@ -28,7 +27,6 @@ export class BillingHistoryDto {
   @IsOptional()
   @IsDate()
   expiryDate?: Date;
-
 
   @IsString()
   @IsNotEmpty()
@@ -98,5 +96,4 @@ export class ExportBillingHistoryDTO {
   @IsString()
   @IsNotEmpty()
   fileName: string;
-
 }

@@ -11,7 +11,7 @@ import { HttpModule } from '@nestjs/axios';
   imports: [
     MongooseModule.forFeature([{ name: Project.name, schema: ProjectSchema }]),
     forwardRef(() => UsersModule),
-    HttpModule
+    HttpModule,
   ],
   providers: [ProjectsService],
   controllers: [ProjectsController],

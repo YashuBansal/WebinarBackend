@@ -6,37 +6,40 @@ export type ProjectDocument = Project & mongoose.Document;
 
 @Schema({ timestamps: true })
 export class Project {
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: User.name, required: true })
+  @Prop({
+    type: mongoose.Schema.Types.ObjectId,
+    ref: User.name,
+    required: true,
+  })
   adminId: User;
 
   @Prop({ required: true, trim: true })
   projectName: string;
 
-
   @Prop({ trim: true })
   phone: string;
 
-    @Prop({ 
+  @Prop({
     type: String,
   })
   appId: string;
 
-  @Prop({ 
+  @Prop({
     type: String,
   })
   appSecret: string;
 
-  @Prop({ 
+  @Prop({
     type: String,
   })
   wabaId: string;
 
-  @Prop({ 
+  @Prop({
     type: String,
   })
   phoneNumberId: string;
 
-  @Prop({ 
+  @Prop({
     type: String,
   })
   permanentAccessToken: string;

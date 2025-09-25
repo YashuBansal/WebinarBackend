@@ -9,7 +9,6 @@ import {
 } from 'class-validator';
 
 export class CreateProjectDto {
-
   @IsString()
   @IsNotEmpty()
   @MinLength(3)
@@ -17,7 +16,6 @@ export class CreateProjectDto {
 }
 
 export class UpdateProjectDto {
-
   @IsString()
   @MinLength(3)
   @IsOptional()
@@ -48,7 +46,6 @@ export class UpdateProjectDto {
   @IsOptional()
   readonly permanentAccessToken?: string;
 }
-
 
 export class PaginationQueryDto {
   @IsOptional()

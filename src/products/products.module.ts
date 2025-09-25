@@ -2,7 +2,6 @@ import {
   forwardRef,
   MiddlewareConsumer,
   Module,
-  Req,
   RequestMethod,
 } from '@nestjs/common';
 import { ProductsController } from './products.controller';
@@ -15,7 +14,10 @@ import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { UsersModule } from 'src/users/users.module';
 
 import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
-import { ProductLevel, ProductLevelSchema } from 'src/schemas/product-level.schema';
+import {
+  ProductLevel,
+  ProductLevelSchema,
+} from 'src/schemas/product-level.schema';
 
 @Module({
   imports: [
@@ -25,7 +27,6 @@ import { ProductLevel, ProductLevelSchema } from 'src/schemas/product-level.sche
     ]),
     forwardRef(() => EnrollmentsModule),
     forwardRef(() => UsersModule),
-
   ],
   controllers: [ProductsController],
   providers: [ProductsService],

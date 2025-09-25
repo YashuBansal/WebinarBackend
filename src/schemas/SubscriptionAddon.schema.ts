@@ -6,7 +6,7 @@ import { AddOn } from './addon.schema';
 @Schema({ timestamps: true })
 export class SubscriptionAddOn extends Document {
   @Prop({ type: Types.ObjectId, ref: Subscription.name, required: true })
-  subscription: Types.ObjectId; 
+  subscription: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: AddOn.name, required: true })
   addOn: Types.ObjectId;

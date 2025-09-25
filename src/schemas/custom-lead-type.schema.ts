@@ -21,10 +21,9 @@ export class CustomLeadType extends Document {
     required: [true, 'createdBy/UserId is required'],
   })
   createdBy: Types.ObjectId;
-
 }
 
 export const CustomLeadTypeSchema =
   SchemaFactory.createForClass(CustomLeadType);
 
-  CustomLeadTypeSchema.index({createdBy : 1});
+CustomLeadTypeSchema.index({ createdBy: 1 });

@@ -15,10 +15,10 @@ export enum notificationActionType {
   USER_ACTIVITY = 'user_activity',
   WEBINAR_ASSIGNMENT = 'webinar_assignment',
   ACCOUNT_DEACTIVATION = 'account_deactivation',
-  EXPIRY_REMINDER = 'expiry_reminder', 
+  EXPIRY_REMINDER = 'expiry_reminder',
   LOCATION_REQUEST = 'location_request',
   ATTENDEE_REGISTRATION = 'attendee_registration',
-  NOTICE_BOARD_UPDATE = 'notice_board_update'
+  NOTICE_BOARD_UPDATE = 'notice_board_update',
 }
 
 @Schema({ timestamps: true })

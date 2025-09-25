@@ -1,4 +1,9 @@
-import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import {
+  forwardRef,
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+} from '@nestjs/common';
 import { TagsController } from './tags.controller';
 import { TagsService } from './tags.service';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -16,7 +21,6 @@ import { UsersModule } from 'src/users/users.module';
       },
     ]),
     forwardRef(() => UsersModule),
-
   ],
   controllers: [TagsController],
   providers: [TagsService],
@@ -24,15 +28,13 @@ import { UsersModule } from 'src/users/users.module';
 })
 export class TagsModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(AuthAdminTokenMiddleware)
-    .exclude(
-      { path: 'tags', method: RequestMethod.GET },
-    )
-    .forRoutes(TagsController);
+    consumer
+      .apply(AuthAdminTokenMiddleware)
+      .exclude({ path: 'tags', method: RequestMethod.GET })
+      .forRoutes(TagsController);
 
-    consumer.apply(GetAdminIdMiddleware)
-    .forRoutes(
-      { path: 'tags', method: RequestMethod.GET },
-    )
+    consumer
+      .apply(GetAdminIdMiddleware)
+      .forRoutes({ path: 'tags', method: RequestMethod.GET });
   }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ProductRevenueService } from './product-revenue.service';
 import { Id } from 'src/decorators/custom.decorator';
 import { RevenueDto } from 'src/revenue/dto/revenue.dto';

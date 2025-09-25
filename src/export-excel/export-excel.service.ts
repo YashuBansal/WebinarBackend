@@ -382,11 +382,11 @@ export class ExportExcelService {
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
 
-    console.log(parsedData)
+    console.log(parsedData);
 
     const payload = {
       data: parsedData,
-      columns: ['fullNames',...columns].map((col) => ({
+      columns: ['fullNames', ...columns].map((col) => ({
         header: col,
         key: col,
         width: 20,
@@ -663,7 +663,7 @@ export class ExportExcelService {
           header: 'Enrollments',
         },
       ];
-       const { startDate, endDate } = this.productRevenueService.validateDate(
+      const { startDate, endDate } = this.productRevenueService.validateDate(
         startStr,
         endStr,
       );

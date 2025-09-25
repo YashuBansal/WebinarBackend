@@ -3,7 +3,6 @@ import {
   Get,
   Post,
   Body,
-  Put,
   NotFoundException,
   Query,
 } from '@nestjs/common';

@@ -23,7 +23,7 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
   ],
   controllers: [AttendeeAssociationController],
   providers: [AttendeeAssociationService],
-  exports:[AttendeeAssociationService]
+  exports: [AttendeeAssociationService],
 })
 export class AttendeeAssociationModule {
   configure(consumer: MiddlewareConsumer) {

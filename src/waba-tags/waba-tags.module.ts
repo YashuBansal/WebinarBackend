@@ -9,14 +9,14 @@ import { UsersModule } from 'src/users/users.module';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: WabaTag.name, schema: WabaTagSchema }]),
-    UsersModule
+    UsersModule,
   ],
   controllers: [WabaTagsController],
   providers: [WabaTagsService],
   exports: [WabaTagsService],
 })
 export class WabaTagsModule {
-    configure(consumer: MiddlewareConsumer) {
-        consumer.apply(AuthAdminTokenMiddleware).forRoutes(WabaTagsController);
-      }
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuthAdminTokenMiddleware).forRoutes(WabaTagsController);
+  }
 }

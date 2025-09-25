@@ -1,4 +1,11 @@
-import { IsMongoId, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsMongoId,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class CreateUserActivityDto {
   @IsNotEmpty()
@@ -22,11 +29,11 @@ export class InactiviUserDTO {
   @IsNotEmpty()
   @IsString()
   email: string;
-  
+
   @IsNotEmpty()
   @IsString()
   role: string;
-  
+
   @IsMongoId()
   userId: string;
 
@@ -47,5 +54,4 @@ export class UserActivityFilterDTO {
   @IsOptional()
   @IsString()
   toDate?: string;
-
 }

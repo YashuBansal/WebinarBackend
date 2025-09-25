@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
 import { CreateAddOnDto, UpdateAddOnDto } from './dto/addon.dto';
 import { AddOnService } from './addon.service';
 import { AddOn } from 'src/schemas/addon.schema';

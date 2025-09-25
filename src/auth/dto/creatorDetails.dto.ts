@@ -1,15 +1,15 @@
-import { IsNotEmpty, IsString } from "class-validator";
+import { IsNotEmpty, IsString } from 'class-validator';
 
 export class CreatorDetailsDto {
-    @IsString()
-    @IsNotEmpty()
-    id: string
+  @IsString()
+  @IsNotEmpty()
+  id: string;
 
-    @IsString()
-    @IsNotEmpty()
-    role: string
+  @IsString()
+  @IsNotEmpty()
+  role: string;
 
-    @IsString()
-    @IsNotEmpty()
-    plan: string
+  @IsString()
+  @IsNotEmpty()
+  plan: string;
 }

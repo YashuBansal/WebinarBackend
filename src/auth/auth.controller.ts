@@ -6,7 +6,6 @@ import {
   Param,
   Patch,
   Post,
-  Req,
   Res,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';

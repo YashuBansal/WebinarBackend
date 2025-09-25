@@ -46,34 +46,52 @@ export class RevenueService {
         $match: {
           $expr: {
             $and: [
-              { 
+              {
                 $gte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  start
-                ]
+                  start,
+                ],
               },
-              { 
+              {
                 $lte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  end
-                ]
-              }
-            ]
-          }
+                  end,
+                ],
+              },
+            ],
+          },
         },
       },
       {
@@ -113,40 +131,57 @@ export class RevenueService {
     return this.billingHistoryModel.aggregate([
       {
         $match: {
-            $expr: {
-              $and: [
-                { 
-                  $gte: [
-                    {
-                      $dateFromParts: {
-                        year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                        month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                        day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                        timezone: "Asia/Kolkata"
-                      }
+          $expr: {
+            $and: [
+              {
+                $gte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
                     },
-                    start
-                  ]
-                },
-                { 
-                  $lte: [
-                    {
-                      $dateFromParts: {
-                        year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                        month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                        day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                        timezone: "Asia/Kolkata"
-                      }
+                  },
+                  start,
+                ],
+              },
+              {
+                $lte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
                     },
-                    end
-                  ]
-                }
-              ]
-            }
+                  },
+                  end,
+                ],
+              },
+            ],
           },
+        },
       },
       {
-
         $group: {
           _id: '$billingType',
           total: { $sum: '$amount' },
@@ -172,36 +207,54 @@ export class RevenueService {
     return this.billingHistoryModel.aggregate([
       {
         $match: {
-            $expr: {
-                $and: [
-                  { 
-                    $gte: [
-                      {
-                        $dateFromParts: {
-                          year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                          month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                          day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                          timezone: "Asia/Kolkata"
-                        }
+          $expr: {
+            $and: [
+              {
+                $gte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
                       },
-                      start
-                    ]
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  { 
-                    $lte: [
-                      {
-                        $dateFromParts: {
-                          year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                          month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                          day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                          timezone: "Asia/Kolkata"
-                        }
-                      },
-                      end
-                    ]
-                  }
-                ]
+                  start,
+                ],
               },
+              {
+                $lte: [
+                  {
+                    $dateFromParts: {
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
+                  },
+                  end,
+                ],
+              },
+            ],
+          },
           durationType: { $exists: true, $ne: null },
         },
       },
@@ -319,7 +372,6 @@ export class RevenueService {
     start: Date,
     end: Date,
     interval: 'day' | 'month' = 'day',
-
   ) {
     const format = interval === 'month' ? '%Y-%m' : '%Y-%m-%d';
     return this.billingHistoryModel.aggregate([
@@ -421,33 +473,51 @@ export class RevenueService {
         $match: {
           $expr: {
             $and: [
-              { 
+              {
                 $gte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  start
-                ]
+                  start,
+                ],
               },
-              { 
+              {
                 $lte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  end
-                ]
-              }
-            ]
+                  end,
+                ],
+              },
+            ],
           },
           plan: { $exists: true },
         },
@@ -457,16 +527,16 @@ export class RevenueService {
         $group: {
           _id: '$plan',
           totalRevenue: { $sum: '$amount' },
-          count: { $sum: 1 }
-        }
+          count: { $sum: 1 },
+        },
       },
       {
         $lookup: {
           from: 'plans',
           localField: '_id',
           foreignField: '_id',
-          as: 'planDetails'
-        }
+          as: 'planDetails',
+        },
       },
       { $unwind: '$planDetails' },
       { $sort: { totalRevenue: -1 } },
@@ -489,37 +559,54 @@ export class RevenueService {
         $match: {
           $expr: {
             $and: [
-              { 
+              {
                 $gte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  start
-                ]
+                  start,
+                ],
               },
-              {     
+              {
                 $lte: [
                   {
                     $dateFromParts: {
-                      year: { $year: { date: "$date", timezone: "Asia/Kolkata" } },
-                      month: { $month: { date: "$date", timezone: "Asia/Kolkata" } },
-                      day: { $dayOfMonth: { date: "$date", timezone: "Asia/Kolkata" } },
-                      timezone: "Asia/Kolkata"
-                    }
+                      year: {
+                        $year: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      month: {
+                        $month: { date: '$date', timezone: 'Asia/Kolkata' },
+                      },
+                      day: {
+                        $dayOfMonth: {
+                          date: '$date',
+                          timezone: 'Asia/Kolkata',
+                        },
+                      },
+                      timezone: 'Asia/Kolkata',
+                    },
                   },
-                  end
-                ]
-              }
-            ]
+                  end,
+                ],
+              },
+            ],
           },
           addOn: { $exists: true },
         },
-
       },
 
       {
@@ -534,8 +621,8 @@ export class RevenueService {
           from: 'addons',
           localField: '_id',
           foreignField: '_id',
-          as: 'addOnDetails'
-        }
+          as: 'addOnDetails',
+        },
       },
       { $unwind: '$addOnDetails' },
       { $sort: { totalRevenue: -1 } },

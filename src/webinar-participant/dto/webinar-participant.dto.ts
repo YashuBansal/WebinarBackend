@@ -1,15 +1,11 @@
 import {
-  IsArray,
   IsDateString,
   IsEmail,
-  IsIn,
   IsMongoId,
   IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
-  Min,
 } from 'class-validator';
 import { Types } from 'mongoose';
 

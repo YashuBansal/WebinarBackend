@@ -17,22 +17,22 @@ export class SubscriptionAddonService {
   ) {}
 
   async onModuleInit() {
-    this.logger.log('Starting MongoDB Change Stream for subscription addons...');
+    this.logger.log(
+      'Starting MongoDB Change Stream for subscription addons...',
+    );
     this.watchSubscriptionAddons();
   }
-
-  
 
   private async watchSubscriptionAddons() {
     const pipeline = [{ $match: { operationType: 'delete' } }];
 
     const changeStream = this.SubscriptionAddOnModel.watch(pipeline, {
-      fullDocumentBeforeChange: "whenAvailable"
+      fullDocumentBeforeChange: 'whenAvailable',
     });
 
     changeStream.on('change', async (change) => {
       this.logger.log(`Detected expired add-on: ${JSON.stringify(change)}`);
-      
+
       const deletedDocument = change.fullDocumentBeforeChange;
       if (!deletedDocument) {
         this.logger.error('No document found before deletion');
@@ -41,7 +41,9 @@ export class SubscriptionAddonService {
 
       const subscriptionId = deletedDocument.subscription.toString();
       console.log(subscriptionId);
-      await this.subscriptionService.updateSingleSubscriptionAddon(subscriptionId);
+      await this.subscriptionService.updateSingleSubscriptionAddon(
+        subscriptionId,
+      );
     });
 
     changeStream.on('error', (err) => {

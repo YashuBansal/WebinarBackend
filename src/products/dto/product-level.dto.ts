@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, IsMongoId, IsNumber, Min, IsOptional, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  Min,
+  IsOptional,
+  IsDateString,
+} from 'class-validator';
 
 export class CreateProductLevelDto {
   @IsString()
@@ -37,8 +44,8 @@ export class UpdateProductLevelDto {
   @IsOptional()
   label?: string;
 
-//   @IsNumber()
-//   @Min(0)
-//   @IsOptional()
-//   level?: number;
+  //   @IsNumber()
+  //   @Min(0)
+  //   @IsOptional()
+  //   level?: number;
 }

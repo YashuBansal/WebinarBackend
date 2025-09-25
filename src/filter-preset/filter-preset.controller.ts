@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Post,
-  Body,
-  Get,
-  Param,
-  Put,
-  Delete,
-} from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Delete } from '@nestjs/common';
 import { FilterPresetService } from './filter-preset.service';
 import { CreateFilterPresetDto } from './dto/create-filter-preset.dto';
 import { FilterPreset } from '../schemas/FilterPreset.schema';
@@ -48,9 +40,7 @@ export class FilterPresetController {
 
   // Delete a filter preset by ID
   @Delete(':id')
-  async remove(@Param('id') id: string,
-  @Id() userId: string
-): Promise<void> {
+  async remove(@Param('id') id: string, @Id() userId: string): Promise<void> {
     return this.filterPresetService.remove(id, userId);
   }
 }

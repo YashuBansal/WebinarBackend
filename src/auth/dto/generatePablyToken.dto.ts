@@ -1,4 +1,9 @@
-import { IsOptional, IsDateString, IsString, IsNotEmpty } from 'class-validator';
+import {
+  IsOptional,
+  IsDateString,
+  IsString,
+  IsNotEmpty,
+} from 'class-validator';
 
 export class GeneratePablyTokenDto {
   @IsOptional()

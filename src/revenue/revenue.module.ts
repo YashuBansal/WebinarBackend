@@ -14,7 +14,7 @@ import { UsersModule } from 'src/users/users.module';
     MongooseModule.forFeature([
       { name: BillingHistory.name, schema: BillingHistorySchema },
     ]),
-    forwardRef(() =>UsersModule),
+    forwardRef(() => UsersModule),
   ],
   controllers: [RevenueController],
   providers: [RevenueService],

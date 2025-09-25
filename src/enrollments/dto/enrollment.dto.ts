@@ -2,10 +2,8 @@ import {
   IsArray,
   IsMongoId,
   IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsString,
-  Min,
 } from 'class-validator';
 
 export class CreateEnrollmentDto {

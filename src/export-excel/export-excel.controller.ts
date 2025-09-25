@@ -14,26 +14,19 @@ import { ExportExcelService } from './export-excel.service';
 import { Response } from 'express';
 import * as fs from 'fs';
 import { GetClientsFilterDto } from 'src/users/dto/filters.dto';
-import { AdminId, Id } from 'src/decorators/custom.decorator';
+import { Id } from 'src/decorators/custom.decorator';
 import {
   ExportGroupedAttendeesDTO,
   ExportWebinarAttendeesDTO,
-  GroupedAttendeesFilterDto,
 } from 'src/attendees/dto/attendees.dto';
 import { WebinarFilterDTO } from 'src/webinar/dto/webinar-filter.dto';
 import { EmployeeFilterDTO } from 'src/users/dto/employee-filter.dto';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import * as path from 'path';
-import mongoose, { Types } from 'mongoose';
+import { Types } from 'mongoose';
 import { UserActivityFilterDTO } from 'src/user-activity/dto/user-activity.dto';
-import {
-  ExportEmployeeAssignmentDTO,
-  GetAssignmentDTO,
-} from 'src/assignment/dto/Assignment.dto';
-import {
-  ExportBillingHistoryDTO,
-  GetBillingHistoryDto,
-} from 'src/billing-history/dto/bililngHistory.dto';
+import { ExportEmployeeAssignmentDTO } from 'src/assignment/dto/Assignment.dto';
+import { ExportBillingHistoryDTO } from 'src/billing-history/dto/bililngHistory.dto';
 import { ProductRevenueExportDTO } from 'src/products/dto/product-level.dto';
 import { ExportEnrollmentDTO } from 'src/enrollments/dto/enrollment.dto';
 
@@ -196,7 +189,7 @@ export class ExportExcelController {
     @Res() res: Response,
   ): Promise<void> {
     try {
-      let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+      const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
       const filePath =
         await this.exportExcelService.generateExcelForEmployeeAssignments(
           limit,

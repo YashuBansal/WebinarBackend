@@ -21,20 +21,22 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { WhatsappService } from './whatsapp.service';
-import { AdminId, Id } from 'src/decorators/custom.decorator';
+import { Id } from 'src/decorators/custom.decorator';
 import mongoose, { Types } from 'mongoose';
 import {
   CreateTemplateDto,
   UpdateTemplateDto,
   GetTemplatesQueryDto,
   DeleteTemplateDto,
-  TemplateResponseDto
 } from './dto/template.dto';
-import { SendTemplateMessageDto, SendBulkTemplateMessageDto } from './dto/msg.dto';
+import {
+  SendTemplateMessageDto,
+  SendBulkTemplateMessageDto,
+} from './dto/msg.dto';
 
 @Controller('whatsapp')
 export class WhatsappController {
-  constructor(private readonly whatsappService: WhatsappService) { }
+  constructor(private readonly whatsappService: WhatsappService) {}
 
   // --- NEW ENDPOINT ---
   /**
@@ -45,16 +47,25 @@ export class WhatsappController {
    * @param req The authenticated request object, containing the logged-in user's details.
    */
   @Post('exchange-code')
-  async exchangeCode(@Body('code') code: string, @Id() adminId: string, @Body('projectId') projectId: string) {
+  async exchangeCode(
+    @Body('code') code: string,
+    @Id() adminId: string,
+    @Body('projectId') projectId: string,
+  ) {
     console.log('----------------------------', code, adminId, projectId);
-    if (!code || !mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(projectId)) {
+    if (
+      !code ||
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(projectId)
+    ) {
       throw new ForbiddenException(
         'Authorization code, user context, and project ID are required.',
       );
     }
 
     const newWabaConnection =
-      await this.whatsappService.exchangeCodeAndSaveWaba(code,
+      await this.whatsappService.exchangeCodeAndSaveWaba(
+        code,
         new Types.ObjectId(`${adminId}`),
         new Types.ObjectId(`${projectId}`),
       );
@@ -151,14 +162,19 @@ export class WhatsappController {
     );
   }
 
-  @Post('templates/upload-sample-media')
+  @Post('templates/:projectId/upload-sample-media')
   @UseInterceptors(FileInterceptor('file'))
   async handleMediaUploadForTemplateSample(
     @UploadedFile() file: Express.Multer.File,
     @Id() adminId: string,
+    @Param('projectId') projectId: string,
   ) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
+    }
+
+    if (!mongoose.isValidObjectId(projectId)) {
+      throw new NotAcceptableException('Invalid Project ID');
     }
 
     // Validate file type
@@ -178,7 +194,9 @@ export class WhatsappController {
     ];
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Invalid file type. Only images, videos, and documents are allowed.');
+      throw new BadRequestException(
+        'Invalid file type. Only images, videos, and documents are allowed.',
+      );
     }
 
     // Validate file size
@@ -190,15 +208,17 @@ export class WhatsappController {
 
     if (file.size > maxSize) {
       throw new BadRequestException(
-        `File size too large. Maximum size for ${isImage ? 'images' : 'videos/documents'} is ${isImage ? '2MB' : '16MB'}.`
+        `File size too large. Maximum size for ${isImage ? 'images' : 'videos/documents'} is ${isImage ? '2MB' : '16MB'}.`,
       );
     }
 
     try {
-      const headerHandle = await this.whatsappService.uploadSampleToMetaViaCloudinary(
+      const headerHandle = await this.whatsappService.getMetaHeaderHandle(
         file.buffer,
         file.mimetype,
         file.originalname,
+        new Types.ObjectId(`${adminId}`),
+        new Types.ObjectId(`${projectId}`),
       );
 
       return {
@@ -212,7 +232,9 @@ export class WhatsappController {
         },
       };
     } catch (error) {
-      throw new BadRequestException(`Failed to upload sample media: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to upload sample media: ${error.message}`,
+      );
     }
   }
 
@@ -221,7 +243,7 @@ export class WhatsappController {
   async getTemplates(
     @Param('projectId') projectId: string,
     @Id() adminId: string,
-    @Query() query: GetTemplatesQueryDto
+    @Query() query: GetTemplatesQueryDto,
   ) {
     if (!mongoose.isValidObjectId(projectId)) {
       throw new NotAcceptableException('Invalid Project ID');
@@ -230,7 +252,7 @@ export class WhatsappController {
     const templates = await this.whatsappService.getTemplatesForWaba(
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(`${projectId}`),
-      query
+      query,
     );
     return {
       statusCode: HttpStatus.OK,
@@ -397,7 +419,9 @@ export class WhatsappController {
     ];
 
     if (!allowedMimeTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Invalid file type. Only images, videos, and documents are allowed.');
+      throw new BadRequestException(
+        'Invalid file type. Only images, videos, and documents are allowed.',
+      );
     }
 
     // Validate file size
@@ -409,7 +433,7 @@ export class WhatsappController {
 
     if (file.size > maxSize) {
       throw new BadRequestException(
-        `File size too large. Maximum size for ${isImage ? 'images' : 'videos/documents'} is ${isImage ? '2MB' : '16MB'}.`
+        `File size too large. Maximum size for ${isImage ? 'images' : 'videos/documents'} is ${isImage ? '2MB' : '16MB'}.`,
       );
     }
 
@@ -432,7 +456,9 @@ export class WhatsappController {
         },
       };
     } catch (error) {
-      throw new BadRequestException(`Failed to upload media asset: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to upload media asset: ${error.message}`,
+      );
     }
   }
 }

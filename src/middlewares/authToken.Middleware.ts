@@ -15,12 +15,11 @@ export class AuthTokenMiddleware implements NestMiddleware {
   ) {}
 
   async use(req /*:  Request */, res: Response, next: NextFunction) {
-
     const access_token =
       req.cookies[this.configService.get('ACCESS_TOKEN_NAME')];
 
     if (!access_token) {
-      console.error('Auth Token User -> Access Token not found')
+      console.error('Auth Token User -> Access Token not found');
       throw new UnauthorizedException('Access token not found.');
     }
 
@@ -32,7 +31,6 @@ export class AuthTokenMiddleware implements NestMiddleware {
       const decodedToken = this.jwtService.verify(access_token, decodeOptions);
 
       if (decodedToken) {
-
         req.id = decodedToken.id;
         req.role = decodedToken.role;
         req.plan = decodedToken.plan;

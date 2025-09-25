@@ -102,7 +102,6 @@ export class RevenueController {
       endDate,
       parseInt(params.limit) || 5,
     );
-
   }
 
   @Get('top-addons')
@@ -115,7 +114,6 @@ export class RevenueController {
       startDate,
       endDate,
       parseInt(params.limit) || 5,
-
     );
   }
 }

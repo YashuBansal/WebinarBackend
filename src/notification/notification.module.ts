@@ -17,7 +17,7 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
         schema: NotificationSchema,
       },
     ]),
-    WebsocketModule
+    WebsocketModule,
   ],
   controllers: [NotificationController],
   providers: [NotificationService],
@@ -25,8 +25,6 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
 })
 export class NotificationModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(AuthTokenMiddleware)
-      .forRoutes(NotificationController);
+    consumer.apply(AuthTokenMiddleware).forRoutes(NotificationController);
   }
 }

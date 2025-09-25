@@ -41,7 +41,6 @@ export class Webinar extends Document {
     default: false,
   })
   autoAssignmentDisabled: boolean;
-  
 
   @Prop({
     type: [{ type: mongoose.Schema.Types.ObjectId, ref: Products.name }],

@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { WabaMessageService } from './waba-message.service';
-import { WabaMessage, WabaMessageSchema } from '../../schemas/whatsapp-embed/waba-message.schema';
+import {
+  WabaMessage,
+  WabaMessageSchema,
+} from '../../schemas/whatsapp-embed/waba-message.schema';
 
 @Module({
   imports: [

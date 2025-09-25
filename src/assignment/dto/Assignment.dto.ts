@@ -11,10 +11,8 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
-import { Types } from 'mongoose';
 import {
   AttendeesFilterDto,
-  CreateAttendeeDto,
   PreWebinarPostAttendeeDTO,
   WebinarAttendeesSortObject,
 } from 'src/attendees/dto/attendees.dto';

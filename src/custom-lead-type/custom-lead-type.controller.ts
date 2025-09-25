@@ -1,4 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { CustomLeadTypeDto } from './dto/custom-lead-type.dto';
 import { CustomLeadTypeService } from './custom-lead-type.service';
@@ -14,7 +22,7 @@ export class CustomLeadTypeController {
 
   @Get()
   async getLeadTypes(@AdminId() adminId: string) {
-    if(!adminId) return null;
+    if (!adminId) return null;
     return await this.customLeadTypeService.getLeadTypes(adminId);
   }
 
@@ -31,11 +39,11 @@ export class CustomLeadTypeController {
     );
   }
 
-     @Delete(':leadTypeId')
-    async deleteLeadType(
-        @Id() adminId: string,
-        @Param('leadTypeId') leadTypeId: string,    
-    ) {
-        return await this.customLeadTypeService.deleteLeadType(leadTypeId, adminId);
-    }
+  @Delete(':leadTypeId')
+  async deleteLeadType(
+    @Id() adminId: string,
+    @Param('leadTypeId') leadTypeId: string,
+  ) {
+    return await this.customLeadTypeService.deleteLeadType(leadTypeId, adminId);
+  }
 }

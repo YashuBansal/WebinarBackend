@@ -49,9 +49,19 @@ export class ContactsController {
   @Get()
   async findAll(
     @Id() adminId: string,
-    @Query(new ValidationPipe({ transform: true, transformOptions: { enableImplicitConversion: true } }))
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    )
     paginationQuery: PaginationQueryDto,
-    @Query(new ValidationPipe({ transform: true, transformOptions: { enableImplicitConversion: true } }))
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    )
     filters: ContactFiltersDto,
   ) {
     return this.contactsService.findAll(
@@ -70,7 +80,12 @@ export class ContactsController {
   async getContactsByProject(
     @Id() adminId: string,
     @Param('projectId') projectId: string,
-    @Query(new ValidationPipe({ transform: true, transformOptions: { enableImplicitConversion: true } }))
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    )
     paginationQuery: PaginationQueryDto,
   ) {
     return this.contactsService.getContactsByProject(
@@ -81,10 +96,7 @@ export class ContactsController {
   }
 
   @Get(':id')
-  async findOne(
-    @Id() adminId: string,
-    @Param('id') contactId: string,
-  ) {
+  async findOne(@Id() adminId: string, @Param('id') contactId: string) {
     return this.contactsService.findOne(
       new Types.ObjectId(adminId),
       new Types.ObjectId(contactId),
@@ -112,15 +124,12 @@ export class ContactsController {
     console.log('bulkDeleteDto', bulkDeleteDto, adminId);
     return this.contactsService.bulkRemove(
       new Types.ObjectId(`${adminId}`),
-      bulkDeleteDto.contactIds.map(id => new Types.ObjectId(id)),
+      bulkDeleteDto.contactIds.map((id) => new Types.ObjectId(id)),
     );
   }
 
   @Delete(':id')
-  async remove(
-    @Id() adminId: string,
-    @Param('id') contactId: string,
-  ) {
+  async remove(@Id() adminId: string, @Param('id') contactId: string) {
     return this.contactsService.remove(
       new Types.ObjectId(adminId),
       new Types.ObjectId(contactId),

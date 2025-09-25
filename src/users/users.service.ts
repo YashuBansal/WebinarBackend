@@ -37,7 +37,6 @@ import {
 import { BillingType } from 'src/schemas/BillingHistory.schema';
 import { ProductsService } from 'src/products/products.service';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
-import { ExpiredPablyToken } from 'src/schemas/ExpiredPablyToken.schema';
 import { TwoFactorAuthenticationService } from 'src/two-factor-authentication/two-factor-authentication.service';
 import { ApiAccessTokenService } from 'src/api-access-token/api-access-token.service';
 import { SocketEvents } from 'src/websocket/dto/socket.dto';
@@ -1081,8 +1080,8 @@ export class UsersService implements OnModuleInit {
     const durationConfig = plan.planDurationConfig.get(
       createClientDto.durationType,
     );
-    let date = new Date();
-    let currentPlanExpiry = date.setDate(
+    const date = new Date();
+    const currentPlanExpiry = date.setDate(
       date.getDate() + durationConfig.duration,
     );
     createClientDto.currentPlanExpiry = currentPlanExpiry;
@@ -1129,7 +1128,7 @@ export class UsersService implements OnModuleInit {
       )
       .select('-password');
 
-    let subscriptionPayload: SubscriptionDto = {
+    const subscriptionPayload: SubscriptionDto = {
       admin: String(user._id),
       plan: String(plan._id),
       contactLimit: plan.contactLimit,
@@ -1240,7 +1239,7 @@ export class UsersService implements OnModuleInit {
     if (!Array.isArray(expiredAdminIds) || expiredAdminIds.length == 0) return;
     try {
       for (let i = 0; i < expiredAdminIds.length; i++) {
-        let admin = await this.userModel.findById(
+        const admin = await this.userModel.findById(
           expiredAdminIds[i].admin.toString(),
         );
         if (admin) {
@@ -1408,9 +1407,9 @@ export class UsersService implements OnModuleInit {
   ) {
     return await this.userModel.findByIdAndUpdate(empId, {
       $set: {
-        dailyContactCount: totalAssignments
-      }
-    })
+        dailyContactCount: totalAssignments,
+      },
+    });
   }
 
   async bulkUpdateUsersDailyContactCount(

@@ -6,153 +6,196 @@ import { User, UserSchema } from 'src/schemas/User.schema';
 import { Webinar, WebinarSchema } from 'src/schemas/Webinar.schema';
 import { Notes, NotesSchema } from 'src/schemas/Notes.schema';
 import { Attendee, AttendeeSchema } from 'src/schemas/Attendee.schema';
-import { AttendeeAssociation, AttendeeAssociationSchema } from 'src/schemas/attendee-association.schema';
-import { BillingHistory, BillingHistorySchema } from 'src/schemas/BillingHistory.schema';
-import { CustomLeadType, CustomLeadTypeSchema } from 'src/schemas/custom-lead-type.schema';
+import {
+  AttendeeAssociation,
+  AttendeeAssociationSchema,
+} from 'src/schemas/attendee-association.schema';
+import {
+  BillingHistory,
+  BillingHistorySchema,
+} from 'src/schemas/BillingHistory.schema';
+import {
+  CustomLeadType,
+  CustomLeadTypeSchema,
+} from 'src/schemas/custom-lead-type.schema';
 import { Enrollment, EnrollmentSchema } from 'src/schemas/Enrollments.schema';
 import { Products, ProductsSchema } from 'src/schemas/Products.schema';
-import { StatusDropdown, StatusDropdownSchema } from 'src/schemas/StatusDropdown.schema';
-import { Subscription, SubscriptionSchema } from 'src/schemas/Subscription.schema';
+import {
+  StatusDropdown,
+  StatusDropdownSchema,
+} from 'src/schemas/StatusDropdown.schema';
+import {
+  Subscription,
+  SubscriptionSchema,
+} from 'src/schemas/Subscription.schema';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 import { Alarm, AlarmSchema } from 'src/schemas/Alarm.schema';
-import { NoticeBoard, NoticeBoardSchema } from 'src/schemas/notice-board.schema';
-import { Notification, NotificationSchema } from 'src/schemas/notification.schema';
-import { UserActivity, UserActivitySchema } from 'src/schemas/UserActivity.schema';
-import { FilterPreset, FilterPresetSchema } from 'src/schemas/FilterPreset.schema';
+import {
+  NoticeBoard,
+  NoticeBoardSchema,
+} from 'src/schemas/notice-board.schema';
+import {
+  Notification,
+  NotificationSchema,
+} from 'src/schemas/notification.schema';
+import {
+  UserActivity,
+  UserActivitySchema,
+} from 'src/schemas/UserActivity.schema';
+import {
+  FilterPreset,
+  FilterPresetSchema,
+} from 'src/schemas/FilterPreset.schema';
 import { Assignments, AssignmentsSchema } from 'src/schemas/Assignments.schema';
-import { ProductLevel, ProductLevelSchema } from 'src/schemas/product-level.schema';
+import {
+  ProductLevel,
+  ProductLevelSchema,
+} from 'src/schemas/product-level.schema';
 import { Location, LocationSchema } from 'src/schemas/location.schema';
-import { SubscriptionAddOn, SubscriptionAddOnSchema } from 'src/schemas/SubscriptionAddon.schema';
+import {
+  SubscriptionAddOn,
+  SubscriptionAddOnSchema,
+} from 'src/schemas/SubscriptionAddon.schema';
 import { Tag, TagSchema } from 'src/schemas/tags.schema';
-import { UserDocuments, UserDocumentsSchema } from 'src/schemas/user-documents.schema';
+import {
+  UserDocuments,
+  UserDocumentsSchema,
+} from 'src/schemas/user-documents.schema';
 import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
 import { UsersModule } from 'src/users/users.module';
-import { ApiAccessToken, ApiAccessTokenSchema } from 'src/schemas/api-token.schema';
-import { AttendeeLog, AttendeeLogSchema } from 'src/schemas/attendee-logs.schema';
-import { WebinarParticipant, WebinarParticipantSchema } from 'src/schemas/webinar-participant.schema';
+import {
+  ApiAccessToken,
+  ApiAccessTokenSchema,
+} from 'src/schemas/api-token.schema';
+import {
+  AttendeeLog,
+  AttendeeLogSchema,
+} from 'src/schemas/attendee-logs.schema';
+import {
+  WebinarParticipant,
+  WebinarParticipantSchema,
+} from 'src/schemas/webinar-participant.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       {
         name: User.name,
-        schema: UserSchema
+        schema: UserSchema,
       },
       {
         name: Webinar.name,
-        schema: WebinarSchema
+        schema: WebinarSchema,
       },
       {
         name: Notes.name,
-        schema: NotesSchema
+        schema: NotesSchema,
       },
       {
         name: Attendee.name,
-        schema: AttendeeSchema
+        schema: AttendeeSchema,
       },
       {
         name: AttendeeAssociation.name,
-        schema: AttendeeAssociationSchema
+        schema: AttendeeAssociationSchema,
       },
       {
         name: BillingHistory.name,
-        schema: BillingHistorySchema
+        schema: BillingHistorySchema,
       },
       {
         name: Plans.name,
-        schema: PlansSchema
+        schema: PlansSchema,
       },
       {
         name: CustomLeadType.name,
-        schema: CustomLeadTypeSchema
+        schema: CustomLeadTypeSchema,
       },
       {
         name: Enrollment.name,
-        schema: EnrollmentSchema
+        schema: EnrollmentSchema,
       },
       {
         name: Products.name,
-        schema: ProductsSchema
+        schema: ProductsSchema,
       },
       {
         name: StatusDropdown.name,
-        schema: StatusDropdownSchema
+        schema: StatusDropdownSchema,
       },
       {
         name: Subscription.name,
-        schema: SubscriptionSchema
-      }, 
+        schema: SubscriptionSchema,
+      },
 
       {
         name: Alarm.name,
-        schema: AlarmSchema
+        schema: AlarmSchema,
       },
 
       {
         name: NoticeBoard.name,
-        schema: NoticeBoardSchema
+        schema: NoticeBoardSchema,
       },
 
       {
         name: Notification.name,
-        schema: NotificationSchema
+        schema: NotificationSchema,
       },
 
       {
         name: UserActivity.name,
-        schema: UserActivitySchema
+        schema: UserActivitySchema,
       },
 
       {
         name: FilterPreset.name,
-        schema: FilterPresetSchema
+        schema: FilterPresetSchema,
       },
       {
         name: Assignments.name,
-        schema: AssignmentsSchema
+        schema: AssignmentsSchema,
       },
       {
         name: ProductLevel.name,
-        schema: ProductLevelSchema
+        schema: ProductLevelSchema,
       },
       {
         name: Location.name,
-        schema: LocationSchema
-      },{
+        schema: LocationSchema,
+      },
+      {
         name: SubscriptionAddOn.name,
-        schema: SubscriptionAddOnSchema
+        schema: SubscriptionAddOnSchema,
       },
       {
         name: Tag.name,
-        schema: TagSchema
+        schema: TagSchema,
       },
       {
         name: UserDocuments.name,
-        schema: UserDocumentsSchema
-      }
-      ,
+        schema: UserDocumentsSchema,
+      },
       {
         name: ApiAccessToken.name,
-        schema: ApiAccessTokenSchema
+        schema: ApiAccessTokenSchema,
       },
       {
         name: AttendeeLog.name,
-        schema: AttendeeLogSchema
+        schema: AttendeeLogSchema,
       },
       {
         name: WebinarParticipant.name,
-        schema: WebinarParticipantSchema
-      }
-
+        schema: WebinarParticipantSchema,
+      },
     ]),
-    forwardRef(() => UsersModule)
+    forwardRef(() => UsersModule),
   ],
   controllers: [DeleteDataController],
-  providers: [DeleteDataService]
+  providers: [DeleteDataService],
 })
 export class DeleteDataModule {
-  configure(consumer: MiddlewareConsumer){
-    consumer.apply(AuthSuperAdminMiddleware)
-      .forRoutes('delete-data')
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuthSuperAdminMiddleware).forRoutes('delete-data');
   }
 }

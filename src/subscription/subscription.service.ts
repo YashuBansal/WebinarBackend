@@ -26,8 +26,8 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class SubscriptionService {
-   GST_VALUE: number = 0;
-   HEADER_LABEL: string | undefined= undefined;
+  GST_VALUE: number = 0;
+  HEADER_LABEL: string | undefined = undefined;
 
   constructor(
     @InjectModel(Subscription.name)
@@ -46,9 +46,10 @@ export class SubscriptionService {
     private readonly configService: ConfigService,
   ) {}
 
-   onModuleInit(){
+  onModuleInit() {
     const gstValueStr = this.configService.get<number>('GST_VALUE') || 0;
-    const headerLabel = this.configService.get<string | undefined>('HEADER_LABEL') || undefined;
+    const headerLabel =
+      this.configService.get<string | undefined>('HEADER_LABEL') || undefined;
     console.log(`GST Value is ${gstValueStr}%`, typeof gstValueStr);
 
     const gstValue = parseInt(gstValueStr.toString());
@@ -67,7 +68,7 @@ export class SubscriptionService {
     return {
       GST_VALUE: this.GST_VALUE,
       HEADER_LABEL: this.HEADER_LABEL,
-    }
+    };
   }
 
   async updateSubscriptionByPlanId({
@@ -397,9 +398,6 @@ export class SubscriptionService {
     );
   }
 
- 
-   
-
   generatePriceForPlan(
     amount: number,
     durationType: DurationType,
@@ -410,9 +408,6 @@ export class SubscriptionService {
     discountAmount: number;
     gst: number;
   } {
-    
-
-
     let itemAmount = 0;
     if (durationType === 'custom') itemAmount = amount;
     else itemAmount = amount * monthMultiplier[durationType];

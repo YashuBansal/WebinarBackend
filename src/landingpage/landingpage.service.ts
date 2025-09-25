@@ -42,7 +42,6 @@ export class LandingpageService {
     } else {
       delete createLandingDto.file;
     }
-    
 
     const existingLandingPage = await this.landingPageModel.findOne();
     console.log('file exists cheack -----> ', createLandingDto);

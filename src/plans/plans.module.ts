@@ -1,4 +1,9 @@
-import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import {
+  forwardRef,
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+} from '@nestjs/common';
 import { PlansController } from './plans.controller';
 import { PlansService } from './plans.service';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
@@ -17,12 +22,11 @@ import { UsersModule } from 'src/users/users.module';
       },
     ]),
     forwardRef(() => SubscriptionModule),
-    forwardRef(() => UsersModule)
-
+    forwardRef(() => UsersModule),
   ],
   controllers: [PlansController],
   providers: [PlansService],
-  exports:[PlansService]
+  exports: [PlansService],
 })
 export class PlansModule {
   configure(consumer: MiddlewareConsumer) {

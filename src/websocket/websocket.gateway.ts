@@ -17,12 +17,11 @@ import { SocketEvents } from './dto/socket.dto';
 })
 @UseFilters(new WebsocketExceptionFilter())
 export class WebsocketGateway {
-
   private readonly logger = new Logger(WebsocketGateway.name);
   public activeUsers = new Map<string, string>(); // Map to store userId -> socketId
 
-  onModuleInit(){
-    this.logger.log("------------ instance --------------")
+  onModuleInit() {
+    this.logger.log('------------ instance --------------');
   }
 
   @WebSocketServer()
@@ -63,8 +62,7 @@ export class WebsocketGateway {
     const socketId = this.activeUsers.get(String(recipientId));
     if (socketId) {
       this.server.to(socketId).emit(event, data);
-    }
-    else {
+    } else {
       this.logger.warn(
         `Socket ID not found for user ${recipientId}. Event: ${event}`,
       );

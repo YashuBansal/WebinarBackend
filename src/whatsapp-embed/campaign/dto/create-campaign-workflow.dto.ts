@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsObject, ValidateNested, IsDateString, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsArray,
+  ValidateNested,
+  IsDateString,
+  IsEnum,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class MessageTemplateDto {
@@ -62,6 +70,10 @@ export class CreateCampaignWorkflowDto {
   @IsOptional()
   @IsDateString()
   scheduledAt?: string;
+
+  @IsOptional()
+  @IsString()
+  headerMediaAssetId?: string;
 }
 
 export class CampaignPreviewDto {

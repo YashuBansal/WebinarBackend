@@ -90,6 +90,16 @@ export class ProjectsService {
     return project;
   }
 
+  async findOneByAdminId(adminId: Types.ObjectId): Promise<Project> {
+    const project = await this.projectModel.findOne({ adminId }).exec();
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID "${adminId}" not found.`);
+    }
+
+    return project;
+  }
+
   async update(
     id: Types.ObjectId,
     projectId: Types.ObjectId,

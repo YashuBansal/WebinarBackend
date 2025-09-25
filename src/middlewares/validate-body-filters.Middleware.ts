@@ -29,7 +29,6 @@ export class ValidateBodyFilters implements NestMiddleware {
       isBody = false;
     }
 
-
     if (!fieldName) {
       throw new BadRequestException(
         'Field name is required in the request body or query parameters.',
@@ -84,7 +83,6 @@ export class ValidateBodyFilters implements NestMiddleware {
         columns: allowedColumns,
       };
     }
-
 
     // Proceed to the next middleware or route handler
     next();

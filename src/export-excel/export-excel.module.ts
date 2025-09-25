@@ -36,7 +36,7 @@ import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
     WebsocketModule,
     BillingHistoryModule,
     ProductRevenueModule,
-    EnrollmentsModule
+    EnrollmentsModule,
   ],
   controllers: [ExportExcelController],
   providers: [ExportExcelService],

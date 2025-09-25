@@ -35,7 +35,6 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
     forwardRef(() => NotesModule),
     forwardRef(() => SubscriptionModule),
     EnrollmentsModule,
-
   ],
   providers: [WebinarService],
   controllers: [WebinarController],
@@ -43,7 +42,6 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
 })
 export class WebinarModule {
   configure(consumer: MiddlewareConsumer) {
-    
     consumer
       .apply(GetAdminIdMiddleware)
       .forRoutes({ path: 'webinar', method: RequestMethod.GET });
@@ -54,6 +52,5 @@ export class WebinarModule {
         { path: 'webinar', method: RequestMethod.POST },
         { path: 'webinar/*', method: RequestMethod.ALL },
       );
-
   }
 }

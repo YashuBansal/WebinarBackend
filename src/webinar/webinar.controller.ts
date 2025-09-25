@@ -33,8 +33,8 @@ export class WebinarController {
     @Query() query: { page: string; limit: string },
     @Body() body: { filters: WebinarFilterDTO },
   ): Promise<any> {
-    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
-    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    const page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
 
     const result = await this.webinarService.getWebinars(
       adminId,

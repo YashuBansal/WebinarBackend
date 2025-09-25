@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { Id } from 'src/decorators/custom.decorator';
 import mongoose, { Types } from 'mongoose';

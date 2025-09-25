@@ -5,8 +5,6 @@ import * as speakeasy from 'speakeasy';
 
 @Injectable()
 export class TwoFactorAuthenticationService {
-  
-
   public generateTwoFactorAuthenticationSecret(user: User) {
     const secret = speakeasy.generateSecret({
       name: `YourAppName (${user.email})`,

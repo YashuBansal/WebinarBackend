@@ -1,16 +1,19 @@
-import { 
-  Controller, 
-  Post, 
-  Body, 
-  Get, 
-  Put, 
-  Delete, 
-  Param, 
-  Query, 
-  UseGuards 
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Put,
+  Delete,
+  Param,
+  Query,
 } from '@nestjs/common';
-import { CreateWabaTagDto, UpdateWabaTagDto, WabaTagFiltersDto } from './dto/waba-tags.dto';
-import { AdminId, Id } from 'src/decorators/custom.decorator';
+import {
+  CreateWabaTagDto,
+  UpdateWabaTagDto,
+  WabaTagFiltersDto,
+} from './dto/waba-tags.dto';
+import { Id } from 'src/decorators/custom.decorator';
 import { WabaTagsService } from './waba-tags.service';
 import { Types } from 'mongoose';
 
@@ -19,7 +22,10 @@ export class WabaTagsController {
   constructor(private wabaTagsService: WabaTagsService) {}
 
   @Post()
-  async createWabaTag(@Body() createWabaTagDto: CreateWabaTagDto, @Id() adminId: string) {
+  async createWabaTag(
+    @Body() createWabaTagDto: CreateWabaTagDto,
+    @Id() adminId: string,
+  ) {
     const wabaTag = await this.wabaTagsService.createWabaTag(
       createWabaTagDto,
       new Types.ObjectId(`${adminId}`),
@@ -66,10 +72,7 @@ export class WabaTagsController {
   }
 
   @Get(':id')
-  async getWabaTagById(
-    @Param('id') tagId: string,
-    @Id() adminId: string,
-  ) {
+  async getWabaTagById(@Param('id') tagId: string, @Id() adminId: string) {
     if (!adminId) return null;
     const wabaTag = await this.wabaTagsService.getWabaTagById(
       tagId,
@@ -101,10 +104,7 @@ export class WabaTagsController {
   }
 
   @Delete(':id')
-  async deleteWabaTag(
-    @Param('id') tagId: string,
-    @Id() adminId: string,
-  ) {
+  async deleteWabaTag(@Param('id') tagId: string, @Id() adminId: string) {
     const wabaTag = await this.wabaTagsService.deleteWabaTag(
       tagId,
       new Types.ObjectId(`${adminId}`),

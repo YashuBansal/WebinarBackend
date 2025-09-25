@@ -70,6 +70,41 @@ export class AnalyticsSummary {
   failed: number;
 }
 
+// Stored Campaign Data sub-schema for scheduled campaigns
+@Schema({ _id: false })
+export class StoredCampaignData {
+  @Prop({ 
+    type: [Object], 
+    required: false,
+    default: []
+  })
+  contacts: any[]; // Store contact selection data
+
+  @Prop({ 
+    type: [String], 
+    default: [] 
+  })
+  bodyVariables: string[];
+
+  @Prop({ 
+    type: String, 
+    default: 'en_US' 
+  })
+  language: string;
+
+  @Prop({ 
+    type: [Object], 
+    default: [] 
+  })
+  variableMappings: any[];
+
+  @Prop({ 
+    type: String, 
+    required: false 
+  })
+  headerMediaAssetId: string;
+}
+
 @Schema({ timestamps: true })
 export class Campaign extends Document {
   @Prop({
@@ -129,6 +164,18 @@ export class Campaign extends Document {
     }),
   })
   analyticsSummary: AnalyticsSummary;
+
+  @Prop({
+    type: StoredCampaignData,
+    required: false,
+  })
+  storedCampaignData: StoredCampaignData;
+
+  @Prop({
+    type: String,
+    required: false,
+  })
+  headerMediaAssetId: string;
 
   @Prop({
     type: Boolean,

@@ -183,7 +183,13 @@ export class EnrollmentsService {
       },
     );
 
-    return await this.createEnrollments(tagsData, webinarId, adminId, session, false);
+    return await this.createEnrollments(
+      tagsData,
+      webinarId,
+      adminId,
+      session,
+      false,
+    );
   }
   // } // End of example class
 

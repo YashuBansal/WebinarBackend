@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, IsOptional, IsDateString, IsObject, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsDateString,
+  IsObject,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class MessageTemplateDto {

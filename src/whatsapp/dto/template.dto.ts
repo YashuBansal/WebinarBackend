@@ -1,14 +1,14 @@
-import { 
-  IsString, 
-  IsNotEmpty, 
-  IsEnum, 
-  IsOptional, 
-  IsArray, 
-  ValidateNested, 
+import {
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsOptional,
+  IsArray,
+  ValidateNested,
   IsObject,
   MaxLength,
   ArrayMinSize,
-  ArrayMaxSize
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -16,7 +16,7 @@ import { Type } from 'class-transformer';
 export enum TemplateCategory {
   UTILITY = 'UTILITY',
   MARKETING = 'MARKETING',
-  AUTHENTICATION = 'AUTHENTICATION'
+  AUTHENTICATION = 'AUTHENTICATION',
 }
 
 // Template Component Types
@@ -24,7 +24,7 @@ export enum ComponentType {
   HEADER = 'HEADER',
   BODY = 'BODY',
   FOOTER = 'FOOTER',
-  BUTTONS = 'BUTTONS'
+  BUTTONS = 'BUTTONS',
 }
 
 // Header Format Types
@@ -33,7 +33,7 @@ export enum HeaderFormat {
   IMAGE = 'IMAGE',
   VIDEO = 'VIDEO',
   DOCUMENT = 'DOCUMENT',
-  LOCATION = 'LOCATION'
+  LOCATION = 'LOCATION',
 }
 
 // Button Types
@@ -46,13 +46,13 @@ export enum ButtonType {
   CATALOG = 'CATALOG',
   FLOW = 'FLOW',
   VOICE_CALL = 'VOICE_CALL',
-  APP = 'APP'
+  APP = 'APP',
 }
 
 // Parameter Format Types
 export enum ParameterFormat {
   POSITIONAL = 'POSITIONAL',
-  NAMED = 'NAMED'
+  NAMED = 'NAMED',
 }
 
 // Button DTO
@@ -88,6 +88,11 @@ export class ExampleDto {
 
   @IsOptional()
   @IsArray()
+  @IsString({ each: true })
+  header_handle?: string[];
+
+  @IsOptional()
+  @IsArray()
   @IsArray({ each: true })
   // @IsString({ each: true })
   body_text?: string[][];
@@ -105,14 +110,18 @@ export class ComponentDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(1024, { message: 'Component text must not exceed 1024 characters' })
+  @MaxLength(1024, {
+    message: 'Component text must not exceed 1024 characters',
+  })
   text?: string;
 
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ButtonDto)
-  @ArrayMinSize(1, { message: 'At least one button is required for BUTTONS component' })
+  @ArrayMinSize(1, {
+    message: 'At least one button is required for BUTTONS component',
+  })
   @ArrayMaxSize(3, { message: 'Maximum 3 buttons allowed' })
   buttons?: ButtonDto[];
 

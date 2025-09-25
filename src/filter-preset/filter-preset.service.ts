@@ -7,11 +7,15 @@ import { CreateFilterPresetDto } from './dto/create-filter-preset.dto';
 @Injectable()
 export class FilterPresetService {
   constructor(
-    @InjectModel(FilterPreset.name) private filterPresetModel: Model<FilterPreset>,
+    @InjectModel(FilterPreset.name)
+    private filterPresetModel: Model<FilterPreset>,
   ) {}
 
   // Create a new filter preset
-  async create(createFilterPresetDto: CreateFilterPresetDto, userId: string): Promise<FilterPreset> {
+  async create(
+    createFilterPresetDto: CreateFilterPresetDto,
+    userId: string,
+  ): Promise<FilterPreset> {
     const createdFilterPreset = new this.filterPresetModel({
       ...createFilterPresetDto,
       userId,
@@ -24,10 +28,13 @@ export class FilterPresetService {
     return this.filterPresetModel.find({ userId }).exec();
   }
 
-    // Get all filter presets for a user
-    async findByTableName(userId: string, tableName: string): Promise<FilterPreset[]> {
-      return this.filterPresetModel.find({ userId, tableName }).exec();
-    }
+  // Get all filter presets for a user
+  async findByTableName(
+    userId: string,
+    tableName: string,
+  ): Promise<FilterPreset[]> {
+    return this.filterPresetModel.find({ userId, tableName }).exec();
+  }
 
   // Get a specific filter preset by ID
   async findOne(id: string): Promise<FilterPreset> {
@@ -39,7 +46,9 @@ export class FilterPresetService {
     const filterPreset = await this.filterPresetModel.findById(id).exec();
 
     if (!filterPreset || filterPreset.userId.toString() !== userId) {
-      throw new Error('Filter preset not found or you do not have permission to delete it.');
+      throw new Error(
+        'Filter preset not found or you do not have permission to delete it.',
+      );
     }
 
     await this.filterPresetModel.findByIdAndDelete(id).exec();

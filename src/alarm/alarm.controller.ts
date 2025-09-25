@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { AlarmService } from './alarm.service';
 import { AdminId, Id } from 'src/decorators/custom.decorator';
-import { CreateAlarmDto, CreateNewAlarmDTO } from './dto/alarm.dto';
+import { CreateNewAlarmDTO } from './dto/alarm.dto';
 import { Types } from 'mongoose';
 
 @Controller('alarm')

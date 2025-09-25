@@ -30,20 +30,26 @@ export class CampaignController {
 
   @Post('workflow')
   @UsePipes(new ValidationPipe({ transform: true }))
-  createCampaignWorkflow(@Body() createCampaignWorkflowDto: CreateCampaignWorkflowDto, @Id() adminId: string) {
-    return this.campaignService.createCampaignWorkflow(createCampaignWorkflowDto, adminId);
+  createCampaignWorkflow(
+    @Body() createCampaignWorkflowDto: CreateCampaignWorkflowDto,
+    @Id() adminId: string,
+  ) {
+    return this.campaignService.createCampaignWorkflow(
+      createCampaignWorkflowDto,
+      adminId,
+    );
   }
 
   @Get()
   findAll(
-    @Id() adminId: string, 
+    @Id() adminId: string,
     @Query('projectId') projectId?: string,
     @Query('page') page?: string,
-    @Query('limit') limit?: string
+    @Query('limit') limit?: string,
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
-    
+
     return this.campaignService.findAll(adminId, projectId, pageNum, limitNum);
   }
 
@@ -78,8 +84,14 @@ export class CampaignController {
 
   @Post('execute')
   @UsePipes(new ValidationPipe({ transform: true }))
-  async executeCampaign(@Body() executeCampaignDto: ExecuteCampaignDto, @Id() adminId: string) {
-    const result = await this.campaignService.executeCampaign(executeCampaignDto, adminId);
+  async executeCampaign(
+    @Body() executeCampaignDto: ExecuteCampaignDto,
+    @Id() adminId: string,
+  ) {
+    const result = await this.campaignService.executeCampaign(
+      executeCampaignDto,
+      adminId,
+    );
     return {
       statusCode: HttpStatus.OK,
       message: 'Campaign executed successfully!',
@@ -89,7 +101,10 @@ export class CampaignController {
 
   @Get(':id/results')
   async getCampaignResults(@Param('id') id: string, @Id() adminId: string) {
-    const result = await this.campaignService.getCampaignExecutionResults(id, adminId);
+    const result = await this.campaignService.getCampaignExecutionResults(
+      id,
+      adminId,
+    );
     return {
       statusCode: HttpStatus.OK,
       message: 'Campaign results fetched successfully',
@@ -102,5 +117,30 @@ export class CampaignController {
   async handleWebhookEvents(@Body() body: any) {
     await this.campaignService.processWebhookPayload(body);
     return { status: 'success' };
+  }
+
+  @Patch(':id/cancel')
+  async cancelScheduledCampaign(@Param('id') id: string, @Id() adminId: string) {
+    const campaign = await this.campaignService.cancelScheduledCampaign(id, adminId);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Scheduled campaign cancelled successfully',
+      data: campaign,
+    };
+  }
+
+  @Patch(':id/reschedule')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async rescheduleCampaign(
+    @Param('id') id: string,
+    @Body() body: { scheduledAt: string },
+    @Id() adminId: string,
+  ) {
+    const campaign = await this.campaignService.rescheduleCampaign(id, body.scheduledAt, adminId);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Campaign rescheduled successfully',
+      data: campaign,
+    };
   }
 }

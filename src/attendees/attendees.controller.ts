@@ -17,7 +17,6 @@ import {
 import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { AttendeesService } from './attendees.service';
 import {
-  CreateAttendeeDto,
   DeleteAllAttendeesDTO,
   DeleteWebinarAttendeesDTO,
   FetchGroupedAttendeesDTO,
@@ -46,8 +45,8 @@ export class AttendeesController {
   @Get('webinar')
   async getAttendees(@Id() adminId: string, @Query() query: GetAttendeesDTO) {
     const start = Date.now();
-    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
-    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    const page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
     const result = await this.attendeesService.getAttendees(
       query.webinarId || '',
       adminId,
@@ -98,15 +97,15 @@ export class AttendeesController {
     );
   }
 
-    @Get('grouped')
+  @Get('grouped')
   async fechtGroupedAttendeesForAPI(
     @Query() query: FetchGroupedAttendeesForAPIDTO,
-    @Id() adminId: string  ,
+    @Id() adminId: string,
   ) {
     const start = Date.now();
-    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
-    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
-    console.log('im here', query)
+    const page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    console.log('im here', query);
     const result = await this.attendeesService.fetchGroupedAttendees(
       new Types.ObjectId(`${adminId}`),
       page,
@@ -135,8 +134,8 @@ export class AttendeesController {
     @Body() body: FetchGroupedAttendeesDTO,
   ) {
     const start = Date.now();
-    let page = Number(query?.page) > 0 ? Number(query?.page) : 1;
-    let limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+    const page = Number(query?.page) > 0 ? Number(query?.page) : 1;
+    const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
     const result = await this.attendeesService.fetchGroupedAttendees(
       new Types.ObjectId(`${adminId}`),
       page,
@@ -148,8 +147,6 @@ export class AttendeesController {
     console.log(`Processing time: ${processingTime} milliseconds`);
     return { ...result, processingTime };
   }
-
-
 
   @Put('tag')
   async updateAttendeeTag(

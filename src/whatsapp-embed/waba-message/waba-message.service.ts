@@ -1,37 +1,53 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { WabaMessage, WabaMessageDocument } from '../../schemas/whatsapp-embed/waba-message.schema';
+import {
+  WabaMessage,
+  WabaMessageDocument,
+} from '../../schemas/whatsapp-embed/waba-message.schema';
 
 @Injectable()
 export class WabaMessageService {
   constructor(
-    @InjectModel(WabaMessage.name) private wabaMessageModel: Model<WabaMessageDocument>,
+    @InjectModel(WabaMessage.name)
+    private wabaMessageModel: Model<WabaMessageDocument>,
   ) {}
 
   async create(wabaMessageData: {
-    campaignId: string;
+    campaignId?: string;
     contactId: string;
     wabaMessageId: string;
+    messageType?: string;
   }): Promise<WabaMessage> {
     const wabaMessage = new this.wabaMessageModel({
       ...wabaMessageData,
-      campaignId: new Types.ObjectId(wabaMessageData.campaignId),
+      campaignId: wabaMessageData.campaignId ? new Types.ObjectId(wabaMessageData.campaignId) : undefined,
       contactId: new Types.ObjectId(wabaMessageData.contactId),
+      messageType: wabaMessageData.messageType || 'individual',
     });
 
     return wabaMessage.save();
   }
 
-  async findAll(campaignId?: string, contactId?: string): Promise<WabaMessage[]> {
+  async findAll(
+    campaignId?: string,
+    contactId?: string,
+    messageType?: string,
+  ): Promise<WabaMessage[]> {
     const filter: any = { isDeleted: false };
 
     if (campaignId) {
       filter.campaignId = new Types.ObjectId(campaignId);
+    } else if (messageType === 'individual') {
+      filter.campaignId = { $exists: false };
     }
 
     if (contactId) {
       filter.contactId = new Types.ObjectId(contactId);
+    }
+
+    if (messageType) {
+      filter.messageType = messageType;
     }
 
     return this.wabaMessageModel
@@ -59,7 +75,7 @@ export class WabaMessageService {
     return wabaMessage;
   }
 
-  async findByWabaMessageId(wabaMessageId: string): Promise<WabaMessage> {
+  async findByWabaMessageId(wabaMessageId: string): Promise<WabaMessage | null> {
     const wabaMessage = await this.wabaMessageModel
       .findOne({
         wabaMessageId,
@@ -68,10 +84,6 @@ export class WabaMessageService {
       .populate('campaignId', 'name status')
       .populate('contactId', 'firstName lastName phone email')
       .exec();
-
-    if (!wabaMessage) {
-      throw new NotFoundException('WABA message not found');
-    }
 
     return wabaMessage;
   }
@@ -82,6 +94,7 @@ export class WabaMessageService {
     failureReason?: string,
   ): Promise<WabaMessage> {
     const updateData: any = { status };
+    console.log(wabaMessageId, status, failureReason);
 
     // Set timestamp fields based on status
     const now = new Date();
@@ -103,13 +116,9 @@ export class WabaMessageService {
     }
 
     const wabaMessage = await this.wabaMessageModel
-      .findOneAndUpdate(
-        { wabaMessageId, isDeleted: false },
-        updateData,
-        { new: true }
-      )
-      .populate('campaignId', 'name status')
-      .populate('contactId', 'firstName lastName phone email')
+      .findOneAndUpdate({ wabaMessageId, isDeleted: false }, updateData, {
+        new: true,
+      })
       .exec();
 
     if (!wabaMessage) {
@@ -171,7 +180,7 @@ export class WabaMessageService {
           _id: new Types.ObjectId(id),
           isDeleted: false,
         },
-        { isDeleted: true }
+        { isDeleted: true },
       )
       .exec();
 
@@ -180,15 +189,19 @@ export class WabaMessageService {
     }
   }
 
-  async bulkCreate(messages: Array<{
-    campaignId: string;
-    contactId: string;
-    wabaMessageId: string;
-  }>): Promise<WabaMessage[]> {
+  async bulkCreate(
+    messages: Array<{
+      campaignId?: string;
+      contactId: string;
+      wabaMessageId: string;
+      messageType?: string;
+    }>,
+  ): Promise<WabaMessage[]> {
     const formattedMessages = messages.map((msg) => ({
       ...msg,
-      campaignId: new Types.ObjectId(msg.campaignId),
+      campaignId: msg.campaignId ? new Types.ObjectId(msg.campaignId) : undefined,
       contactId: new Types.ObjectId(msg.contactId),
+      messageType: msg.messageType || 'individual',
     }));
 
     return this.wabaMessageModel.insertMany(formattedMessages);

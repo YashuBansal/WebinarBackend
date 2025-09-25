@@ -1,4 +1,9 @@
-import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import {
+  forwardRef,
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+} from '@nestjs/common';
 import { EnrollmentsService } from './enrollments.service';
 import { EnrollmentsController } from './enrollments.controller';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -18,11 +23,10 @@ import { WebinarModule } from 'src/webinar/webinar.module';
         schema: EnrollmentSchema,
       },
     ]),
-    forwardRef(() =>ProductsModule),
-    forwardRef(() =>UsersModule),
-    forwardRef(() =>WebinarModule),
+    forwardRef(() => ProductsModule),
+    forwardRef(() => UsersModule),
+    forwardRef(() => WebinarModule),
     AttendeeLogModule,
-    
   ],
   providers: [EnrollmentsService],
   controllers: [EnrollmentsController],

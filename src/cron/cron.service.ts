@@ -1,9 +1,9 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AlarmService } from 'src/alarm/alarm.service';
-import { SubscriptionAddonService } from 'src/subscription-addon/subscription-addon.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { UsersService } from 'src/users/users.service';
+import { CampaignService } from 'src/whatsapp-embed/campaign/campaign.service';
 
 @Injectable()
 export class CronService implements OnModuleInit {
@@ -13,12 +13,12 @@ export class CronService implements OnModuleInit {
     private readonly userService: UsersService,
     private readonly alarmService: AlarmService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly campaignService: CampaignService,
   ) {}
 
-  async onModuleInit(){
+  async onModuleInit() {
     await this.everyDayJobs();
     await this.everyWeekJobs();
-
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
@@ -36,14 +36,18 @@ export class CronService implements OnModuleInit {
     this.logger.log('Running scheduled tasks check...');
 
     try {
-      // These two tasks can run in parallel to save time
+      // These tasks can run in parallel to save time
       await Promise.all([
         this.alarmService.processDueReminders(),
         this.alarmService.processDueAlarms(),
+        this.campaignService.processScheduledCampaigns(),
       ]);
     } catch (error) {
-        // This is a top-level catch for unexpected errors in the Promise.all
-        this.logger.error('An unexpected error occurred during scheduled task execution', error);
+      // This is a top-level catch for unexpected errors in the Promise.all
+      this.logger.error(
+        'An unexpected error occurred during scheduled task execution',
+        error,
+      );
     }
   }
 

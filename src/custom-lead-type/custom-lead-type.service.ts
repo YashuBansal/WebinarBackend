@@ -28,7 +28,10 @@ export class CustomLeadTypeService {
       .exec();
   }
 
-  async getLeadType(leadTypeId: string, adminId: string): Promise<CustomLeadType> {
+  async getLeadType(
+    leadTypeId: string,
+    adminId: string,
+  ): Promise<CustomLeadType> {
     return await this.customLeadTypeModel
       .findOne({
         _id: new Types.ObjectId(`${leadTypeId}`),

@@ -3,12 +3,17 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
-  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Contact, ContactDocument } from 'src/schemas/Contact.schema';
-import { CreateContactDto, UpdateContactDto, BulkCreateContactsDto, PaginationQueryDto, ContactFiltersDto } from './dto/contacts.dto';
+import {
+  CreateContactDto,
+  UpdateContactDto,
+  BulkCreateContactsDto,
+  PaginationQueryDto,
+  ContactFiltersDto,
+} from './dto/contacts.dto';
 
 @Injectable()
 export class ContactsService {
@@ -33,7 +38,9 @@ export class ContactsService {
     });
 
     if (existingContact) {
-      throw new ConflictException('Contact with this email or phone already exists');
+      throw new ConflictException(
+        'Contact with this email or phone already exists',
+      );
     }
 
     const newContact = await this.contactModel.create({
@@ -48,32 +55,34 @@ export class ContactsService {
   async bulkCreate(
     bulkCreateContactsDto: BulkCreateContactsDto,
     adminId: Types.ObjectId,
-  )  {
+  ) {
     const { contacts } = bulkCreateContactsDto;
-    
+
     try {
       // First, check for existing contacts to avoid duplicates
-      const emails = contacts.map(c => c.email);
-      const phones = contacts.map(c => c.phone);
-      
-      const existingContacts = await this.contactModel.find({
-        adminId,
-        $or: [
-          { email: { $in: emails } },
-          { phone: { $in: phones } }
-        ],
-        isDeleted: false,
-      }).exec();
+      const emails = contacts.map((c) => c.email);
+      const phones = contacts.map((c) => c.phone);
 
-      const existingEmails = new Set(existingContacts.map(c => c.email));
-      const existingPhones = new Set(existingContacts.map(c => c.phone));
+      const existingContacts = await this.contactModel
+        .find({
+          adminId,
+          $or: [{ email: { $in: emails } }, { phone: { $in: phones } }],
+          isDeleted: false,
+        })
+        .exec();
+
+      const existingEmails = new Set(existingContacts.map((c) => c.email));
+      const existingPhones = new Set(existingContacts.map((c) => c.phone));
 
       // Separate contacts into valid and invalid
       const validContacts = [];
       const failed = [];
 
-      contacts.forEach(contactData => {
-        if (existingEmails.has(contactData.email) || existingPhones.has(contactData.phone)) {
+      contacts.forEach((contactData) => {
+        if (
+          existingEmails.has(contactData.email) ||
+          existingPhones.has(contactData.phone)
+        ) {
           failed.push({
             contact: contactData,
             error: 'Contact with this email or phone already exists',
@@ -92,14 +101,15 @@ export class ContactsService {
       });
 
       // Use insertMany for valid contacts
-      const created = validContacts.length > 0 
-        ? await this.contactModel.insertMany(validContacts)
-        : [];
+      const created =
+        validContacts.length > 0
+          ? await this.contactModel.insertMany(validContacts)
+          : [];
 
       return { created, failed };
     } catch (error) {
       // If insertMany fails, add all contacts to failed
-      const failed = contacts.map(contactData => ({
+      const failed = contacts.map((contactData) => ({
         contact: contactData,
         error: error.message,
       }));
@@ -115,10 +125,10 @@ export class ContactsService {
   ) {
     const { page, limit } = paginationOptions;
     const skip = (page - 1) * limit;
-    
-    const filter: any = { 
-      adminId, 
-      isDeleted: false 
+
+    const filter: any = {
+      adminId,
+      isDeleted: false,
     };
 
     // Apply filters
@@ -147,7 +157,7 @@ export class ContactsService {
 
     // Get total count for pagination
     const totalCount = await this.contactModel.countDocuments(filter);
-    
+
     // Get paginated results
     const contacts = await this.contactModel
       .find(filter)
@@ -215,18 +225,17 @@ export class ContactsService {
         }
       }
 
-      const conflictingContact = await this.contactModel.findOne(conflictFilter);
+      const conflictingContact =
+        await this.contactModel.findOne(conflictFilter);
       if (conflictingContact) {
-        throw new ConflictException('Contact with this email or phone already exists');
+        throw new ConflictException(
+          'Contact with this email or phone already exists',
+        );
       }
     }
 
     const updatedContact = await this.contactModel
-      .findByIdAndUpdate(
-        contactId,
-        { $set: updateContactDto },
-        { new: true }
-      )
+      .findByIdAndUpdate(contactId, { $set: updateContactDto }, { new: true })
       .populate('projectId', 'projectName')
       .exec();
 
@@ -244,7 +253,7 @@ export class ContactsService {
       .findByIdAndUpdate(
         contactId,
         { $set: { isDeleted: true } },
-        { new: true }
+        { new: true },
       )
       .exec();
 
@@ -271,11 +280,13 @@ export class ContactsService {
 
     try {
       // First, get the contacts that will be deleted for the response
-      const contactsToDelete = await this.contactModel.find({
-        _id: { $in: contactIds },
-        adminId,
-        isDeleted: false,
-      }).exec();
+      const contactsToDelete = await this.contactModel
+        .find({
+          _id: { $in: contactIds },
+          adminId,
+          isDeleted: false,
+        })
+        .exec();
 
       // Use deleteMany for bulk soft delete
       const result = await this.contactModel.updateMany(
@@ -285,8 +296,8 @@ export class ContactsService {
           isDeleted: false,
         },
         {
-          $set: { isDeleted: true }
-        }
+          $set: { isDeleted: true },
+        },
       );
 
       // Return the contacts that were successfully deleted
@@ -295,10 +306,14 @@ export class ContactsService {
 
       // If some contacts weren't found or already deleted, add them to failed
       if (result.matchedCount < contactIds.length) {
-        const deletedIds = contactsToDelete.map(contact => contact._id.toString());
-        const notFoundIds = contactIds.filter(id => !deletedIds.includes(id.toString()));
-        
-        notFoundIds.forEach(id => {
+        const deletedIds = contactsToDelete.map((contact) =>
+          contact._id.toString(),
+        );
+        const notFoundIds = contactIds.filter(
+          (id) => !deletedIds.includes(id.toString()),
+        );
+
+        notFoundIds.forEach((id) => {
           failed.push({
             contactId: id.toString(),
             error: 'Contact not found or already deleted',
@@ -309,11 +324,11 @@ export class ContactsService {
       return { deleted, failed };
     } catch (error) {
       // If the entire operation fails, return all as failed
-      const failed = contactIds.map(id => ({
+      const failed = contactIds.map((id) => ({
         contactId: id.toString(),
         error: error.message,
       }));
-      
+
       return { deleted: [], failed };
     }
   }
@@ -333,7 +348,14 @@ export class ContactsService {
     const contactsByProject = await this.contactModel.aggregate([
       { $match: { adminId, isDeleted: false } },
       { $group: { _id: '$projectId', count: { $sum: 1 } } },
-      { $lookup: { from: 'projects', localField: '_id', foreignField: '_id', as: 'project' } },
+      {
+        $lookup: {
+          from: 'projects',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'project',
+        },
+      },
       { $unwind: '$project' },
       { $project: { projectName: '$project.projectName', count: 1 } },
     ]);

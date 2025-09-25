@@ -27,9 +27,7 @@ export class SidebarLinksController {
   }
 
   @Get()
-  async findAll(
-    @Role() role: string
-  ): Promise<SidebarLinks[]> {
+  async findAll(@Role() role: string): Promise<SidebarLinks[]> {
     return this.sidebarLinksService.findAll(role);
   }
 
