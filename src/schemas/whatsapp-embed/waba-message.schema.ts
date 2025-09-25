@@ -2,6 +2,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Campaign } from './campaign.schema';
 import { Contact } from '../Contact.schema';
+import { Project } from '../project.schema';
+import { User } from '../User.schema';
 
 export type WabaMessageDocument = WabaMessage & Document;
 
@@ -26,6 +28,22 @@ export class StatusHistory {
 export class WabaMessage extends Document {
   @Prop({
     type: Types.ObjectId,
+    ref: Project.name,
+    required: [true, 'Project ID is required'],
+    index: true,
+  })
+  projectId: Types.ObjectId;
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: User.name,
+    required: [true, 'Admin ID is required'],
+    index: true,
+  })
+  adminId: Types.ObjectId;
+
+  @Prop({
+    type: Types.ObjectId,
     ref: Campaign.name,
     required: false,
     index: true,
@@ -35,9 +53,10 @@ export class WabaMessage extends Document {
   @Prop({
     type: Types.ObjectId,
     ref: Contact.name,
-    required: [true, 'Contact ID is required'],
+    required: false,
+    // required: [true, 'Contact ID is required'],
   })
-  contactId: Types.ObjectId;
+  contactId?: Types.ObjectId;
 
   @Prop({
     type: String,
@@ -61,6 +80,13 @@ export class WabaMessage extends Document {
     default: 'individual',
   })
   messageType: string;
+
+  @Prop({
+    type: String,
+    required: [true, 'Template name is required'],
+    trim: true,
+  })
+  templateName: string;
 
   @Prop({
     type: [StatusHistory],
@@ -106,6 +132,12 @@ const WabaMessageSchema = SchemaFactory.createForClass(WabaMessage);
 
 // Pre-save middleware to convert string IDs to ObjectIds
 WabaMessageSchema.pre('save', function (next) {
+  if (typeof this.projectId === 'string') {
+    this.projectId = new Types.ObjectId(`${this.projectId}`);
+  }
+  if (typeof this.adminId === 'string') {
+    this.adminId = new Types.ObjectId(`${this.adminId}`);
+  }
   if (this.campaignId && typeof this.campaignId === 'string') {
     this.campaignId = new Types.ObjectId(`${this.campaignId}`);
   }
@@ -130,6 +162,8 @@ WabaMessageSchema.pre('save', function (next) {
 });
 
 // Create indexes for better query performance
+WabaMessageSchema.index({ projectId: 1, status: 1 });
+WabaMessageSchema.index({ adminId: 1, status: 1 });
 WabaMessageSchema.index({ campaignId: 1, status: 1 });
 WabaMessageSchema.index({ contactId: 1 });
 WabaMessageSchema.index({ wabaMessageId: 1 });

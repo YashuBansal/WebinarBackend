@@ -18,6 +18,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ProjectsService } from 'src/projects/projects.service';
 import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   CreateTemplateDto,
   UpdateTemplateDto,
@@ -32,6 +34,7 @@ import {
 import { v2 as cloudinary } from 'cloudinary';
 import { MediaAsset, MediaAssetDocument } from './schemas/media-asset.schema';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { CampaignService } from 'src/whatsapp-embed/campaign/campaign.service';
 
 @Injectable()
 export class WhatsappService {
@@ -49,6 +52,7 @@ export class WhatsappService {
     private readonly mediaAssetModel: Model<MediaAssetDocument>,
     private readonly cloudinaryService: CloudinaryService,
     private readonly wabaMessageService: WabaMessageService,
+    private readonly campaignService: CampaignService,
   ) {
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
@@ -164,22 +168,6 @@ export class WhatsappService {
         status,
         failureReason,
       );
-
-      // Get the message to check if it's a campaign or individual message
-      const message = await this.wabaMessageService.findByWabaMessageId(wabaMessageId);
-
-      if (message) {
-        if (message.campaignId) {
-          // This is a campaign message - campaign service will handle analytics
-          this.logger.log(`Campaign message ${wabaMessageId} status updated to ${status} via WhatsApp service`);
-        } else {
-          // This is an individual message
-          this.logger.log(`Individual message ${wabaMessageId} status updated to ${status}`);
-          // You could add individual message analytics here if needed
-        }
-      } else {
-        this.logger.warn(`WABA message ${wabaMessageId} not found in database`);
-      }
     } catch (error) {
       this.logger.error(
         `Failed to update message status for ${wabaMessageId}`,
@@ -602,15 +590,48 @@ export class WhatsappService {
               handle && typeof handle === 'string' && handle.trim().length > 0,
           );
 
+          console.log('validHandles', validHandles);
+
           if (validHandles.length === 0) {
             throw new BadRequestException(
               'Invalid header_handle: must contain at least one valid media handle',
             );
           }
 
+          // Handle generic media cases
+          const processedHandles = [];
+          for (const handle of validHandles) {
+            if (handle === 'generic_image_handle') {
+              // Upload generic image from server and get Meta handle
+              const genericImageHandle = await this.getGenericMediaMetaHandle(
+                adminId,
+                projectId,
+                'image',
+              );
+              processedHandles.push(genericImageHandle);
+            } else if (handle === 'generic_video_handle') {
+              // Upload generic video from server and get Meta handle
+              const genericVideoHandle = await this.getGenericMediaMetaHandle(
+                adminId,
+                projectId,
+                'video',
+              );
+              processedHandles.push(genericVideoHandle);
+            } else if (handle === 'generic_document_handle') {
+              // Upload generic document from server and get Meta handle
+              const genericDocHandle = await this.getGenericMediaMetaHandle(
+                adminId,
+                projectId,
+                'document',
+              );
+              processedHandles.push(genericDocHandle);
+            } else {
+              processedHandles.push(handle);
+            }
+          }
 
           processedComponent.example = {
-            header_handle: validHandles.map((handle) => String(handle).trim()),
+            header_handle: processedHandles.map((handle) => String(handle).trim()),
           };
         }
 
@@ -968,12 +989,15 @@ export class WhatsappService {
       );
 
       // Create WABA message record for individual message
-      if (sendTemplateDto.contactId) {
+      if (response.data?.messages[0]?.id) {
         try {
           await this.wabaMessageService.create({
+            projectId: projectId,
+            adminId: adminId.toString(),
             contactId: sendTemplateDto.contactId,
             wabaMessageId: response.data.messages[0].id,
             messageType: 'individual',
+            templateName: templateName,
           });
         } catch (error) {
           this.logger.error('Failed to create WABA message record:', error);
@@ -989,7 +1013,7 @@ export class WhatsappService {
       );
       throw new InternalServerErrorException(
         error.response?.data?.error?.message ||
-          'Could not send template message.',
+        'Could not send template message.',
       );
     }
   }
@@ -1165,6 +1189,9 @@ export class WhatsappService {
             contactId: contact.contactId,
             wabaMessageId: response.data.messages[0].id,
             messageType: 'individual',
+            projectId: projectId,
+            adminId: adminId.toString(),
+            templateName: templateName,
           });
         } catch (error) {
           this.logger.error('Failed to create WABA message record:', error);
@@ -1231,138 +1258,6 @@ export class WhatsappService {
       );
       // Re-throw the original error to be handled by the calling function
       throw error;
-    }
-  }
-
-  async sendTemplateMessagetest(): Promise<any> {
-    const wabaId = '1055988183368296';
-    const recipientPhoneNumber = '918929544444';
-    const templateName = 'test_temp'; // 👈 updated to your approved template name
-
-    this.logger.log(
-      `Attempting to send template '${templateName}' from WABA ${wabaId} to ${recipientPhoneNumber}`,
-    );
-
-    const fromPhoneNumberId = '718532331347163';
-    if (!fromPhoneNumberId) {
-      throw new NotFoundException(
-        'No sending phone number found for this WABA.',
-      );
-    }
-
-    const accessToken =
-      'EAASkZB5UKWQ8BPRFoH9Bw3K9PuuoCXeUEFU92pZALNF3gQj15saVwjdi3MpBpaRETF10UZBnj8lDceFKTzBRXOqMZAuOCQArAL7ldp2QYAmpNDUzwZAyNl7FZCTRCF7j0eDDxH7uDBf26dMODL9SFf4LK15ZBpVZCPTB9hDJnV8qCE8cZBq3ZCKyUmN6gDbYUZA5zFRz8FwE6QQmGEKHj7V1LUSoRZC8WBRqtd3eYLzst2DuNcgZD';
-    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
-    const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
-
-    // --- CONSTRUCT THE META PAYLOAD ---
-    // Match the structure of your approved template exactly
-    const metaPayload = {
-      messaging_product: 'whatsapp',
-      to: recipientPhoneNumber,
-      type: 'template',
-      template: {
-        name: templateName,
-        language: { code: 'en' }, // 👈 use 'en' because your template is defined with "language": "en"
-        components: [
-          {
-            type: 'body',
-            parameters: [
-              {
-                type: 'text',
-                text: 'Ajay', // 👈 value for {{1}} placeholder
-              },
-            ],
-          },
-        ],
-      },
-    };
-
-    try {
-      console.log(url);
-      console.log(JSON.stringify(metaPayload, null, 2));
-
-      const response = await firstValueFrom(
-        this.httpService.post(url, metaPayload, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }),
-      );
-
-      this.logger.log(
-        `✅ Message sent successfully. Message ID: ${response.data.messages[0].id}`,
-      );
-      return response.data;
-    } catch (error) {
-      this.logger.error(
-        `❌ Failed to send template message for WABA ${wabaId}`,
-        error.response?.data?.error,
-      );
-      throw new InternalServerErrorException(
-        error.response?.data?.error?.message ||
-          'Could not send template message.',
-      );
-    }
-  }
-
-  async sendTemplateMessagetest2(): Promise<any> {
-    const wabaId = '1055988183368296';
-    const recipientPhoneNumber = '918929544444';
-    const templateName = 'testwala';
-
-    this.logger.log(
-      `Attempting to send template '${templateName}' from WABA ${wabaId} to ${recipientPhoneNumber}`,
-    );
-
-    // We need the Phone Number ID from the WABA to send a message
-    const fromPhoneNumberId = '718532331347163';
-    if (!fromPhoneNumberId) {
-      throw new NotFoundException(
-        'No sending phone number found for this WABA.',
-      );
-    }
-
-    const accessToken =
-      'EAASkZB5UKWQ8BPRFoH9Bw3K9PuuoCXeUEFU92pZALNF3gQj15saVwjdi3MpBpaRETF10UZBnj8lDceFKTzBRXOqMZAuOCQArAL7ldp2QYAmpNDUzwZAyNl7FZCTRCF7j0eDDxH7uDBf26dMODL9SFf4LK15ZBpVZCPTB9hDJnV8qCE8cZBq3ZCKyUmN6gDbYUZA5zFRz8FwE6QQmGEKHj7V1LUSoRZC8WBRqtd3eYLzst2DuNcgZD';
-    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
-    const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
-
-    // --- CONSTRUCT THE META PAYLOAD ---
-    // This structure is very specific and must be followed exactly.
-    const metaPayload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-
-      to: recipientPhoneNumber,
-
-      type: 'text',
-      text: {
-        preview_url: false, // Set to true if your message contains a URL you want to preview
-        body: 'hello rittik ji.',
-      },
-    };
-
-    try {
-      console.log(url);
-      console.log(metaPayload);
-      console.log(accessToken);
-      const response = await firstValueFrom(
-        this.httpService.post(url, metaPayload, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }),
-      );
-      this.logger.log(
-        `Message sent successfully. Message ID: ${response.data.messages[0].id}`,
-      );
-      return response.data;
-    } catch (error) {
-      this.logger.error(
-        `Failed to send template message for WABA ${wabaId}`,
-        error.response?.data?.error,
-      );
-      throw new InternalServerErrorException(
-        error.response?.data?.error?.message ||
-          'Could not send template message.',
-      );
     }
   }
 
@@ -1620,7 +1515,7 @@ export class WhatsappService {
 
       // Step 1: Start an upload session
       const createSessionUrl = `https://graph.facebook.com/${apiVersion}/${appId}/uploads`;
-      
+
       const sessionParams = {
         file_name: originalName,
         file_length: fileBuffer.length.toString(),
@@ -1649,7 +1544,7 @@ export class WhatsappService {
 
       // Step 2: Upload the file data
       const uploadUrl = `https://graph.facebook.com/${apiVersion}/${uploadSessionId}`;
-      
+
       this.logger.log(`Uploading file data to session: ${uploadSessionId}`);
 
       const uploadResponse = await firstValueFrom(
@@ -1672,7 +1567,7 @@ export class WhatsappService {
       }
 
       this.logger.log(`File uploaded successfully, handle: ${fileHandle}`);
-      
+
       return fileHandle;
 
     } catch (error) {
@@ -1687,6 +1582,79 @@ export class WhatsappService {
       );
     }
   }
+
+  /**
+   * Gets Meta header handle for generic media by uploading it from server
+   * @param adminId The admin ID
+   * @param projectId The project ID
+   * @param mediaType The type of media ('image', 'video', 'document')
+   * @returns The Meta header handle for the generic media
+   */
+  private async getGenericMediaMetaHandle(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    mediaType: 'image' | 'video' | 'document',
+  ): Promise<string> {
+    try {
+      // Define media file configurations
+      const mediaConfig = {
+        image: {
+          filename: 'generic-image.png',
+          mimeType: 'image/png',
+          path: path.join(process.cwd(), 'public', 'generic', 'generic-image.png'),
+        },
+        video: {
+          filename: 'generic-video.mp4',
+          mimeType: 'video/mp4',
+          path: path.join(process.cwd(), 'public', 'generic', 'generic-video.mp4'),
+        },
+        document: {
+          filename: 'generic-doc.pdf',
+          mimeType: 'application/pdf',
+          path: path.join(process.cwd(), 'public', 'generic', 'generic-doc.pdf'),
+        },
+      };
+
+      const config = mediaConfig[mediaType];
+
+      // Check if file exists
+      if (!fs.existsSync(config.path)) {
+        throw new InternalServerErrorException(
+          `Generic ${mediaType} file not found on server: ${config.path}`,
+        );
+      }
+
+      // Read the file
+      const fileBuffer = fs.readFileSync(config.path);
+
+      this.logger.log(
+        `Reading generic ${mediaType} file: ${config.filename} (${fileBuffer.length} bytes)`,
+      );
+
+      // Upload to Meta and get handle
+      const metaHandle = await this.getMetaHeaderHandle(
+        fileBuffer,
+        config.mimeType,
+        config.filename,
+        adminId,
+        projectId,
+      );
+
+      this.logger.log(
+        `Generic ${mediaType} uploaded to Meta with handle: ${metaHandle}`,
+      );
+      return metaHandle;
+
+    } catch (error) {
+      this.logger.error(
+        `Failed to get generic ${mediaType} Meta handle: ${error.message}`,
+      );
+      throw new InternalServerErrorException(
+        `Failed to process generic ${mediaType}: ${error.message}`,
+      );
+    }
+  }
+
   /**
    * Uploads a media asset for sending in messages
    * @param file The uploaded file
@@ -1708,7 +1676,7 @@ export class WhatsappService {
       const timestamp = Date.now();
       const fileExtension = file.originalname.split('.').pop();
       const fileName = `${timestamp}_${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      
+
       // Upload to Cloudinary
       const cloudinaryResult = await this.cloudinaryService.uploadFromBuffer(
         file.buffer,

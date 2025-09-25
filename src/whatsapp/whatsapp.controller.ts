@@ -96,15 +96,6 @@ export class WhatsappController {
     };
   }
 
-  @Post('message')
-  async sendMessage() {
-    const response = await this.whatsappService.sendTemplateMessagetest2();
-    return {
-      statusCode: HttpStatus.CREATED,
-      message: 'WhatsApp Business Account connected successfully!',
-      data: response,
-    };
-  }
 
   /**
    * @description Handles the webhook verification GET request from Meta.

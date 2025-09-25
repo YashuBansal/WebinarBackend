@@ -11,6 +11,7 @@ import { WabaMessageModule } from '../waba-message/waba-message.module';
 import { ProjectsModule } from '../../projects/projects.module';
 import { AuthAdminTokenMiddleware } from '../../middlewares/authAdmin.Middleware';
 import { UsersModule } from 'src/users/users.module';
+import { forwardRef } from '@nestjs/common';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { UsersModule } from 'src/users/users.module';
     HttpModule,
     WabaMessageModule,
     ProjectsModule,
-    UsersModule,
+     forwardRef(() => UsersModule),
   ],
   controllers: [CampaignController],
   providers: [CampaignService],

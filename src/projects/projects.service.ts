@@ -12,6 +12,8 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { FetchWabaDetailsDto } from './dto/waba.dto';
+import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
+import { WabaMessage } from 'src/schemas/whatsapp-embed/waba-message.schema';
 
 @Injectable()
 export class ProjectsService {
@@ -21,7 +23,14 @@ export class ProjectsService {
     private readonly projectModel: Model<ProjectDocument>,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
-  ) {}
+    private readonly wabaMessageService: WabaMessageService,
+  ) { }
+
+
+  async fetchWabaMessages(projectId: Types.ObjectId, adminId: Types.ObjectId, paginationOptions: { page: number; limit: number }) {
+    return this.wabaMessageService.findPaginatedAll({ projectId: projectId, adminId: adminId }, paginationOptions);
+
+  }
 
   async create(
     createProjectDto: CreateProjectDto,
@@ -78,7 +87,7 @@ export class ProjectsService {
   async findOne(
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
-  ): Promise<Project> {
+  ): Promise<ProjectDocument> {
     const project = await this.projectModel
       .findOne({ _id: projectId, adminId })
       .exec();

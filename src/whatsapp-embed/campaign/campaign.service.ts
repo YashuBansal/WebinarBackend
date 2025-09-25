@@ -289,6 +289,7 @@ export class CampaignService {
     campaignId: string,
     analyticsData: any,
   ): Promise<Campaign> {
+    console.log('updating --------------- > analyticsData', analyticsData);
     const campaign = await this.campaignModel
       .findByIdAndUpdate(
         campaignId,
@@ -394,10 +395,13 @@ export class CampaignService {
 
         // Create WABA message record
         await this.wabaMessageService.create({
+          projectId: project._id.toString(),
+          adminId: adminId,
           campaignId: campaignId,
           contactId: contact.contactId,
           wabaMessageId: messageResult.messages[0].id,
           messageType: 'campaign',
+          templateName: campaign.messageTemplate.templateName,
         });
 
         results.sent++;
@@ -407,8 +411,8 @@ export class CampaignService {
           `Message sent successfully to ${contact.phoneNumber}. Message ID: ${messageResult.messages[0].id}`,
         );
 
-        // Add a small delay between messages to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        // Add a delay between messages to avoid rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       } catch (error) {
         results.failed++;
         results.errors.push({
@@ -591,7 +595,7 @@ export class CampaignService {
   /**
    * Update message status and campaign analytics
    */
-  private async updateMessageStatus(
+  async updateMessageStatus(
     wabaMessageId: string,
     status: string,
     timestamp: string,
@@ -637,11 +641,11 @@ export class CampaignService {
     status: string,
   ): Promise<void> {
     try {
-      const campaign = await this.campaignModel.findById(campaignId);
+      const campaign = await this.campaignModel.findById(campaignId).lean();
       if (!campaign) return;
 
       const analytics = { ...campaign.analyticsSummary };
-
+      console.log('updating --------------- > analytics', analytics);
       // Update analytics based on status
       switch (status) {
         case 'delivered':

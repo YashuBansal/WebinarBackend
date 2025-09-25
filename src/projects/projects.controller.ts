@@ -53,6 +53,22 @@ export class ProjectsController {
     });
   }
 
+  @Get('waba-messages/:projectId')
+  async fetchWabaMessages(
+    @Param('projectId') projectId: string,
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    )
+    paginationQuery: PaginationQueryDto,
+    @Id() adminId: string,
+  ) {
+    const { page, limit } = paginationQuery;
+    return this.projectsService.fetchWabaMessages(new Types.ObjectId(projectId), new Types.ObjectId(`${adminId}`), { page, limit });
+  }
+
   @Get(':id')
   async fetchProjectsById(
     @Id() adminId: string, // Assumes your custom @Id() decorator works

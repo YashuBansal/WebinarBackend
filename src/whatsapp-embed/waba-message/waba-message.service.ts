@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import {
   WabaMessage,
   WabaMessageDocument,
@@ -11,30 +11,78 @@ export class WabaMessageService {
   constructor(
     @InjectModel(WabaMessage.name)
     private wabaMessageModel: Model<WabaMessageDocument>,
-  ) {}
+  ) { }
 
   async create(wabaMessageData: {
+    projectId: string;
+    adminId: string;
     campaignId?: string;
-    contactId: string;
+    contactId?: string;
     wabaMessageId: string;
     messageType?: string;
+    templateName: string;
   }): Promise<WabaMessage> {
     const wabaMessage = new this.wabaMessageModel({
       ...wabaMessageData,
-      campaignId: wabaMessageData.campaignId ? new Types.ObjectId(wabaMessageData.campaignId) : undefined,
-      contactId: new Types.ObjectId(wabaMessageData.contactId),
+      projectId: new Types.ObjectId(wabaMessageData.projectId),
+      adminId: new Types.ObjectId(wabaMessageData.adminId),
+      campaignId: mongoose.isValidObjectId(wabaMessageData.campaignId) ? new Types.ObjectId(wabaMessageData.campaignId) : undefined,
+      contactId: mongoose.isValidObjectId(wabaMessageData.contactId) ? new Types.ObjectId(wabaMessageData.contactId) : undefined,
       messageType: wabaMessageData.messageType || 'individual',
     });
 
     return wabaMessage.save();
   }
 
+
+  async findPaginatedAll(query:
+    {
+      projectId?: Types.ObjectId,
+      adminId?: Types.ObjectId,
+      campaignId?: Types.ObjectId,
+      contactId?: Types.ObjectId,
+      messageType?: string,
+      templateName?: string,
+    },
+    paginationOptions: {
+      page: number,
+      limit: number,
+    }
+  ) {
+
+    const { page, limit } = paginationOptions;
+    const skip = (page - 1) * limit;
+    console.log(skip, limit);
+    const count = await this.wabaMessageModel.countDocuments(query);
+    const wabaMessages = await this.wabaMessageModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).exec();
+    return {
+      wabaMessages,
+      total: count,
+      totalPages: Math.ceil(count / limit),
+      page,
+      limit,
+    };
+
+
+  }
+
+
   async findAll(
+    projectId?: string,
+    adminId?: string,
     campaignId?: string,
     contactId?: string,
     messageType?: string,
   ): Promise<WabaMessage[]> {
     const filter: any = { isDeleted: false };
+
+    if (projectId) {
+      filter.projectId = new Types.ObjectId(projectId);
+    }
+
+    if (adminId) {
+      filter.adminId = new Types.ObjectId(adminId);
+    }
 
     if (campaignId) {
       filter.campaignId = new Types.ObjectId(campaignId);
@@ -52,8 +100,6 @@ export class WabaMessageService {
 
     return this.wabaMessageModel
       .find(filter)
-      .populate('campaignId', 'name status')
-      .populate('contactId', 'firstName lastName phone email')
       .sort({ createdAt: -1 })
       .exec();
   }
@@ -64,6 +110,8 @@ export class WabaMessageService {
         _id: new Types.ObjectId(id),
         isDeleted: false,
       })
+      .populate('projectId', 'projectName phone')
+      .populate('adminId', 'userName email')
       .populate('campaignId', 'name status')
       .populate('contactId', 'firstName lastName phone email')
       .exec();
@@ -81,8 +129,6 @@ export class WabaMessageService {
         wabaMessageId,
         isDeleted: false,
       })
-      .populate('campaignId', 'name status')
-      .populate('contactId', 'firstName lastName phone email')
       .exec();
 
     return wabaMessage;
@@ -134,7 +180,6 @@ export class WabaMessageService {
         campaignId: new Types.ObjectId(campaignId),
         isDeleted: false,
       })
-      .populate('contactId', 'firstName lastName phone email')
       .sort({ createdAt: -1 })
       .exec();
   }
@@ -195,12 +240,17 @@ export class WabaMessageService {
       contactId: string;
       wabaMessageId: string;
       messageType?: string;
+      templateName: string;
     }>,
+    projectId: string,
+    adminId: string,
   ): Promise<WabaMessage[]> {
     const formattedMessages = messages.map((msg) => ({
       ...msg,
-      campaignId: msg.campaignId ? new Types.ObjectId(msg.campaignId) : undefined,
-      contactId: new Types.ObjectId(msg.contactId),
+      projectId: new Types.ObjectId(`${projectId}`),
+      adminId: new Types.ObjectId(`${adminId}`),
+      campaignId: msg.campaignId ? new Types.ObjectId(`${msg.campaignId}`) : undefined,
+      contactId: new Types.ObjectId(`${msg.contactId}`),
       messageType: msg.messageType || 'individual',
     }));
 
@@ -219,8 +269,6 @@ export class WabaMessageService {
 
     return this.wabaMessageModel
       .find(filter)
-      .populate('campaignId', 'name status')
-      .populate('contactId', 'firstName lastName phone email')
       .sort({ createdAt: -1 })
       .exec();
   }
