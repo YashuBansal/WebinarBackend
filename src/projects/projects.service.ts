@@ -27,8 +27,8 @@ export class ProjectsService {
   ) { }
 
 
-  async fetchWabaMessages(projectId: Types.ObjectId, adminId: Types.ObjectId, paginationOptions: { page: number; limit: number }) {
-    return this.wabaMessageService.findPaginatedAll({ projectId: projectId, adminId: adminId }, paginationOptions);
+  async fetchWabaMessages(data: { projectId: Types.ObjectId; adminId: Types.ObjectId; campaignId?: Types.ObjectId }, paginationOptions: { page: number; limit: number }) {
+    return this.wabaMessageService.findPaginatedAll(data, paginationOptions);
 
   }
 

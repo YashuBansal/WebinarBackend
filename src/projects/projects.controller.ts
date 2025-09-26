@@ -9,19 +9,20 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import {
+  CampaignPaginationQueryDto,
   CreateProjectDto,
   PaginationQueryDto,
   UpdateProjectDto,
 } from './dto/projects.dto';
 import { Project } from 'src/schemas/project.schema';
 import { Id } from 'src/decorators/custom.decorator';
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { ProjectsService } from './projects.service';
 import { FetchWabaDetailsDto } from './dto/waba.dto';
 
 @Controller('projects')
 export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+  constructor(private readonly projectsService: ProjectsService) { }
 
   @Post()
   async create(
@@ -62,11 +63,15 @@ export class ProjectsController {
         transformOptions: { enableImplicitConversion: true },
       }),
     )
-    paginationQuery: PaginationQueryDto,
+    paginationQuery: CampaignPaginationQueryDto,
     @Id() adminId: string,
   ) {
-    const { page, limit } = paginationQuery;
-    return this.projectsService.fetchWabaMessages(new Types.ObjectId(projectId), new Types.ObjectId(`${adminId}`), { page, limit });
+    const { page, limit, campaignId } = paginationQuery;
+    return this.projectsService.fetchWabaMessages({
+      adminId: new Types.ObjectId(`${adminId}`),
+      projectId: new Types.ObjectId(projectId),
+      campaignId: mongoose.isValidObjectId(campaignId) ? new Types.ObjectId(campaignId) : undefined,
+    }, { page, limit });
   }
 
   @Get(':id')

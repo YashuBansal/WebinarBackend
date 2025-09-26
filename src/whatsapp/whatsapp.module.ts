@@ -22,7 +22,6 @@ import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
     forwardRef(() => UsersModule),
     ProjectsModule,
     WabaMessageModule,
-    CampaignModule,
     MongooseModule.forFeature([
       { name: MediaAsset.name, schema: MediaAssetSchema },
     ]),

@@ -23,6 +23,8 @@ import { CreateCampaignWorkflowDto } from './dto/create-campaign-workflow.dto';
 import { PaginatedCampaignsResponseDto } from './dto/paginated-campaigns-response.dto';
 import { WabaMessageService } from '../waba-message/waba-message.service';
 import { ProjectsService } from '../../projects/projects.service';
+import { WhatsappService } from '../../whatsapp/whatsapp.service';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class CampaignService {
@@ -34,6 +36,7 @@ export class CampaignService {
     private readonly configService: ConfigService,
     private readonly wabaMessageService: WabaMessageService,
     private readonly projectService: ProjectsService,
+    private readonly whatsappService: WhatsappService,
   ) {}
 
   async create(
@@ -103,6 +106,7 @@ export class CampaignService {
             bodyVariables:
               variableMappings?.map((mapping) => mapping.contactField) || [],
             language: 'en_US',
+            headerMediaAssetId: headerMediaAssetId || undefined,
           },
           adminId,
         );
@@ -200,8 +204,21 @@ export class CampaignService {
       .limit(limit)
       .exec();
 
+    // Calculate analytics for each campaign at runtime
+    const campaignsWithAnalytics = await Promise.all(
+      campaigns.map(async (campaign) => {
+        const analyticsData = await this.calculateCampaignAnalytics(campaign._id.toString());
+        campaign.analyticsSummary = analyticsData;
+        
+        // Save updated analytics to database
+        await this.updateAnalytics(campaign._id.toString(), analyticsData);
+        
+        return campaign;
+      })
+    );
+
     return {
-      campaigns,
+      campaigns: campaignsWithAnalytics,
       pagination: {
         page,
         limit,
@@ -221,13 +238,20 @@ export class CampaignService {
         adminId: new Types.ObjectId(adminId),
         isDeleted: false,
       })
-      .populate('project', 'name')
-      .populate('adminId', 'firstName lastName email')
       .exec();
 
     if (!campaign) {
       throw new NotFoundException('Campaign not found');
     }
+
+    // Calculate analytics at runtime from WABA messages
+    const analyticsData = await this.calculateCampaignAnalytics(campaign._id.toString());
+    
+    // Update campaign with real-time analytics
+    campaign.analyticsSummary = analyticsData;
+    
+    // Save the updated analytics to the database
+    await this.updateAnalytics(campaign._id.toString(), analyticsData);
 
     return campaign;
   }
@@ -384,25 +408,19 @@ export class CampaignService {
     // Send messages to each contact
     for (const contact of contacts) {
       try {
-        const messageResult = await this.sendTemplateMessageToContact(
-          project,
-          contact,
-          campaign.messageTemplate.templateName,
-          bodyVariables,
-          language,
-          headerMediaAssetId,
-        );
 
-        // Create WABA message record
-        await this.wabaMessageService.create({
-          projectId: project._id.toString(),
-          adminId: adminId,
-          campaignId: campaignId,
-          contactId: contact.contactId,
-          wabaMessageId: messageResult.messages[0].id,
-          messageType: 'campaign',
-          templateName: campaign.messageTemplate.templateName,
-        });
+        const messageResult = await this.whatsappService.sendTemplateMessage(
+          new Types.ObjectId(`${adminId}`),
+          {
+            projectId: project._id.toString(),
+            recipientPhoneNumber: contact.phoneNumber,
+            templateName: campaign.messageTemplate.templateName,
+            bodyVariables: bodyVariables,
+            headerMediaAssetId: headerMediaAssetId,
+          },
+          'campaign',
+          campaignId,
+        );
 
         results.sent++;
         results.messageIds.push(messageResult.messages[0].id);
@@ -412,7 +430,7 @@ export class CampaignService {
         );
 
         // Add a delay between messages to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 200));
       } catch (error) {
         results.failed++;
         results.errors.push({
@@ -420,6 +438,22 @@ export class CampaignService {
           phoneNumber: contact.phoneNumber,
           error: error.response?.data?.error || error.message,
         });
+
+        const wabaMessageId = uuidv4();
+
+        await this.wabaMessageService.create({
+          projectId: project._id.toString(),
+          adminId: adminId,
+          campaignId: campaignId,
+          phoneNumber: contact.phoneNumber,
+          contactId: contact.contactId,
+          wabaMessageId: wabaMessageId, //
+          messageType: 'campaign',
+          templateName: campaign.messageTemplate.templateName,
+          failureReason: error.response?.data?.error || error.message,
+          status: 'failed',
+        });
+
 
         this.logger.error(
           `Failed to send message to ${contact.phoneNumber} (Contact ID: ${contact.contactId})`,
@@ -438,11 +472,10 @@ export class CampaignService {
       clicked: 0,
     };
 
-    await this.updateAnalytics(campaignId, analyticsData);
+    // await this.updateAnalytics(campaignId, analyticsData);
 
     // Update campaign status
-    const finalStatus =
-      results.failed === contacts.length ? 'failed' : 'completed';
+    const finalStatus = 'completed';
     await this.update(campaignId, { status: finalStatus }, adminId);
 
     this.logger.log(
@@ -458,6 +491,76 @@ export class CampaignService {
   }
 
   /**
+   * Get header component for media using WhatsApp service logic
+   */
+  private async getHeaderComponentForMedia(
+    headerMediaAssetId: string,
+    templateName: string,
+    adminId: string,
+    projectId: Types.ObjectId,
+  ): Promise<any> {
+    // Get template details to determine header format
+    const templates = await this.whatsappService.getTemplatesForWaba(
+      new Types.ObjectId(adminId),
+      projectId,
+      { name: templateName },
+    );
+
+    if (!templates || templates.length === 0) {
+      throw new NotFoundException(`Template '${templateName}' not found`);
+    }
+
+    const templateDetails = templates[0];
+    const headerComponent = templateDetails.components.find(
+      (c) => c.type === 'HEADER',
+    );
+
+    if (!headerComponent) {
+      return null;
+    }
+
+    const headerFormat = headerComponent.format;
+    let headerParameter: any;
+
+    // Use the correct media parameter structure based on format
+    switch (headerFormat) {
+      case 'IMAGE':
+        headerParameter = {
+          type: 'image',
+          image: {
+            id: headerMediaAssetId,
+          },
+        };
+        break;
+      case 'VIDEO':
+        headerParameter = {
+          type: 'video',
+          video: {
+            id: headerMediaAssetId,
+          },
+        };
+        break;
+      case 'DOCUMENT':
+        headerParameter = {
+          type: 'document',
+          document: {
+            id: headerMediaAssetId,
+          },
+        };
+        break;
+      default:
+        throw new BadRequestException(
+          `Unsupported header format: ${headerFormat}`,
+        );
+    }
+
+    return {
+      type: 'header',
+      parameters: [headerParameter],
+    };
+  }
+
+  /**
    * Send template message to a single contact
    * Similar to WhatsApp service's sendTemplateMessage method
    */
@@ -468,6 +571,7 @@ export class CampaignService {
     bodyVariables?: string[],
     language?: string,
     headerMediaAssetId?: string,
+    adminId?: string,
   ): Promise<any> {
     const { permanentAccessToken, phoneNumberId } = project;
     const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
@@ -489,17 +593,17 @@ export class CampaignService {
 
     // Add header component if media asset ID is provided
     if (headerMediaAssetId) {
-      metaPayload.template.components.push({
-        type: 'header',
-        parameters: [
-          {
-            type: 'media',
-            media: {
-              id: headerMediaAssetId,
-            },
-          },
-        ],
-      });
+      // Use WhatsApp service to handle media asset and template logic
+      const headerComponent = await this.getHeaderComponentForMedia(
+        headerMediaAssetId,
+        templateName,
+        adminId,
+        project._id,
+      );
+
+      if (headerComponent) {
+        metaPayload.template.components.push(headerComponent);
+      }
     }
 
     // Add body component if variables are provided
@@ -610,21 +714,21 @@ export class CampaignService {
       );
 
       // Get the message to find its campaign
-      const message =
-        await this.wabaMessageService.findByWabaMessageId(wabaMessageId);
+      // const message =
+      //   await this.wabaMessageService.findByWabaMessageId(wabaMessageId);
 
-      if (message) {
-        // Only update campaign analytics if campaign exists
-        if (message.campaignId) {
-          await this.updateCampaignAnalyticsFromMessageStatus(
-            message.campaignId.toString(),
-            status,
-          );
-        } else {
-          // Handle individual message (optional analytics)
-          this.logger.log(`Individual message ${wabaMessageId} status updated to ${status}`);
-        }
-      }
+      // if (message) {
+      //   // Only update campaign analytics if campaign exists
+      //   if (message.campaignId) {
+      //     await this.updateCampaignAnalyticsFromMessageStatus(
+      //       message.campaignId.toString(),
+      //       status,
+      //     );
+      //   } else {
+      //     // Handle individual message (optional analytics)
+      //     this.logger.log(`Individual message ${wabaMessageId} status updated to ${status}`);
+      //   }
+      // }
     } catch (error) {
       this.logger.error(
         `Failed to update message status for ${wabaMessageId}`,
@@ -634,42 +738,80 @@ export class CampaignService {
   }
 
   /**
-   * Update campaign analytics based on message status changes
+   * Calculate campaign analytics at runtime from WABA messages
    */
-  private async updateCampaignAnalyticsFromMessageStatus(
-    campaignId: string,
-    status: string,
-  ): Promise<void> {
+  private async calculateCampaignAnalytics(campaignId: string): Promise<any> {
     try {
-      const campaign = await this.campaignModel.findById(campaignId).lean();
-      if (!campaign) return;
+      // Get message statistics from WABA messages
+      const messageStats = await this.wabaMessageService.getMessageStats(campaignId);
+      
+      // Calculate analytics based on message statuses
+      const analyticsData = {
+        total: messageStats.total || 0,
+        sent: messageStats.sent || 0,
+        delivered: messageStats.delivered || 0,
+        read: messageStats.read || 0,
+        clicked: messageStats.clicked || 0,
+        failed: messageStats.failed || 0,
+      };
 
-      const analytics = { ...campaign.analyticsSummary };
-      console.log('updating --------------- > analytics', analytics);
-      // Update analytics based on status
-      switch (status) {
-        case 'delivered':
-          analytics.delivered = (analytics.delivered || 0) + 1;
-          break;
-        case 'read':
-          analytics.read = (analytics.read || 0) + 1;
-          break;
-        case 'clicked':
-          analytics.clicked = (analytics.clicked || 0) + 1;
-          break;
-        case 'failed':
-          analytics.failed = (analytics.failed || 0) + 1;
-          break;
-      }
-
-      await this.updateAnalytics(campaignId, analytics);
+      this.logger.log(`Calculated analytics for campaign ${campaignId}:`, analyticsData);
+      return analyticsData;
     } catch (error) {
       this.logger.error(
-        `Failed to update campaign analytics for ${campaignId}`,
+        `Failed to calculate campaign analytics for ${campaignId}`,
         error,
       );
+      
+      // Return default analytics if calculation fails
+      return {
+        total: 0,
+        sent: 0,
+        delivered: 0,
+        read: 0,
+        clicked: 0,
+        failed: 0,
+      };
     }
   }
+
+  /**
+   * Update campaign analytics based on message status changes
+   */
+  // private async updateCampaignAnalyticsFromMessageStatus(
+  //   campaignId: string,
+  //   status: string,
+  // ): Promise<void> {
+  //   try {
+  //     const campaign = await this.campaignModel.findById(campaignId).lean();
+  //     if (!campaign) return;
+
+  //     const analytics = { ...campaign.analyticsSummary };
+  //     console.log('updating --------------- > analytics', analytics);
+  //     // Update analytics based on status
+  //     switch (status) {
+  //       case 'delivered':
+  //         analytics.delivered = (analytics.delivered || 0) + 1;
+  //         break;
+  //       case 'read':
+  //         analytics.read = (analytics.read || 0) + 1;
+  //         break;
+  //       case 'clicked':
+  //         analytics.clicked = (analytics.clicked || 0) + 1;
+  //         break;
+  //       case 'failed':
+  //         analytics.failed = (analytics.failed || 0) + 1;
+  //         break;
+  //     }
+
+  //     await this.updateAnalytics(campaignId, analytics);
+  //   } catch (error) {
+  //     this.logger.error(
+  //       `Failed to update campaign analytics for ${campaignId}`,
+  //       error,
+  //     );
+  //   }
+  // }
 
   /**
    * Get campaign execution results with detailed message status

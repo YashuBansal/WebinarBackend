@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   Min,
+  IsMongoId,
 } from 'class-validator';
 
 export class CreateProjectDto {
@@ -59,4 +60,12 @@ export class PaginationQueryDto {
   @IsInt()
   @Min(1)
   limit: number = 10;
+}
+
+
+export class CampaignPaginationQueryDto extends PaginationQueryDto {
+
+@IsOptional()
+@IsMongoId()
+campaignId?: string;
 }

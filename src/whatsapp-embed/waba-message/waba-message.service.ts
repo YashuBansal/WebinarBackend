@@ -16,11 +16,14 @@ export class WabaMessageService {
   async create(wabaMessageData: {
     projectId: string;
     adminId: string;
+    phoneNumber: string;
     campaignId?: string;
     contactId?: string;
     wabaMessageId: string;
     messageType?: string;
     templateName: string;
+    failureReason?: string;
+    status?: string;
   }): Promise<WabaMessage> {
     const wabaMessage = new this.wabaMessageModel({
       ...wabaMessageData,
@@ -184,23 +187,51 @@ export class WabaMessageService {
       .exec();
   }
 
-  async getMessageStats(campaignId: string): Promise<any> {
-    const stats = await this.wabaMessageModel.aggregate([
-      {
-        $match: {
-          campaignId: new Types.ObjectId(campaignId),
-          isDeleted: false,
-        },
-      },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
 
-    const result = {
+async getMessageStats(campaignId: string): Promise<any> {
+  const result = await this.wabaMessageModel.aggregate([
+    {
+      $match: {
+        campaignId: new Types.ObjectId(campaignId),
+        isDeleted: false,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        pending: {
+          $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
+        },
+        sent: {
+          $sum: { $cond: ['$sentAt', 1, 0] },
+        },
+        delivered: {
+          $sum: { $cond: ['$deliveredAt', 1, 0] },
+        },
+        read: {
+          $sum: { $cond: ['$readAt', 1, 0] },
+        },
+        clicked: {
+          $sum: { $cond: [{ $eq: ['$status', 'clicked'] }, 1, 0] },
+        },
+        failed: {
+          $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+      },
+    },
+  ]);
+
+  // Handle the case where no documents match the campaignId
+  if (result.length > 0) {
+    return result[0];
+  } else {
+    return {
       total: 0,
       pending: 0,
       sent: 0,
@@ -209,14 +240,8 @@ export class WabaMessageService {
       clicked: 0,
       failed: 0,
     };
-
-    stats.forEach((stat) => {
-      result.total += stat.count;
-      result[stat._id] = stat.count;
-    });
-
-    return result;
   }
+}
 
   async remove(id: string): Promise<void> {
     const result = await this.wabaMessageModel
@@ -241,6 +266,7 @@ export class WabaMessageService {
       wabaMessageId: string;
       messageType?: string;
       templateName: string;
+      phoneNumber: string;
     }>,
     projectId: string,
     adminId: string,

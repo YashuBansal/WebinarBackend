@@ -34,7 +34,6 @@ import {
 import { v2 as cloudinary } from 'cloudinary';
 import { MediaAsset, MediaAssetDocument } from './schemas/media-asset.schema';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
-import { CampaignService } from 'src/whatsapp-embed/campaign/campaign.service';
 
 @Injectable()
 export class WhatsappService {
@@ -52,7 +51,6 @@ export class WhatsappService {
     private readonly mediaAssetModel: Model<MediaAssetDocument>,
     private readonly cloudinaryService: CloudinaryService,
     private readonly wabaMessageService: WabaMessageService,
-    private readonly campaignService: CampaignService,
   ) {
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
@@ -119,7 +117,7 @@ export class WhatsappService {
    * This method will be expanded to handle message statuses, new messages, etc.
    * @param payload The body of the POST request from Meta's webhook.
    */
-  processWebhookPayload(payload: any): void {
+  async processWebhookPayload(payload: any): Promise<void> {
     console.log(JSON.stringify(payload, null, 2));
     this.logger.log('Processing webhook payload for WhatsApp messages');
 
@@ -150,6 +148,9 @@ export class WhatsappService {
     } catch (error) {
       this.logger.error('Error processing webhook payload', error);
     }
+
+
+
   }
 
   /**
@@ -847,6 +848,9 @@ export class WhatsappService {
   async sendTemplateMessage(
     adminId: Types.ObjectId,
     sendTemplateDto: SendTemplateMessageDto,
+    messageType: 'individual' | 'campaign' = 'individual',
+    campaignId?: string,
+
   ): Promise<any> {
     const {
       projectId,
@@ -994,10 +998,12 @@ export class WhatsappService {
           await this.wabaMessageService.create({
             projectId: projectId,
             adminId: adminId.toString(),
+            phoneNumber: recipientPhoneNumber,
             contactId: sendTemplateDto.contactId,
             wabaMessageId: response.data.messages[0].id,
-            messageType: 'individual',
+            messageType,
             templateName: templateName,
+            campaignId,
           });
         } catch (error) {
           this.logger.error('Failed to create WABA message record:', error);
@@ -1186,6 +1192,7 @@ export class WhatsappService {
         // Create WABA message record for bulk individual message
         try {
           await this.wabaMessageService.create({
+            phoneNumber: contact.phoneNumber,
             contactId: contact.contactId,
             wabaMessageId: response.data.messages[0].id,
             messageType: 'individual',

@@ -68,6 +68,13 @@ export class WabaMessage extends Document {
 
   @Prop({
     type: String,
+    required: [true, 'Phone number is required'],
+    trim: true,
+  })
+  phoneNumber: string;
+
+  @Prop({
+    type: String,
     enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'clicked'],
     default: 'pending',
     required: [true, 'Status is required'],
