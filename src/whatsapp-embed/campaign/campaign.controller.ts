@@ -112,6 +112,19 @@ export class CampaignController {
     };
   }
 
+  @Get(':id/report/download')
+  async downloadCampaignReport(@Param('id') id: string, @Id() adminId: string) {
+    const result = await this.campaignService.getCampaignReportForDownload(
+      id,
+      adminId,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Campaign report data fetched successfully',
+      data: result,
+    };
+  }
+
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
   async handleWebhookEvents(@Body() body: any) {

@@ -238,7 +238,7 @@ export class ProfileService {
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}`;
 
     const params = {
-      fields: 'name_status,display_phone_number, verified_name, quality_rating, throughput',
+      fields: 'name_status,display_phone_number, verified_name, quality_rating, throughput, messaging_limit_tier',
       access_token: permanentAccessToken,
     };
 

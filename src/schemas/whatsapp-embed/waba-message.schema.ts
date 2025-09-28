@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Campaign } from './campaign.schema';
-import { Contact } from '../Contact.schema';
+import { Contact } from '../../contacts/Contact.schema';
 import { Project } from '../project.schema';
 import { User } from '../User.schema';
 

@@ -177,7 +177,7 @@ export class WabaMessageService {
     return wabaMessage;
   }
 
-  async getCampaignMessages(campaignId: string): Promise<WabaMessage[]> {
+  async getCampaignMessages(campaignId: string): Promise<any[]> {
     return this.wabaMessageModel
       .find({
         campaignId: new Types.ObjectId(campaignId),

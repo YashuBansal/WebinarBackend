@@ -6,11 +6,12 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Contact, ContactDocument } from 'src/schemas/Contact.schema';
+import { Contact, ContactDocument } from './Contact.schema';
 import {
   CreateContactDto,
   UpdateContactDto,
   BulkCreateContactsDto,
+  CSVImportDto,
   PaginationQueryDto,
   ContactFiltersDto,
 } from './dto/contacts.dto';
@@ -56,66 +57,234 @@ export class ContactsService {
     bulkCreateContactsDto: BulkCreateContactsDto,
     adminId: Types.ObjectId,
   ) {
-    const { contacts } = bulkCreateContactsDto;
+    const { contacts, defaultCountryCode, replaceTags } = bulkCreateContactsDto;
 
     try {
-      // First, check for existing contacts to avoid duplicates
-      const emails = contacts.map((c) => c.email);
-      const phones = contacts.map((c) => c.phone);
+      // Normalize phone numbers with country code if provided
+      const normalizedContacts = contacts.map(contact => ({
+        ...contact,
+        phone: this.normalizePhoneNumber(contact.phone, defaultCountryCode),
+      }));
 
+      // Get all phone numbers for duplicate checking (phone is unique per project)
+      const phones = normalizedContacts.map((c) => c.phone);
+      const projectId = new Types.ObjectId(normalizedContacts[0]?.projectId);
+
+      // Find existing contacts by phone (phone is unique per project)
       const existingContacts = await this.contactModel
         .find({
           adminId,
-          $or: [{ email: { $in: emails } }, { phone: { $in: phones } }],
+          projectId,
+          phone: { $in: phones },
           isDeleted: false,
         })
         .exec();
 
-      const existingEmails = new Set(existingContacts.map((c) => c.email));
-      const existingPhones = new Set(existingContacts.map((c) => c.phone));
+      const existingPhonesMap = new Map(
+        existingContacts.map((c) => [c.phone, c])
+      );
 
-      // Separate contacts into valid and invalid
-      const validContacts = [];
-      const failed = [];
+      const results = {
+        created: [],
+        updated: [],
+        failed: [],
+        skipped: [],
+      };
 
-      contacts.forEach((contactData) => {
-        if (
-          existingEmails.has(contactData.email) ||
-          existingPhones.has(contactData.phone)
-        ) {
-          failed.push({
+      for (const contactData of normalizedContacts) {
+        try {
+          const existingContact = existingPhonesMap.get(contactData.phone);
+
+          if (existingContact) {
+            // Contact exists - update it
+            const updateData: any = {};
+
+            // Update firstName, lastName, email if provided
+            if (contactData.firstName) updateData.firstName = contactData.firstName;
+            if (contactData.lastName) updateData.lastName = contactData.lastName;
+            if (contactData.email) updateData.email = contactData.email;
+
+            // Handle tags based on replaceTags flag
+            if (contactData.tags && contactData.tags.length > 0) {
+              if (replaceTags) {
+                updateData.tags = contactData.tags;
+              } else {
+                // Merge tags, removing duplicates
+                const existingTags = existingContact.tags || [];
+                const newTags = contactData.tags || [];
+                const mergedTags = [...new Set([...existingTags, ...newTags])];
+                updateData.tags = mergedTags;
+              }
+            }
+
+            const updatedContact = await this.contactModel
+              .findByIdAndUpdate(
+                existingContact._id,
+                { $set: updateData },
+                { new: true }
+              )
+              .exec();
+
+            results.updated.push(updatedContact);
+          } else {
+            // New contact - create it
+            const newContact = await this.contactModel.create({
+              ...contactData,
+              projectId: new Types.ObjectId(contactData.projectId),
+              adminId,
+              isActive: true,
+              isDeleted: false,
+            });
+
+            results.created.push(newContact);
+          }
+        } catch (error) {
+          results.failed.push({
             contact: contactData,
-            error: 'Contact with this email or phone already exists',
-          });
-        } else {
-          validContacts.push({
-            ...contactData,
-            projectId: new Types.ObjectId(contactData.projectId),
-            adminId,
-            isActive: true,
-            isDeleted: false,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            error: error.message,
           });
         }
-      });
+      }
 
-      // Use insertMany for valid contacts
-      const created =
-        validContacts.length > 0
-          ? await this.contactModel.insertMany(validContacts)
-          : [];
-
-      return { created, failed };
+      return results;
     } catch (error) {
-      // If insertMany fails, add all contacts to failed
-      const failed = contacts.map((contactData) => ({
-        contact: contactData,
-        error: error.message,
-      }));
-
-      return { created: [], failed };
+      this.logger.error('Bulk create failed:', error);
+      throw error;
     }
+  }
+
+
+
+  /**
+   * Normalize phone number based on country code
+   */
+  private normalizePhoneNumber(phone: string, countryCode?: string): string {
+    if (!phone) return '';
+
+    // Convert to string first to handle all input types
+    let phoneStr = String(phone).trim();
+
+    // Handle scientific notation (e.g., "1.234E+10", "1.234e+10")
+    if (phoneStr.includes('E') || phoneStr.includes('e')) {
+      try {
+        // Convert scientific notation to number, then to fixed decimal string
+        const num = Number(phoneStr);
+        if (!isNaN(num)) {
+          // Use toFixed(0) to remove decimal places, then convert back to string
+          phoneStr = num.toFixed(0);
+        }
+      } catch (error) {
+        this.logger.warn('Error converting scientific notation:', error);
+        return '';
+      }
+    }
+
+    // Remove all non-numeric characters
+    const cleanedPhone = phoneStr.replace(/[^0-9]/g, '');
+
+    // Handle different country codes
+    if (countryCode === 'IN' || countryCode === '+91') {
+      // India: 10-digit numbers
+      if (cleanedPhone.length > 10) {
+        // Get last 10 digits and prepend 91
+        const last10Digits = cleanedPhone.slice(-10);
+        return `91${last10Digits}`;
+      } else if (cleanedPhone.length === 10) {
+        // Prepend 91 for 10-digit numbers
+        return `91${cleanedPhone}`;
+      }
+    } else if (countryCode === 'US' || countryCode === '+1') {
+      // US: 10-digit numbers
+      if (cleanedPhone.length > 10) {
+        const last10Digits = cleanedPhone.slice(-10);
+        return `1${last10Digits}`;
+      } else if (cleanedPhone.length === 10) {
+        return `1${cleanedPhone}`;
+      }
+    } else if (countryCode === 'GB' || countryCode === '+44') {
+      // UK: 10-digit numbers
+      if (cleanedPhone.length > 10) {
+        const last10Digits = cleanedPhone.slice(-10);
+        return `44${last10Digits}`;
+      } else if (cleanedPhone.length === 10) {
+        return `44${cleanedPhone}`;
+      }
+    } else if (countryCode === 'CA' || countryCode === '+1') {
+      // Canada: 10-digit numbers (same as US)
+      if (cleanedPhone.length > 10) {
+        const last10Digits = cleanedPhone.slice(-10);
+        return `1${last10Digits}`;
+      } else if (cleanedPhone.length === 10) {
+        return `1${cleanedPhone}`;
+      }
+    } else if (countryCode === 'AU' || countryCode === '+61') {
+      // Australia: 9-digit numbers
+      if (cleanedPhone.length > 9) {
+        const last9Digits = cleanedPhone.slice(-9);
+        return `61${last9Digits}`;
+      } else if (cleanedPhone.length === 9) {
+        return `61${cleanedPhone}`;
+      }
+    } else if (countryCode === 'DE' || countryCode === '+49') {
+      // Germany: 10-digit numbers
+      if (cleanedPhone.length > 10) {
+        const last10Digits = cleanedPhone.slice(-10);
+        return `49${last10Digits}`;
+      } else if (cleanedPhone.length === 10) {
+        return `49${cleanedPhone}`;
+      }
+    } else if (countryCode === 'FR' || countryCode === '+33') {
+      // France: 9-digit numbers
+      if (cleanedPhone.length > 9) {
+        const last9Digits = cleanedPhone.slice(-9);
+        return `33${last9Digits}`;
+      } else if (cleanedPhone.length === 9) {
+        return `33${cleanedPhone}`;
+      }
+    } else if (countryCode === 'BR' || countryCode === '+55') {
+      // Brazil: 10-digit numbers
+      if (cleanedPhone.length > 10) {
+        const last10Digits = cleanedPhone.slice(-10);
+        return `55${last10Digits}`;
+      } else if (cleanedPhone.length === 10) {
+        return `55${cleanedPhone}`;
+      }
+    } else if (countryCode === 'MX' || countryCode === '+52') {
+      // Mexico: 10-digit numbers
+      if (cleanedPhone.length > 10) {
+        const last10Digits = cleanedPhone.slice(-10);
+        return `52${last10Digits}`;
+      } else if (cleanedPhone.length === 10) {
+        return `52${cleanedPhone}`;
+      }
+    } else if (countryCode === 'JP' || countryCode === '+81') {
+      // Japan: 10-digit numbers
+      if (cleanedPhone.length > 10) {
+        const last10Digits = cleanedPhone.slice(-10);
+        return `81${last10Digits}`;
+      } else if (cleanedPhone.length === 10) {
+        return `81${cleanedPhone}`;
+      }
+    } else if (countryCode === 'CN' || countryCode === '+86') {
+      // China: 11-digit numbers
+      if (cleanedPhone.length > 11) {
+        const last11Digits = cleanedPhone.slice(-11);
+        return `86${last11Digits}`;
+      } else if (cleanedPhone.length === 11) {
+        return `86${cleanedPhone}`;
+      }
+    } else if (countryCode === 'RU' || countryCode === '+7') {
+      // Russia: 10-digit numbers
+      if (cleanedPhone.length > 10) {
+        const last10Digits = cleanedPhone.slice(-10);
+        return `7${last10Digits}`;
+      } else if (cleanedPhone.length === 10) {
+        return `7${cleanedPhone}`;
+      }
+    }
+
+    // Default: return cleaned phone as is
+    return cleanedPhone;
   }
 
   async findAll(

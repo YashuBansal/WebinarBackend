@@ -84,6 +84,72 @@ export class BulkCreateContactsDto {
   @IsArray()
   @Type(() => CreateContactDto)
   readonly contacts: CreateContactDto[];
+
+  @IsString()
+  @IsOptional()
+  readonly defaultCountryCode?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  readonly replaceTags?: boolean;
+}
+
+export class CSVImportDto {
+  @IsArray()
+  @Type(() => CreateContactDto)
+  readonly contacts: CreateContactDto[];
+
+  @IsString()
+  @IsOptional()
+  readonly defaultCountryCode?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  readonly replaceTags?: boolean;
+}
+
+export class CSVFieldMappingDto {
+  @IsString()
+  @IsNotEmpty()
+  readonly firstName: string;
+
+  @IsString()
+  @IsOptional()
+  readonly lastName?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  readonly phone: string;
+
+  @IsString()
+  @IsNotEmpty()
+  readonly email: string;
+
+  @IsString()
+  @IsOptional()
+  readonly tags?: string;
+}
+
+export class CSVImportRequestDto {
+  @IsString()
+  @IsNotEmpty()
+  readonly fileName: string;
+
+  @IsArray()
+  @Type(() => CSVFieldMappingDto)
+  readonly fieldMapping: CSVFieldMappingDto;
+
+  @IsString()
+  @IsOptional()
+  readonly defaultCountryCode?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  readonly replaceTags?: boolean;
+
+  @IsMongoId()
+  @IsNotEmpty()
+  readonly projectId: string;
 }
 
 export class PaginationQueryDto {

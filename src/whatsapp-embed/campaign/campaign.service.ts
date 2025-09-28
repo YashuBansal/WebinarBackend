@@ -279,7 +279,7 @@ export class CampaignService {
     };
   }
 
-  async findOne(id: string, adminId: string): Promise<Campaign> {
+  async findOne(id: string, adminId: string): Promise<any> {
     console.log(id, adminId, mongoose.Types.ObjectId.isValid(id), mongoose.Types.ObjectId.isValid(adminId));
     const campaign = await this.campaignModel
       .findOne({
@@ -931,6 +931,46 @@ export class CampaignService {
         readAt: msg.readAt,
       })),
       statistics: messageStats,
+    };
+  }
+
+  /**
+   * Get campaign report data for download (all messages without pagination)
+   */
+  async getCampaignReportForDownload(
+    campaignId: string,
+    adminId: string,
+  ): Promise<any> {
+    const campaign = await this.findOne(campaignId, adminId);
+    const messages = await this.wabaMessageService.getCampaignMessages(campaignId);
+    const messageStats = await this.wabaMessageService.getMessageStats(campaignId);
+
+    // Format messages for CSV export
+    const formattedMessages = messages.map((msg) => ({
+      phoneNumber: msg.phoneNumber,
+      templateName: msg.templateName,
+      messageType: msg.messageType,
+      status: msg.status,
+      createdAt: msg.createdAt,
+      sentAt: msg.sentAt || '',
+      deliveredAt: msg.deliveredAt || '',
+      readAt: msg.readAt || '',
+      failureReason: msg.failureReason || '',
+      wabaMessageId: msg.wabaMessageId,
+    }));
+
+    return {
+      campaign: {
+        id: campaign._id,
+        name: campaign.name,
+        status: campaign.status,
+        createdAt: campaign.createdAt,
+        completedAt: campaign.completedAt,
+        scheduledAt: campaign.scheduledAt,
+      },
+      messages: formattedMessages,
+      statistics: messageStats,
+      totalMessages: messages.length,
     };
   }
 

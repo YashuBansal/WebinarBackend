@@ -37,22 +37,13 @@ import {
 @Controller('whatsapp')
 export class WhatsappController {
   constructor(private readonly whatsappService: WhatsappService) {}
-
-  // --- NEW ENDPOINT ---
-  /**
-   * @description Receives an authorization code from the frontend after a successful
-   * Embedded Signup flow. It exchanges this code for a long-lived access token,
-   * fetches WABA details, and saves them to the database, linked to the logged-in admin.
-   * @param code The authorization code from Meta.
-   * @param req The authenticated request object, containing the logged-in user's details.
-   */
+ 
   @Post('exchange-code')
   async exchangeCode(
     @Body('code') code: string,
     @Id() adminId: string,
     @Body('projectId') projectId: string,
   ) {
-    console.log('----------------------------', code, adminId, projectId);
     if (
       !code ||
       !mongoose.isValidObjectId(adminId) ||
@@ -96,15 +87,6 @@ export class WhatsappController {
     };
   }
 
-
-  /**
-   * @description Handles the webhook verification GET request from Meta.
-   * This is the endpoint you set as the "Valid OAuth Redirect URI" or "Webhook URL".
-   * @param mode The mode from the query parameters (should be 'subscribe').
-   * @param challenge The challenge string to echo back.
-   * @param token The verification token you set in your Meta App Dashboard.
-   * @param res The Express response object to send the challenge back.
-   */
   @Get('webhook')
   verifyWebhook(
     @Query('hub.mode') mode: string,
@@ -127,11 +109,7 @@ export class WhatsappController {
       throw error;
     }
   }
-
-  /**
-   * @description Handles incoming data from the webhook after verification.
-   * All message status updates and incoming messages will be sent here.
-   */
+ 
   @Post('webhook')
   @HttpCode(HttpStatus.OK) // Always respond with 200 OK immediately
   handleWebhookEvents(@Body() body: any) {
