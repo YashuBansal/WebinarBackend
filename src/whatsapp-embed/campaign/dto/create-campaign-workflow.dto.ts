@@ -6,6 +6,7 @@ import {
   ValidateNested,
   IsDateString,
   IsEnum,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -27,6 +28,18 @@ export class VariableMappingDto {
   @IsString()
   @IsNotEmpty()
   contactField: string; // e.g., "firstName", "lastName", "phone"
+
+  @IsOptional()
+  @IsBoolean()
+  isDynamic?: boolean; // Whether to use contact field or static value
+
+  @IsOptional()
+  @IsString()
+  staticValue?: string; // Static value when not using contact field
+
+  @IsOptional()
+  @IsString()
+  fallbackValue?: string; // Fallback value when contact field is empty
 }
 
 export class ContactSelectionDto {

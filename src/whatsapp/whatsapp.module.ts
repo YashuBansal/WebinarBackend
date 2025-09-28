@@ -15,6 +15,7 @@ import { MediaAsset, MediaAssetSchema } from './schemas/media-asset.schema';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { WabaMessageModule } from 'src/whatsapp-embed/waba-message/waba-message.module';
 import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
+import { ContactsModule } from 'src/contacts/contacts.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
     forwardRef(() => UsersModule),
     ProjectsModule,
     WabaMessageModule,
+    ContactsModule,
     MongooseModule.forFeature([
       { name: MediaAsset.name, schema: MediaAssetSchema },
     ]),

@@ -34,6 +34,7 @@ import {
 import { v2 as cloudinary } from 'cloudinary';
 import { MediaAsset, MediaAssetDocument } from './schemas/media-asset.schema';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
+import { ContactsService } from 'src/contacts/contacts.service';
 
 @Injectable()
 export class WhatsappService {
@@ -49,6 +50,7 @@ export class WhatsappService {
     private readonly projectService: ProjectsService,
     @InjectModel(MediaAsset.name)
     private readonly mediaAssetModel: Model<MediaAssetDocument>,
+    private readonly contactsService: ContactsService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly wabaMessageService: WabaMessageService,
   ) {
@@ -120,6 +122,8 @@ export class WhatsappService {
   async processWebhookPayload(payload: any): Promise<void> {
     console.log(JSON.stringify(payload, null, 2));
     this.logger.log('Processing webhook payload for WhatsApp messages');
+
+  
 
     try {
       // Process status updates
@@ -667,6 +671,7 @@ export class WhatsappService {
 
     try {
       // CORRECTED API CALL
+      console.log('metaPayload', JSON.stringify(metaPayload, null, 2));
       const response = await firstValueFrom(
         this.httpService.post(url, metaPayload, {
           headers: {
@@ -845,21 +850,58 @@ export class WhatsappService {
     }
   }
 
-  async sendTemplateMessage(
+  /**
+   * Helper method to resolve dynamic variables for a specific contact
+   */
+  private async resolveVariablesForContact(
+    contactId: string,
+    variables: string[],
+    dynamicFlags: boolean[],
+  ): Promise<string[]> {
+    const resolvedVariables: string[] = [];
+
+    for (let i = 0; i < variables.length; i++) {
+      const variable = variables[i];
+      const isDynamic = dynamicFlags && dynamicFlags[i];
+
+      if (isDynamic && variable.startsWith('$')) {
+        // This is a dynamic variable, fetch contact data
+        const contact = await this.contactsService.findById(new Types.ObjectId(contactId));
+
+        // Map dynamic variable to contact field
+        const fieldMap: { [key: string]: string } = {
+          '$firstName': contact.firstName,
+          '$lastName': contact.lastName || '',
+          '$email': contact.email,
+          '$phone': contact.phone,
+        };
+
+        resolvedVariables.push(fieldMap[variable] || variable);
+      } else {
+        // Static variable, use as-is
+        resolvedVariables.push(variable);
+      }
+    }
+
+    return resolvedVariables;
+  }
+
+  /**
+   * Unified method to send a single template message with support for dynamic variables
+   */
+  async sendSingleTemplateMessage(
     adminId: Types.ObjectId,
-    sendTemplateDto: SendTemplateMessageDto,
+    projectId: string,
+    recipientPhoneNumber: string,
+    templateName: string,
+    bodyVariables?: string[],
+    dynamicVariables?: boolean[],
+    headerMediaAssetId?: string,
+    language?: string,
+    contactId?: string,
     messageType: 'individual' | 'campaign' = 'individual',
     campaignId?: string,
-
   ): Promise<any> {
-    const {
-      projectId,
-      recipientPhoneNumber,
-      templateName,
-      bodyVariables,
-      headerMediaAssetId,
-    } = sendTemplateDto;
-
     this.logger.log(
       `Attempting to send template '${templateName}' from WABA ${projectId} to ${recipientPhoneNumber}`,
     );
@@ -873,182 +915,6 @@ export class WhatsappService {
         'You do not have permission to access this WABA.',
       );
     }
-    // We need the Phone Number ID from the WABA to send a message
-    const fromPhoneNumberId = account.phoneNumberId;
-    if (!fromPhoneNumberId) {
-      throw new NotFoundException(
-        'No sending phone number found for this WABA.',
-      );
-    }
-
-    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
-    const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
-
-    // --- CONSTRUCT THE META PAYLOAD ---
-    // This structure is very specific and must be followed exactly.
-    const metaPayload: any = {
-      messaging_product: 'whatsapp',
-      to: recipientPhoneNumber,
-      type: 'template',
-      template: {
-        name: templateName,
-        language: {
-          code: sendTemplateDto.language || 'en_US',
-        },
-        components: [],
-      },
-    };
-
-    // Add body component if there are variables
-    if (bodyVariables && bodyVariables.length > 0) {
-      metaPayload.template.components.push({
-        type: 'body',
-        parameters: bodyVariables.map((variable) => ({
-          type: 'text',
-          text: variable,
-        })),
-      });
-    }
-
-    // Add header component if media asset is provided
-    if (headerMediaAssetId) {
-      const mediaAsset =
-        await this.mediaAssetModel.findById(headerMediaAssetId);
-      if (!mediaAsset) {
-        throw new NotFoundException('Media asset not found');
-      }
-
-      // Get template details to determine header format
-      const templates = await this.getTemplatesForWaba(
-        adminId,
-        new Types.ObjectId(projectId),
-        { name: templateName },
-      );
-
-      if (!templates || templates.length === 0) {
-        throw new NotFoundException(`Template '${templateName}' not found`);
-      }
-
-      const templateDetails = templates[0];
-
-      const headerComponent = templateDetails.components.find(
-        (c) => c.type === 'HEADER',
-      );
-      if (headerComponent) {
-        const headerFormat = headerComponent.format;
-        let headerParameter: any;
-
-        switch (headerFormat) {
-          case 'IMAGE':
-            headerParameter = {
-              type: 'image',
-              image: {
-                link: mediaAsset.filePath,
-              },
-            };
-            break;
-          case 'VIDEO':
-            headerParameter = {
-              type: 'video',
-              video: {
-                link: mediaAsset.filePath,
-              },
-            };
-            break;
-          case 'DOCUMENT':
-            headerParameter = {
-              type: 'document',
-              document: {
-                link: mediaAsset.filePath,
-                filename: mediaAsset.fileName,
-              },
-            };
-            break;
-          default:
-            throw new BadRequestException(
-              `Unsupported header format: ${headerFormat}`,
-            );
-        }
-
-        metaPayload.template.components.push({
-          type: 'header',
-          parameters: [headerParameter],
-        });
-      }
-    }
-
-    // Remove the components array if it's empty
-    if (metaPayload.template.components.length === 0) {
-      delete metaPayload.template.components;
-    }
-    console.log(JSON.stringify(metaPayload, null, 2));
-    try {
-      const response = await firstValueFrom(
-        this.httpService.post(url, metaPayload, {
-          headers: { Authorization: `Bearer ${account.permanentAccessToken}` },
-        }),
-      );
-      this.logger.log(
-        `Message sent successfully. Message ID: ${JSON.stringify(response.data.messages[0])}`,
-      );
-
-      // Create WABA message record for individual message
-      if (response.data?.messages[0]?.id) {
-        try {
-          await this.wabaMessageService.create({
-            projectId: projectId,
-            adminId: adminId.toString(),
-            phoneNumber: recipientPhoneNumber,
-            contactId: sendTemplateDto.contactId,
-            wabaMessageId: response.data.messages[0].id,
-            messageType,
-            templateName: templateName,
-            campaignId,
-          });
-        } catch (error) {
-          this.logger.error('Failed to create WABA message record:', error);
-          // Don't throw error here as the message was sent successfully
-        }
-      }
-
-      return response.data;
-    } catch (error) {
-      this.logger.error(
-        `Failed to send template message for WABA ${projectId}`,
-        error.response?.data?.error,
-      );
-      throw new InternalServerErrorException(
-        error.response?.data?.error?.message ||
-        'Could not send template message.',
-      );
-    }
-  }
-
-  async sendBulkTemplateMessage(
-    adminId: Types.ObjectId,
-    sendBulkTemplateDto: SendBulkTemplateMessageDto,
-  ): Promise<any> {
-    const {
-      projectId,
-      contacts,
-      templateName,
-      bodyVariables,
-      headerMediaAssetId,
-    } = sendBulkTemplateDto;
-
-    this.logger.log(
-      `Attempting to send bulk template '${templateName}' from WABA ${projectId} to ${contacts.length} contacts`,
-    );
-
-    const account = await this.projectService.findOne(
-      adminId,
-      new Types.ObjectId(projectId),
-    );
-    if (!account) {
-      throw new UnauthorizedException(
-        'You do not have permission to access this WABA.',
-      );
-    }
 
     // We need the Phone Number ID from the WABA to send a message
     const fromPhoneNumberId = account.phoneNumberId;
@@ -1061,20 +927,25 @@ export class WhatsappService {
     const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
     const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
 
-    // Prepare the template structure
+    // Resolve variables for this specific contact if dynamic variables are provided
+    const resolvedVariables = bodyVariables && bodyVariables.length > 0 && contactId
+      ? await this.resolveVariablesForContact(contactId, bodyVariables, dynamicVariables || [])
+      : bodyVariables || [];
+
+    // Create template structure for this contact with resolved variables
     const templateStructure: any = {
       name: templateName,
       language: {
-        code: sendBulkTemplateDto.language || 'en_US',
+        code: language || 'en_US',
       },
       components: [],
     };
 
-    // Add body component if there are variables
-    if (bodyVariables && bodyVariables.length > 0) {
+    // Add body component with resolved variables
+    if (resolvedVariables.length > 0) {
       templateStructure.components.push({
         type: 'body',
-        parameters: bodyVariables.map((variable) => ({
+        parameters: resolvedVariables.map((variable) => ({
           type: 'text',
           text: variable,
         })),
@@ -1083,8 +954,7 @@ export class WhatsappService {
 
     // Add header component if media asset is provided
     if (headerMediaAssetId) {
-      const mediaAsset =
-        await this.mediaAssetModel.findById(headerMediaAssetId);
+      const mediaAsset = await this.mediaAssetModel.findById(headerMediaAssetId);
       if (!mediaAsset) {
         throw new NotFoundException('Media asset not found');
       }
@@ -1101,10 +971,10 @@ export class WhatsappService {
       }
 
       const templateDetails = templates[0];
-
       const headerComponent = templateDetails.components.find(
         (c) => c.type === 'HEADER',
       );
+
       if (headerComponent) {
         const headerFormat = headerComponent.format;
         let headerParameter: any;
@@ -1153,6 +1023,108 @@ export class WhatsappService {
       delete templateStructure.components;
     }
 
+    const metaPayload = {
+      messaging_product: 'whatsapp',
+      to: recipientPhoneNumber,
+      type: 'template',
+      template: templateStructure,
+    };
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(url, metaPayload, {
+          headers: {
+            Authorization: `Bearer ${account.permanentAccessToken}`,
+          },
+        }),
+      );
+
+      this.logger.log(
+        `Message sent successfully to ${recipientPhoneNumber}. Message ID: ${response.data.messages[0].id}`,
+      );
+
+      // Create WABA message record
+      if (response.data?.messages[0]?.id) {
+        try {
+          await this.wabaMessageService.create({
+            projectId: projectId,
+            adminId: adminId.toString(),
+            phoneNumber: recipientPhoneNumber,
+            contactId: contactId,
+            wabaMessageId: response.data.messages[0].id,
+            messageType,
+            templateName: templateName,
+            campaignId,
+          });
+        } catch (error) {
+          this.logger.error('Failed to create WABA message record:', error);
+          // Don't throw error here as the message was sent successfully
+        }
+      }
+
+      return response.data;
+    } catch (error) {
+      this.logger.error(
+        `Failed to send template message to ${recipientPhoneNumber}`,
+        error.response?.data?.error,
+      );
+      throw new InternalServerErrorException(
+        error.response?.data?.error?.message ||
+        'Could not send template message.',
+      );
+    }
+  }
+
+  async sendTemplateMessage(
+    adminId: Types.ObjectId,
+    sendTemplateDto: SendTemplateMessageDto,
+    messageType: 'individual' | 'campaign' = 'individual',
+    campaignId?: string,
+
+  ): Promise<any> {
+    const {
+      projectId,
+      recipientPhoneNumber,
+      templateName,
+      bodyVariables,
+      headerMediaAssetId,
+      language,
+      contactId,
+    } = sendTemplateDto;
+
+    return this.sendSingleTemplateMessage(
+      adminId,
+      projectId,
+      recipientPhoneNumber,
+      templateName,
+      bodyVariables,
+      undefined, // No dynamic variables support in single message
+      headerMediaAssetId,
+      language,
+      contactId,
+      messageType,
+      campaignId,
+    );
+  }
+
+  async sendBulkTemplateMessage(
+    adminId: Types.ObjectId,
+    sendBulkTemplateDto: SendBulkTemplateMessageDto,
+  ): Promise<any> {
+    const {
+      projectId,
+      contacts,
+      templateName,
+      bodyVariables,
+      dynamicVariables,
+      headerMediaAssetId,
+      language,
+    } = sendBulkTemplateDto;
+
+    this.logger.log(
+      `Attempting to send bulk template '${templateName}' from WABA ${projectId} to ${contacts.length} contacts`,
+    );
+
     const results = {
       sent: 0,
       failed: 0,
@@ -1160,50 +1132,25 @@ export class WhatsappService {
       messageIds: [] as string[],
     };
 
-    // Send messages to each contact
+    // Send messages to each contact using the unified helper
     for (const contact of contacts) {
       try {
-        const metaPayload = {
-          messaging_product: 'whatsapp',
-          to: contact.phoneNumber,
-          type: 'template',
-          template: templateStructure,
-        };
-
-        this.logger.log(
-          `Sending message to ${contact.phoneNumber} (Contact ID: ${contact.contactId})`,
-        );
-
-        const response = await firstValueFrom(
-          this.httpService.post(url, metaPayload, {
-            headers: {
-              Authorization: `Bearer ${account.permanentAccessToken}`,
-            },
-          }),
+        const response = await this.sendSingleTemplateMessage(
+          adminId,
+          projectId,
+          contact.phoneNumber,
+          templateName,
+          bodyVariables,
+          dynamicVariables,
+          headerMediaAssetId,
+          language,
+          contact.contactId,
+          'individual',
+          undefined,
         );
 
         results.sent++;
-        results.messageIds.push(response.data.messages[0].id);
-
-        this.logger.log(
-          `Message sent successfully to ${contact.phoneNumber}. Message ID: ${response.data.messages[0].id}`,
-        );
-
-        // Create WABA message record for bulk individual message
-        try {
-          await this.wabaMessageService.create({
-            phoneNumber: contact.phoneNumber,
-            contactId: contact.contactId,
-            wabaMessageId: response.data.messages[0].id,
-            messageType: 'individual',
-            projectId: projectId,
-            adminId: adminId.toString(),
-            templateName: templateName,
-          });
-        } catch (error) {
-          this.logger.error('Failed to create WABA message record:', error);
-          // Don't throw error here as the message was sent successfully
-        }
+        results.messageIds.push(response.messages[0].id);
 
         // Add a small delay between messages to avoid rate limiting
         await new Promise((resolve) => setTimeout(resolve, 100));

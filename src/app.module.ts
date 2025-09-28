@@ -57,6 +57,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { ContactsModule } from './contacts/contacts.module';
 import { WabaTagsModule } from './waba-tags/waba-tags.module';
 import { WhatsappEmbedModule } from './whatsapp-embed/whatsapp-embed.module';
+import { ProfileModule } from './profile/profile.module';
 
 @Module({
   imports: [
@@ -137,6 +138,7 @@ import { WhatsappEmbedModule } from './whatsapp-embed/whatsapp-embed.module';
     ContactsModule,
     WabaTagsModule,
     WhatsappEmbedModule,
+    ProfileModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService],

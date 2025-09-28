@@ -38,7 +38,16 @@ export class ExecuteCampaignDto {
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  bodyVariables?: string[]; // Template variables for personalization
+  bodyVariables?: string[]; // Template variables for personalization (e.g., ["John Doe", "AB-123"] or ["$firstName", "$email"])
+
+  @IsArray()
+  @IsOptional()
+  dynamicVariables?: boolean[]; // Track which variables are dynamic (contact fields)
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  fallbackValues?: string[]; // Fallback values for dynamic variables when contact fields are empty
 
   @IsString()
   @IsOptional()

@@ -199,6 +199,23 @@ export class ContactsService {
     return contact;
   }
 
+  /**
+   * Find a contact by ID only (used internally by other services)
+   * @param contactId The contact ID
+   * @returns Promise<Contact>
+   */
+  async findById(contactId: Types.ObjectId): Promise<Contact> {
+    const contact = await this.contactModel
+      .findOne({ _id: contactId, isDeleted: false })
+      .exec();
+
+    if (!contact) {
+      throw new NotFoundException(`Contact with ID "${contactId}" not found.`);
+    }
+
+    return contact;
+  }
+
   async update(
     adminId: Types.ObjectId,
     contactId: Types.ObjectId,

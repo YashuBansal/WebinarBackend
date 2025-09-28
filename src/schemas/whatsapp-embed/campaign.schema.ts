@@ -87,6 +87,18 @@ export class StoredCampaignData {
   bodyVariables: string[];
 
   @Prop({ 
+    type: [Boolean], 
+    default: [] 
+  })
+  dynamicVariables: boolean[];
+
+  @Prop({ 
+    type: [String], 
+    default: [] 
+  })
+  fallbackValues: string[]; // Fallback values for dynamic variables
+
+  @Prop({ 
     type: String, 
     default: 'en_US' 
   })

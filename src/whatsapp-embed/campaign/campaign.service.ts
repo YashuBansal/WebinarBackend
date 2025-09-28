@@ -87,7 +87,24 @@ export class CampaignService {
       headerMediaAssetId: headerMediaAssetId || undefined,
       storedCampaignData: sendType === 'scheduled' ? {
         contacts: selectedContacts,
-        bodyVariables: variableMappings?.map((mapping) => mapping.contactField) || [],
+        bodyVariables: variableMappings?.map((mapping) => {
+          // For backward compatibility, if isDynamic is not set, use the old behavior
+          if (mapping.isDynamic === undefined) {
+            return mapping.contactField;
+          }
+          // For new dynamic/static structure
+          return mapping.isDynamic ? mapping.contactField : mapping.staticValue || '';
+        }) || [],
+        dynamicVariables: variableMappings?.map((mapping) => {
+          // For backward compatibility, if isDynamic is not set, assume dynamic
+          if (mapping.isDynamic === undefined) {
+            return true; // Old behavior assumed all variables were dynamic
+          }
+          return mapping.isDynamic;
+        }) || [],
+        fallbackValues: variableMappings?.map((mapping) => {
+          return mapping.fallbackValue || '';
+        }) || [],
         language: 'en_US',
         variableMappings: variableMappings || [],
         headerMediaAssetId: headerMediaAssetId || undefined,
@@ -103,8 +120,24 @@ export class CampaignService {
           {
             campaignId: savedCampaign._id.toString(),
             contacts: selectedContacts,
-            bodyVariables:
-              variableMappings?.map((mapping) => mapping.contactField) || [],
+            bodyVariables: variableMappings?.map((mapping) => {
+              // For backward compatibility, if isDynamic is not set, use the old behavior
+              if (mapping.isDynamic === undefined) {
+                return mapping.contactField;
+              }
+              // For new dynamic/static structure
+              return mapping.isDynamic ? mapping.contactField : mapping.staticValue || '';
+            }) || [],
+            dynamicVariables: variableMappings?.map((mapping) => {
+              // For backward compatibility, if isDynamic is not set, assume dynamic
+              if (mapping.isDynamic === undefined) {
+                return true; // Old behavior assumed all variables were dynamic
+              }
+              return mapping.isDynamic;
+            }) || [],
+            fallbackValues: variableMappings?.map((mapping) => {
+              return mapping.fallbackValue || '';
+            }) || [],
             language: 'en_US',
             headerMediaAssetId: headerMediaAssetId || undefined,
           },
@@ -165,8 +198,24 @@ export class CampaignService {
     let message = templateBody;
     variableMappings.forEach((mapping) => {
       const placeholder = mapping.variable;
-      const contactField = mapping.contactField;
-      const value = sampleContact[contactField] || placeholder;
+      let value = '';
+      
+      if (mapping.isDynamic) {
+        // Use contact field value with fallback
+        const contactField = mapping.contactField.replace('$', ''); // Remove $ prefix
+        const contactValue = sampleContact[contactField];
+        
+        // Use contact value if available, otherwise use fallback value
+        if (contactValue && contactValue.trim() !== '') {
+          value = contactValue;
+        } else {
+          value = mapping.fallbackValue || placeholder;
+        }
+      } else {
+        // Use static value
+        value = mapping.staticValue || placeholder;
+      }
+      
       message = message.replace(
         new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'),
         value,
@@ -357,9 +406,35 @@ export class CampaignService {
     executeCampaignDto: ExecuteCampaignDto,
     adminId: string,
   ): Promise<any> {
-    const { campaignId, contacts, bodyVariables, language, headerMediaAssetId } =
+    const { campaignId, contacts, bodyVariables: rawBodyVariables, dynamicVariables: rawDynamicVariables, fallbackValues: rawFallbackValues, headerMediaAssetId, language } =
       executeCampaignDto;
-    console.log(executeCampaignDto);
+    console.log('executeCampaignDto ------------------------- > ',executeCampaignDto);
+
+    // For scheduled campaigns, bodyVariables and dynamicVariables are already processed
+    // For immediate campaigns, we need to process them
+    let bodyVariables: string[];
+    let dynamicVariables: boolean[];
+    let fallbackValues: string[];
+
+    if (rawDynamicVariables && rawDynamicVariables.length > 0) {
+      // This is a scheduled campaign - variables are already processed
+      bodyVariables = rawBodyVariables || [];
+      dynamicVariables = rawDynamicVariables;
+      fallbackValues = rawFallbackValues || [];
+    } else {
+      // This is an immediate campaign - process the variables
+      const processedVariables = rawBodyVariables?.map((value, index) => {
+        const isDynamic = rawDynamicVariables?.[index] || false;
+        return {
+          value,
+          isDynamic,
+        };
+      }) || [];
+
+      bodyVariables = processedVariables.map(v => v.value);
+      dynamicVariables = processedVariables.map(v => v.isDynamic);
+      fallbackValues = rawFallbackValues || [];
+    }
 
     this.logger.log(
       `Executing campaign ${campaignId} for ${contacts.length} contacts`,
@@ -405,19 +480,41 @@ export class CampaignService {
       messageIds: [] as string[],
     };
 
-    // Send messages to each contact
+    // Send messages to each contact using the unified WhatsApp service method
     for (const contact of contacts) {
       try {
+        // Process variables with fallback values for this specific contact
+        const processedBodyVariables = bodyVariables.map((variable, index) => {
+          const isDynamic = dynamicVariables[index];
+          const fallbackValue = fallbackValues[index];
+          
+          if (isDynamic) {
+            // Extract field name from variable (e.g., "$firstName" -> "firstName")
+            const fieldName = variable.replace('$', '');
+            const contactValue = contact[fieldName];
+            
+            // Use contact value if available and not empty, otherwise use fallback
+            if (contactValue && contactValue.trim() !== '') {
+              return contactValue;
+            } else {
+              return fallbackValue || variable;
+            }
+          } else {
+            // Static variable, use as-is
+            return variable;
+          }
+        });
 
-        const messageResult = await this.whatsappService.sendTemplateMessage(
+        const messageResult = await this.whatsappService.sendSingleTemplateMessage(
           new Types.ObjectId(`${adminId}`),
-          {
-            projectId: project._id.toString(),
-            recipientPhoneNumber: contact.phoneNumber,
-            templateName: campaign.messageTemplate.templateName,
-            bodyVariables: bodyVariables,
-            headerMediaAssetId: headerMediaAssetId,
-          },
+          project._id.toString(),
+          contact.phoneNumber,
+          campaign.messageTemplate.templateName,
+          processedBodyVariables,
+          dynamicVariables,
+          headerMediaAssetId,
+          language,
+          contact.contactId,
           'campaign',
           campaignId,
         );
@@ -440,7 +537,6 @@ export class CampaignService {
         });
 
         const wabaMessageId = uuidv4();
-
         await this.wabaMessageService.create({
           projectId: project._id.toString(),
           adminId: adminId,
@@ -461,18 +557,6 @@ export class CampaignService {
         );
       }
     }
-
-    // Update campaign analytics
-    const analyticsData = {
-      total: contacts.length,
-      sent: results.sent,
-      failed: results.failed,
-      delivered: 0,
-      read: 0,
-      clicked: 0,
-    };
-
-    // await this.updateAnalytics(campaignId, analyticsData);
 
     // Update campaign status
     const finalStatus = 'completed';
@@ -886,12 +970,14 @@ export class CampaignService {
       throw new Error(`Campaign ${campaign._id} does not have stored execution data`);
     }
 
-    const { contacts, bodyVariables, language, variableMappings, headerMediaAssetId } = campaign.storedCampaignData;
+    const { contacts, bodyVariables, dynamicVariables, fallbackValues, language, variableMappings, headerMediaAssetId } = campaign.storedCampaignData;
 
     return {
       campaignId: campaign._id.toString(),
       contacts: contacts,
       bodyVariables: bodyVariables,
+      dynamicVariables: dynamicVariables,
+      fallbackValues: fallbackValues || [],
       language: language,
       headerMediaAssetId: headerMediaAssetId,
     };

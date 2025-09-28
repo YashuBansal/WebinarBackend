@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module } from '@nestjs/common';
+import { forwardRef, MiddlewareConsumer, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ContactsService } from './contacts.service';
 import { ContactsController } from './contacts.controller';
@@ -9,7 +9,7 @@ import { UsersModule } from 'src/users/users.module';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Contact.name, schema: ContactSchema }]),
-    UsersModule,
+    forwardRef(() => UsersModule),
   ],
   providers: [ContactsService],
   controllers: [ContactsController],

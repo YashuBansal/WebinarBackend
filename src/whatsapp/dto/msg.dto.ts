@@ -104,7 +104,11 @@ export class SendBulkTemplateMessageDto {
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  bodyVariables?: string[]; // e.g., ["John Doe", "AB-123"]
+  bodyVariables?: string[]; // e.g., ["John Doe", "AB-123"] or ["$firstName", "$email"]
+
+  @IsArray()
+  @IsOptional()
+  dynamicVariables?: boolean[]; // Track which variables are dynamic (contact fields)
 
   @IsOptional()
   @IsMongoId()
