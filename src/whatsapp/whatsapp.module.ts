@@ -16,6 +16,7 @@ import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { WabaMessageModule } from 'src/whatsapp-embed/waba-message/waba-message.module';
 import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
 import { ContactsModule } from 'src/contacts/contacts.module';
+import { FileStorageService } from 'src/file-storage/file-storage.service';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { ContactsModule } from 'src/contacts/contacts.module';
       { name: MediaAsset.name, schema: MediaAssetSchema },
     ]),
   ],
-  providers: [WhatsappService, CloudinaryService],
+  providers: [WhatsappService, CloudinaryService, FileStorageService],
   exports: [WhatsappService],
   controllers: [WhatsappController],
 })

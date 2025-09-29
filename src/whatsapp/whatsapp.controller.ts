@@ -430,4 +430,86 @@ export class WhatsappController {
       );
     }
   }
+
+  @Get('media-assets')
+  async getMediaAssets(
+    @Id() adminId: string,
+    @Query('projectId') projectId: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '20',
+    @Query('type') type?: string,
+  ) {
+    if (!mongoose.isValidObjectId(projectId)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+
+    if (isNaN(pageNum) || pageNum < 1) {
+      throw new BadRequestException('Invalid page number');
+    }
+
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      throw new BadRequestException('Invalid limit. Must be between 1 and 100');
+    }
+
+    try {
+      // Normalize type filter if provided
+      const normalizedType = type
+        ? String(type).toLowerCase()
+        : undefined;
+
+      const result = await this.whatsappService.getMediaAssets(
+        new Types.ObjectId(adminId),
+        new Types.ObjectId(projectId),
+        pageNum,
+        limitNum,
+        normalizedType as 'image' | 'video' | 'document' | undefined,
+      );
+
+      return {
+        statusCode: HttpStatus.OK,
+        message: 'Media assets fetched successfully!',
+        data: result,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to fetch media assets: ${error.message}`,
+      );
+    }
+  }
+
+  @Delete('media-assets/:mediaAssetId')
+  async deleteMediaAsset(
+    @Id() adminId: string,
+    @Query('projectId') projectId: string,
+    @Param('mediaAssetId') mediaAssetId: string,
+  ) {
+    if (!mongoose.isValidObjectId(projectId)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+
+    if (!mongoose.isValidObjectId(mediaAssetId)) {
+      throw new BadRequestException('Invalid media asset ID');
+    }
+
+    try {
+      const deletedMediaAsset = await this.whatsappService.deleteMediaAsset(
+        new Types.ObjectId(adminId),
+        new Types.ObjectId(projectId),
+        new Types.ObjectId(mediaAssetId),
+      );
+
+      return {
+        statusCode: HttpStatus.OK,
+        message: 'Media asset deleted successfully!',
+        data: deletedMediaAsset,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to delete media asset: ${error.message}`,
+      );
+    }
+  }
 }

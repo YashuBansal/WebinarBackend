@@ -58,6 +58,7 @@ import { ContactsModule } from './contacts/contacts.module';
 import { WabaTagsModule } from './waba-tags/waba-tags.module';
 import { WhatsappEmbedModule } from './whatsapp-embed/whatsapp-embed.module';
 import { ProfileModule } from './profile/profile.module';
+import { FileStorageService } from './file-storage/file-storage.service';
 
 @Module({
   imports: [
@@ -141,7 +142,7 @@ import { ProfileModule } from './profile/profile.module';
     ProfileModule,
   ],
   controllers: [AppController],
-  providers: [AppService, CalendarService],
+  providers: [AppService, CalendarService, FileStorageService],
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer) {

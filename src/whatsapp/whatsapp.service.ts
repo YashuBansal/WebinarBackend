@@ -35,6 +35,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import { MediaAsset, MediaAssetDocument } from './schemas/media-asset.schema';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { ContactsService } from 'src/contacts/contacts.service';
+import { FileStorageService } from 'src/file-storage/file-storage.service';
 
 @Injectable()
 export class WhatsappService {
@@ -53,6 +54,7 @@ export class WhatsappService {
     private readonly contactsService: ContactsService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly wabaMessageService: WabaMessageService,
+    private readonly fileStorageService: FileStorageService,
   ) {
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
@@ -532,8 +534,6 @@ export class WhatsappService {
       );
     }
   }
-
-  // src/whatsapp/whatsapp.service.ts
 
   async createTemplateForWaba(
     adminId: Types.ObjectId,
@@ -1626,28 +1626,22 @@ export class WhatsappService {
         `Starting media asset upload for user ${userId}, project ${projectId}`,
       );
 
-      // Generate unique filename for Cloudinary
-      const timestamp = Date.now();
-      const fileExtension = file.originalname.split('.').pop();
-      const fileName = `${timestamp}_${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      // Define a subfolder structure for better organization, e.g., using userId
+      const subfolder = userId.toString();
 
-      // Upload to Cloudinary
-      const cloudinaryResult = await this.cloudinaryService.uploadFromBuffer(
-        file.buffer,
-        `whatsapp-media/${userId.toString()}`,
-        fileName,
-      );
+      // Save the file using the new service
+      const { publicUrl } = await this.fileStorageService.saveFile(file, subfolder);
 
-      if (!cloudinaryResult || !cloudinaryResult.secure_url) {
-        throw new Error('Failed to upload file to Cloudinary');
+      if (!publicUrl) {
+        throw new Error('Failed to save file to server');
       }
 
-      // Create MediaAsset document with Cloudinary URL
+      // Create MediaAsset document with the new self-hosted URL
       const mediaAsset = new this.mediaAssetModel({
         userId,
         projectId,
         fileName: file.originalname,
-        filePath: cloudinaryResult.secure_url, // Use Cloudinary URL
+        filePath: publicUrl, // Use the generated public URL
         fileSize: file.size,
         mimeType: file.mimetype,
       });
@@ -1655,14 +1649,134 @@ export class WhatsappService {
       const savedMediaAsset = await mediaAsset.save();
 
       this.logger.log(
-        `Media asset uploaded successfully to Cloudinary: ${savedMediaAsset._id}`,
+        `Media asset saved successfully: ${savedMediaAsset._id}`,
       );
       return savedMediaAsset;
     } catch (error) {
-      this.logger.error(`Failed to upload media asset: ${error.message}`);
-      throw new InternalServerErrorException(
-        `Failed to upload media asset: ${error.message}`,
+      this.logger.error(`Failed to upload media asset: ${error.message}`, error.stack);
+      // Avoid leaking implementation details in the error message
+      throw new InternalServerErrorException('A server error occurred while uploading the media asset.');
+    }
+  }
+
+  /**
+   * Get media assets for a specific user and project
+   * @param userId The user ID
+   * @param projectId The project ID
+   * @param page The page number for pagination
+   * @param limit The number of items per page
+   * @returns Paginated media assets
+   */
+  async getMediaAssets(
+    userId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    page: number = 1,
+    limit: number = 20,
+    type?: 'image' | 'video' | 'document',
+  ): Promise<{ data: MediaAssetDocument[]; total: number; page: number; limit: number }> {
+    try {
+      this.logger.log(
+        `Fetching media assets for user ${userId}, project ${projectId}, page ${page}, limit ${limit}`,
       );
+
+      const skip = (page - 1) * limit;
+
+      const baseQuery: any = { userId, projectId };
+      if (type === 'image') {
+        baseQuery.mimeType = { $regex: '^image/' };
+      } else if (type === 'video') {
+        baseQuery.mimeType = { $regex: '^video/' };
+      } else if (type === 'document') {
+        baseQuery.mimeType = { $regex: '^application/' };
+      }
+
+      const [data, total] = await Promise.all([
+        this.mediaAssetModel
+          .find(baseQuery)
+          .sort({ createdAt: -1 }) // Most recent first
+          .skip(skip)
+          .limit(limit)
+          .exec(),
+        this.mediaAssetModel.countDocuments(baseQuery).exec(),
+      ]);
+
+      this.logger.log(`Found ${data.length} media assets out of ${total} total`);
+
+      return {
+        data,
+        total,
+        page,
+        limit,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get media assets: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('A server error occurred while fetching media assets.');
+    }
+  }
+
+  /**
+   * Delete a media asset by ID
+   * @param userId The user ID
+   * @param projectId The project ID
+   * @param mediaAssetId The media asset ID to delete
+   * @returns Deleted media asset
+   */
+  async deleteMediaAsset(
+    userId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    mediaAssetId: Types.ObjectId,
+  ): Promise<MediaAssetDocument> {
+    try {
+      this.logger.log(
+        `Deleting media asset ${mediaAssetId} for user ${userId}, project ${projectId}`,
+      );
+
+      // Find the media asset first to get file path
+      const mediaAsset = await this.mediaAssetModel.findOne({
+        _id: mediaAssetId,
+        userId,
+        projectId,
+      }).exec();
+
+      if (!mediaAsset) {
+        throw new NotFoundException('Media asset not found');
+      }
+
+      // Delete the file from the server
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Extract the file path from the URL
+        const filePath = mediaAsset.filePath;
+        if (filePath && fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          this.logger.log(`File deleted from server: ${filePath}`);
+        }
+      } catch (fileError) {
+        this.logger.warn(`Failed to delete file from server: ${fileError.message}`);
+        // Continue with database deletion even if file deletion fails
+      }
+
+      // Delete from database
+      const deletedMediaAsset = await this.mediaAssetModel.findOneAndDelete({
+        _id: mediaAssetId,
+        userId,
+        projectId,
+      }).exec();
+
+      if (!deletedMediaAsset) {
+        throw new NotFoundException('Media asset not found');
+      }
+
+      this.logger.log(`Media asset deleted successfully: ${mediaAssetId}`);
+      return deletedMediaAsset;
+    } catch (error) {
+      this.logger.error(`Failed to delete media asset: ${error.message}`, error.stack);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('A server error occurred while deleting the media asset.');
     }
   }
 }
