@@ -14,10 +14,9 @@ import {
 
 export class CreateContactDto {
   @IsString()
-  @IsNotEmpty()
-  @MinLength(1)
+  @IsOptional()
   @MaxLength(100)
-  readonly firstName: string;
+  readonly firstName?: string;
 
   @IsString()
   @IsOptional()
@@ -30,10 +29,9 @@ export class CreateContactDto {
   @MaxLength(20)
   readonly phone: string;
 
-  @IsEmail({}, { message: 'Please provide a valid email address' })
-  @IsNotEmpty()
-  @MaxLength(255)
-  readonly email: string;
+  @IsOptional()
+  @IsString()
+  readonly email?: string;
 
   @IsArray()
   @IsString({ each: true })
@@ -47,25 +45,22 @@ export class CreateContactDto {
 }
 
 export class UpdateContactDto {
-  @IsString()
   @IsOptional()
-  @MinLength(1)
-  @MaxLength(100)
+  @IsString()
   readonly firstName?: string;
 
-  @IsString()
   @IsOptional()
-  @MaxLength(100)
+  @IsString()
   readonly lastName?: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   @MinLength(1)
   @MaxLength(20)
   readonly phone?: string;
 
-  @IsEmail({}, { message: 'Please provide a valid email address' })
   @IsOptional()
+  @IsString()
   @MaxLength(255)
   readonly email?: string;
 
@@ -110,8 +105,8 @@ export class CSVImportDto {
 
 export class CSVFieldMappingDto {
   @IsString()
-  @IsNotEmpty()
-  readonly firstName: string;
+  @IsOptional()
+  readonly firstName?: string;
 
   @IsString()
   @IsOptional()
@@ -122,8 +117,8 @@ export class CSVFieldMappingDto {
   readonly phone: string;
 
   @IsString()
-  @IsNotEmpty()
-  readonly email: string;
+  @IsOptional()
+  readonly email?: string;
 
   @IsString()
   @IsOptional()

@@ -29,6 +29,7 @@ export class ContactsController {
     @Body() createContactDto: CreateContactDto,
     @Id() adminId: string,
   ) {
+    console.log('createContactDto', createContactDto, adminId);
     return this.contactsService.create(
       createContactDto,
       new Types.ObjectId(adminId),

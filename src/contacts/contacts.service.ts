@@ -29,18 +29,18 @@ export class ContactsService {
     createContactDto: CreateContactDto,
     adminId: Types.ObjectId,
   ): Promise<Contact> {
-    const { email, phone, projectId } = createContactDto;
+    const { phone, projectId } = createContactDto;
 
     // Check if contact already exists with same email or phone for this admin
     const existingContact = await this.contactModel.findOne({
       adminId,
-      $or: [{ email }, { phone }],
+      phone,
       isDeleted: false,
     });
 
     if (existingContact) {
       throw new ConflictException(
-        'Contact with this email or phone already exists',
+        'Contact with this phone already exists',
       );
     }
 

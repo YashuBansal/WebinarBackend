@@ -27,9 +27,34 @@ export class ProjectsService {
   ) { }
 
 
-  async fetchWabaMessages(data: { projectId: Types.ObjectId; adminId: Types.ObjectId; campaignId?: Types.ObjectId }, paginationOptions: { page: number; limit: number }) {
+  async fetchWabaMessages(
+    data: { projectId: Types.ObjectId; adminId: Types.ObjectId; campaignId?: Types.ObjectId },
+    paginationOptions: { page: number; limit: number },
+    dateFilter?: { start?: Date; end?: Date }
+  ) {
+    console.log(dateFilter);
+    if (dateFilter) {
+      // Non-paginated when date filter is present: fetch all within range
+      const query: any = { ...data };
+      if (dateFilter.start || dateFilter.end) {
+        query['createdAt'] = {};
+        if (dateFilter.start) {
+          query['createdAt']['$gte'] = dateFilter.start;
+        }
+        if (dateFilter.end) {
+          query['createdAt']['$lte'] = dateFilter.end;
+        }
+      }
+      const result = await this.wabaMessageService.findAllRange(query);
+      return {
+        wabaMessages: result,
+        total: result.length,
+        totalPages: 1,
+        page: 1,
+        limit: result.length,
+      };
+    }
     return this.wabaMessageService.findPaginatedAll(data, paginationOptions);
-
   }
 
   async create(

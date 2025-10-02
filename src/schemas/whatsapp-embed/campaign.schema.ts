@@ -5,6 +5,13 @@ import { Project } from '../project.schema';
 
 export type CampaignDocument = Campaign & Document;
 
+export enum CampaignStatus {
+  DRAFT = 'draft',
+  IN_PROGRESS = 'in-progress',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+}
+
 // Message Template sub-schema
 @Schema({ _id: false })
 export class MessageTemplate {
@@ -149,10 +156,10 @@ export class Campaign extends Document {
 
   @Prop({
     type: String,
-    enum: ['draft', 'in-progress', 'completed', 'failed'],
-    default: 'draft',
+    enum: Object.values(CampaignStatus),
+    default: CampaignStatus.DRAFT,
   })
-  status: string;
+  status: CampaignStatus;
 
   @Prop({
     type: Date,

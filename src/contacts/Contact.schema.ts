@@ -9,7 +9,7 @@ export type ContactDocument = Contact & Document;
 export class Contact extends Document {
   @Prop({
     type: String,
-    required: [true, 'First name is required'],
+    required: false,
     trim: true,
     maxlength: 100,
   })
@@ -32,7 +32,7 @@ export class Contact extends Document {
 
   @Prop({
     type: String,
-    required: [true, 'Email is required'],
+    required: false,
     trim: true,
     lowercase: true,
     maxlength: 255,

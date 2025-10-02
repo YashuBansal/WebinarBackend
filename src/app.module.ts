@@ -59,6 +59,7 @@ import { WabaTagsModule } from './waba-tags/waba-tags.module';
 import { WhatsappEmbedModule } from './whatsapp-embed/whatsapp-embed.module';
 import { ProfileModule } from './profile/profile.module';
 import { FileStorageService } from './file-storage/file-storage.service';
+import { ZoomModule } from './zoom/zoom.module';
 
 @Module({
   imports: [
@@ -140,6 +141,7 @@ import { FileStorageService } from './file-storage/file-storage.service';
     WabaTagsModule,
     WhatsappEmbedModule,
     ProfileModule,
+    ZoomModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService, FileStorageService],

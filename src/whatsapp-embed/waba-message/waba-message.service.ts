@@ -69,6 +69,14 @@ export class WabaMessageService {
 
   }
 
+  async findAllRange(query: any) {
+    console.log(query);
+    return this.wabaMessageModel
+      .find(query)
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
 
   async findAll(
     projectId?: string,

@@ -66,12 +66,38 @@ export class ProjectsController {
     paginationQuery: CampaignPaginationQueryDto,
     @Id() adminId: string,
   ) {
-    const { page, limit, campaignId } = paginationQuery;
+    console.log(paginationQuery);
+    const { page, limit, campaignId, datePreset, startDate, endDate } = paginationQuery;
+    let dateFilter: { start?: Date; end?: Date } | undefined ={};
+    if (datePreset === 'today') {
+      const start = new Date(); start.setHours(0,0,0,0);
+      const end = new Date(); end.setHours(23,59,59,999);
+      dateFilter = { start, end };
+    } else if (datePreset === 'yesterday') {
+      const d = new Date(); d.setDate(d.getDate() - 1);
+      const start = new Date(d); start.setHours(0,0,0,0);
+      const end = new Date(d); end.setHours(23,59,59,999);
+      dateFilter = { start, end };
+    } else if (datePreset === 'lastWeek') {
+      const end = new Date(); end.setHours(23,59,59,999);
+      const start = new Date(); start.setDate(start.getDate() - 7); start.setHours(0,0,0,0);
+      dateFilter = { start, end };
+    } else if (datePreset === 'custom' && (startDate || endDate)) {
+      if (startDate) {
+        const start = new Date(startDate); start.setHours(0,0,0,0);
+        dateFilter.start = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate); end.setHours(23,59,59,999);
+        dateFilter.end = end;
+      }
+    }
+
     return this.projectsService.fetchWabaMessages({
       adminId: new Types.ObjectId(`${adminId}`),
       projectId: new Types.ObjectId(projectId),
       campaignId: mongoose.isValidObjectId(campaignId) ? new Types.ObjectId(campaignId) : undefined,
-    }, { page, limit });
+    }, { page, limit }, dateFilter);
   }
 
   @Get(':id')

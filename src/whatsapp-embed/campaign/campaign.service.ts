@@ -15,6 +15,7 @@ import { AxiosError } from 'axios';
 import {
   Campaign,
   CampaignDocument,
+  CampaignStatus,
 } from '../../schemas/whatsapp-embed/campaign.schema';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
@@ -37,7 +38,7 @@ export class CampaignService {
     private readonly wabaMessageService: WabaMessageService,
     private readonly projectService: ProjectsService,
     private readonly whatsappService: WhatsappService,
-  ) {}
+  ) { }
 
   async create(
     createCampaignDto: CreateCampaignDto,
@@ -79,7 +80,7 @@ export class CampaignService {
         templateName,
         body: 'BODY',
       },
-      status: sendType === 'now' ? 'draft' : 'draft',
+      status: CampaignStatus.DRAFT,
       scheduledAt:
         sendType === 'scheduled' && scheduledAt
           ? new Date(scheduledAt)
@@ -115,59 +116,36 @@ export class CampaignService {
 
     // If sendType is 'now', execute the campaign immediately
     if (sendType === 'now') {
-      try {
-        const executionResult = await this.executeCampaign(
-          {
-            campaignId: savedCampaign._id.toString(),
-            contacts: selectedContacts,
-            bodyVariables: variableMappings?.map((mapping) => {
-              // For backward compatibility, if isDynamic is not set, use the old behavior
-              if (mapping.isDynamic === undefined) {
-                return mapping.contactField;
-              }
-              // For new dynamic/static structure
-              return mapping.isDynamic ? mapping.contactField : mapping.staticValue || '';
-            }) || [],
-            dynamicVariables: variableMappings?.map((mapping) => {
-              // For backward compatibility, if isDynamic is not set, assume dynamic
-              if (mapping.isDynamic === undefined) {
-                return true; // Old behavior assumed all variables were dynamic
-              }
-              return mapping.isDynamic;
-            }) || [],
-            fallbackValues: variableMappings?.map((mapping) => {
-              return mapping.fallbackValue || '';
-            }) || [],
-            language: 'en_US',
-            headerMediaAssetId: headerMediaAssetId || undefined,
-          },
-          adminId,
-        );
-
-        return {
-          campaign: savedCampaign,
-          executionResult,
-          sampleMessage: this.generateSampleMessage(
-            'BODY',
-            variableMappings,
-            selectedContacts[0],
-          ),
-          totalRecipients: selectedContacts.length,
-        };
-      } catch (error) {
+      this.executeCampaign(
+        {
+          campaignId: savedCampaign._id.toString(),
+          contacts: selectedContacts,
+          bodyVariables: variableMappings?.map((mapping) => {
+            // For backward compatibility, if isDynamic is not set, use the old behavior
+            if (mapping.isDynamic === undefined) {
+              return mapping.contactField;
+            }
+            // For new dynamic/static structure
+            return mapping.isDynamic ? mapping.contactField : mapping.staticValue || '';
+          }) || [],
+          dynamicVariables: variableMappings?.map((mapping) => {
+            // For backward compatibility, if isDynamic is not set, assume dynamic
+            if (mapping.isDynamic === undefined) {
+              return true; // Old behavior assumed all variables were dynamic
+            }
+            return mapping.isDynamic;
+          }) || [],
+          fallbackValues: variableMappings?.map((mapping) => {
+            return mapping.fallbackValue || '';
+          }) || [],
+          language: 'en_US',
+          headerMediaAssetId: headerMediaAssetId || undefined,
+        },
+        adminId,
+      ).catch((error) => {
         this.logger.error('Failed to execute campaign immediately:', error);
-        // Return campaign even if execution fails
-        return {
-          campaign: savedCampaign,
-          executionResult: null,
-          sampleMessage: this.generateSampleMessage(
-            'BODY',
-            variableMappings,
-            selectedContacts[0],
-          ),
-          totalRecipients: selectedContacts.length,
-        };
-      }
+        this.update(savedCampaign._id.toString(), { status: CampaignStatus.FAILED }, adminId);
+      });
     }
 
     // For scheduled campaigns, return campaign details
@@ -199,12 +177,12 @@ export class CampaignService {
     variableMappings.forEach((mapping) => {
       const placeholder = mapping.variable;
       let value = '';
-      
+
       if (mapping.isDynamic) {
         // Use contact field value with fallback
         const contactField = mapping.contactField.replace('$', ''); // Remove $ prefix
         const contactValue = sampleContact[contactField];
-        
+
         // Use contact value if available, otherwise use fallback value
         if (contactValue && contactValue.trim() !== '') {
           value = contactValue;
@@ -215,7 +193,7 @@ export class CampaignService {
         // Use static value
         value = mapping.staticValue || placeholder;
       }
-      
+
       message = message.replace(
         new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'),
         value,
@@ -253,21 +231,8 @@ export class CampaignService {
       .limit(limit)
       .exec();
 
-    // Calculate analytics for each campaign at runtime
-    const campaignsWithAnalytics = await Promise.all(
-      campaigns.map(async (campaign) => {
-        const analyticsData = await this.calculateCampaignAnalytics(campaign._id.toString());
-        campaign.analyticsSummary = analyticsData;
-        
-        // Save updated analytics to database
-        await this.updateAnalytics(campaign._id.toString(), analyticsData);
-        
-        return campaign;
-      })
-    );
-
     return {
-      campaigns: campaignsWithAnalytics,
+      campaigns,
       pagination: {
         page,
         limit,
@@ -295,10 +260,10 @@ export class CampaignService {
 
     // Calculate analytics at runtime from WABA messages
     const analyticsData = await this.calculateCampaignAnalytics(campaign._id.toString());
-    
+
     // Update campaign with real-time analytics
     campaign.analyticsSummary = analyticsData;
-    
+
     // Save the updated analytics to the database
     await this.updateAnalytics(campaign._id.toString(), analyticsData);
 
@@ -316,7 +281,7 @@ export class CampaignService {
       updateData.project = new Types.ObjectId(updateCampaignDto.projectId);
     }
 
-    if (updateCampaignDto.status === 'completed') {
+    if (updateCampaignDto.status === CampaignStatus.COMPLETED) {
       updateData.completedAt = new Date();
     }
 
@@ -390,7 +355,7 @@ export class CampaignService {
     const now = new Date();
     return this.campaignModel
       .find({
-        status: 'draft',
+        status: CampaignStatus.DRAFT,
         scheduledAt: { $lte: now },
         isDeleted: false,
       })
@@ -408,7 +373,7 @@ export class CampaignService {
   ): Promise<any> {
     const { campaignId, contacts, bodyVariables: rawBodyVariables, dynamicVariables: rawDynamicVariables, fallbackValues: rawFallbackValues, headerMediaAssetId, language } =
       executeCampaignDto;
-    console.log('executeCampaignDto ------------------------- > ',executeCampaignDto);
+    console.log('executeCampaignDto ------------------------- > ', executeCampaignDto);
 
     // For scheduled campaigns, bodyVariables and dynamicVariables are already processed
     // For immediate campaigns, we need to process them
@@ -446,7 +411,7 @@ export class CampaignService {
       throw new NotFoundException('Campaign not found');
     }
 
-    if (campaign.status !== 'draft') {
+    if (campaign.status !== CampaignStatus.DRAFT) {
       throw new BadRequestException(
         'Campaign can only be executed when in draft status');
     }
@@ -471,7 +436,7 @@ export class CampaignService {
     }
 
     // Update campaign status to in-progress
-    await this.update(campaignId, { status: 'in-progress' }, adminId);
+    await this.update(campaignId, { status: CampaignStatus.IN_PROGRESS }, adminId);
 
     const results = {
       sent: 0,
@@ -487,12 +452,12 @@ export class CampaignService {
         const processedBodyVariables = bodyVariables.map((variable, index) => {
           const isDynamic = dynamicVariables[index];
           const fallbackValue = fallbackValues[index];
-          
+
           if (isDynamic) {
             // Extract field name from variable (e.g., "$firstName" -> "firstName")
             const fieldName = variable.replace('$', '');
             const contactValue = contact[fieldName];
-            
+
             // Use contact value if available and not empty, otherwise use fallback
             if (contactValue && contactValue.trim() !== '') {
               return contactValue;
@@ -547,7 +512,7 @@ export class CampaignService {
           messageType: 'campaign',
           templateName: campaign.messageTemplate.templateName,
           failureReason: error.response?.data?.error || error.message,
-          status: 'failed',
+          status: CampaignStatus.FAILED,
         });
 
 
@@ -559,7 +524,7 @@ export class CampaignService {
     }
 
     // Update campaign status
-    const finalStatus = 'completed';
+    const finalStatus = CampaignStatus.COMPLETED;
     await this.update(campaignId, { status: finalStatus }, adminId);
 
     this.logger.log(
@@ -742,7 +707,7 @@ export class CampaignService {
 
       throw new InternalServerErrorException(
         (axiosError.response?.data as any)?.error?.message ||
-          'Could not send template message.',
+        'Could not send template message.',
       );
     }
   }
@@ -828,7 +793,7 @@ export class CampaignService {
     try {
       // Get message statistics from WABA messages
       const messageStats = await this.wabaMessageService.getMessageStats(campaignId);
-      
+
       // Calculate analytics based on message statuses
       const analyticsData = {
         total: messageStats.total || 0,
@@ -846,7 +811,7 @@ export class CampaignService {
         `Failed to calculate campaign analytics for ${campaignId}`,
         error,
       );
-      
+
       // Return default analytics if calculation fails
       return {
         total: 0,
@@ -979,25 +944,25 @@ export class CampaignService {
    */
   async processScheduledCampaigns(): Promise<void> {
     const scheduledCampaigns = await this.getScheduledCampaigns();
-    
+
     this.logger.log(`Found ${scheduledCampaigns.length} scheduled campaigns ready for execution`);
 
     for (const campaign of scheduledCampaigns) {
       try {
         this.logger.log(`Processing scheduled campaign: ${campaign._id} - ${campaign.name}`);
-        
+
         // Prepare execution data from stored campaign data
         const executionData = await this.prepareCampaignExecutionData(campaign);
-        
+
         // Execute the campaign
         await this.executeCampaign(executionData, campaign.adminId.toString());
-        
+
         this.logger.log(`Scheduled campaign ${campaign._id} executed successfully`);
       } catch (error) {
         this.logger.error(`Failed to execute scheduled campaign ${campaign._id}:`, error);
-        
+
         // Update campaign status to failed
-        await this.update(campaign._id.toString(), { status: 'failed' }, campaign.adminId.toString());
+        await this.update(campaign._id.toString(), { status: CampaignStatus.FAILED }, campaign.adminId.toString());
       }
     }
   }
@@ -1028,12 +993,12 @@ export class CampaignService {
    */
   async cancelScheduledCampaign(campaignId: string, adminId: string): Promise<Campaign> {
     const campaign = await this.findOne(campaignId, adminId);
-    
-    if (campaign.status !== 'draft' || !campaign.scheduledAt) {
+
+    if (campaign.status !== CampaignStatus.DRAFT || !campaign.scheduledAt) {
       throw new BadRequestException('Only scheduled draft campaigns can be cancelled');
     }
-    
-    return this.update(campaignId, { 
+
+    return this.update(campaignId, {
       scheduledAt: null,
       storedCampaignData: null,
     }, adminId);
@@ -1044,13 +1009,13 @@ export class CampaignService {
    */
   async rescheduleCampaign(campaignId: string, newScheduledAt: string, adminId: string): Promise<Campaign> {
     const campaign = await this.findOne(campaignId, adminId);
-    
-    if (campaign.status !== 'draft') {
+
+    if (campaign.status !== CampaignStatus.DRAFT) {
       throw new BadRequestException('Only draft campaigns can be rescheduled');
     }
-    
-    return this.update(campaignId, { 
-      scheduledAt: new Date(newScheduledAt).toISOString() 
+
+    return this.update(campaignId, {
+      scheduledAt: new Date(newScheduledAt).toISOString()
     }, adminId);
   }
 }
