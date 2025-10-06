@@ -4,6 +4,7 @@ import { HttpModule } from '@nestjs/axios';
 import { ZoomController } from './zoom.controller';
 import { ZoomService } from './zoom.service';
 import { ZoomProject, ZoomProjectSchema } from './schemas/zoom-project.schema';
+import { ZoomMeetingEvent, ZoomMeetingEventSchema } from './schemas/zoom-meeting-event.schema';
 import { UsersModule } from 'src/users/users.module';
 import { ProjectsModule } from 'src/projects/projects.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
@@ -13,7 +14,10 @@ import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
     HttpModule,
     forwardRef(() => UsersModule),
     forwardRef(() => ProjectsModule),
-    MongooseModule.forFeature([{ name: ZoomProject.name, schema: ZoomProjectSchema }]),
+    MongooseModule.forFeature([
+      { name: ZoomProject.name, schema: ZoomProjectSchema },
+      { name: ZoomMeetingEvent.name, schema: ZoomMeetingEventSchema },
+    ]),
   ],
   controllers: [ZoomController],
   providers: [ZoomService],

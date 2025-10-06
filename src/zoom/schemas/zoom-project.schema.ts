@@ -8,6 +8,9 @@ export class ZoomProject {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   adminId: Types.ObjectId;
 
+  @Prop({ type: String, required: true, trim: true })
+  projectName: string;
+
   @Prop({ type: String })
   accountId?: string;
 
@@ -19,9 +22,21 @@ export class ZoomProject {
 
   @Prop({ type: Date })
   accessTokenExpiresAt?: Date;
+
+  @Prop({ type: Boolean, default: false })
+  isConfigured: boolean;
+
+  @Prop({ type: String })
+  secretToken?: string;
+
+  @Prop({ type: String })
+  clientId?: string;
+
+  @Prop({ type: String })
+  clientSecret?: string;
 }
 
 export type ZoomProjectDocument = HydratedDocument<ZoomProject>;
 export const ZoomProjectSchema = SchemaFactory.createForClass(ZoomProject);
-ZoomProjectSchema.index({ adminId: 1, accountId: 1 }, { unique: true });
+ZoomProjectSchema.index({ adminId: 1, projectName: 1 }, { unique: true });
 

@@ -20,8 +20,10 @@ async function bootstrap() {
         'https://localhost:5173',
         'http://localhost:3000',
         'https://28176ea31d28.ngrok-free.app',
+        'https://e404a8b9a860.ngrok-free.app',
         'https://dashboard.webinarleadshub.com',
         'https://msg.webinarleadshub.com',
+        'https://livezoom.webinarleadshub.com',
       ];
 
       // allow requests with no origin (e.g., Postman)
