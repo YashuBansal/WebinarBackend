@@ -4,8 +4,11 @@ import {
   IsNotEmpty,
   IsOptional,
   ValidateNested,
+  IsEnum,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { WlhAttendeeFiltersDto } from './create-campaign-workflow.dto';
 
 export class CampaignContactDto {
   @IsString()
@@ -56,4 +59,12 @@ export class ExecuteCampaignDto {
   @IsString()
   @IsOptional()
   headerMediaAssetId?: string; // Media asset ID for header
+
+  @IsEnum(['whatsapp', 'wlh'])
+  contactType: 'whatsapp' | 'wlh';
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WlhAttendeeFiltersDto)
+  wlhAttendeeFilters?: WlhAttendeeFiltersDto;
 }

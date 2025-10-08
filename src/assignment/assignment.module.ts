@@ -20,6 +20,7 @@ import { GetAdminIdForUserActivityMiddleware } from 'src/middlewares/getAdminIdF
 import { NotificationModule } from 'src/notification/notification.module';
 import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
+import { WebinarAutoMessageModule } from 'src/webinar-auto-message/webinar-auto-message.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
     NotificationModule,
     EnrollmentsModule,
     AttendeeLogModule,
+    forwardRef(() => WebinarAutoMessageModule),
   ],
   providers: [AssignmentService],
   controllers: [AssignmentController],

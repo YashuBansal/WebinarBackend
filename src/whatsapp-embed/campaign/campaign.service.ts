@@ -14,6 +14,7 @@ import { firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
 import {
   Campaign,
+  CampaignContactType,
   CampaignDocument,
   CampaignStatus,
 } from '../../schemas/whatsapp-embed/campaign.schema';
@@ -26,6 +27,8 @@ import { WabaMessageService } from '../waba-message/waba-message.service';
 import { ProjectsService } from '../../projects/projects.service';
 import { WhatsappService } from '../../whatsapp/whatsapp.service';
 import { v4 as uuidv4 } from 'uuid';
+import { AttendeesService } from 'src/attendees/attendees.service';
+import { ContactsService } from 'src/contacts/contacts.service';
 
 @Injectable()
 export class CampaignService {
@@ -38,6 +41,8 @@ export class CampaignService {
     private readonly wabaMessageService: WabaMessageService,
     private readonly projectService: ProjectsService,
     private readonly whatsappService: WhatsappService,
+    private readonly attendeesService: AttendeesService,
+    private readonly contactsService: ContactsService,
   ) { }
 
   async create(
@@ -69,6 +74,8 @@ export class CampaignService {
       sendType,
       scheduledAt,
       headerMediaAssetId,
+      wlhAttendeeFilters,
+      contactType
     } = createCampaignWorkflowDto;
 
     // Create the campaign
@@ -110,6 +117,9 @@ export class CampaignService {
         variableMappings: variableMappings || [],
         headerMediaAssetId: headerMediaAssetId || undefined,
       } : undefined,
+
+      wlhAttendeeFilters: contactType === CampaignContactType.WLH ? wlhAttendeeFilters : undefined,
+      contactType,
     });
 
     const savedCampaign = await campaign.save();
@@ -140,6 +150,8 @@ export class CampaignService {
           }) || [],
           language: 'en_US',
           headerMediaAssetId: headerMediaAssetId || undefined,
+          wlhAttendeeFilters: contactType === CampaignContactType.WLH ? wlhAttendeeFilters : undefined,
+          contactType,
         },
         adminId,
       ).catch((error) => {
@@ -152,11 +164,7 @@ export class CampaignService {
     return {
       campaign: savedCampaign,
       executionResult: null,
-      sampleMessage: this.generateSampleMessage(
-        'BODY',
-        variableMappings,
-        selectedContacts[0],
-      ),
+      sampleMessage: {},
       totalRecipients: selectedContacts.length,
     };
   }
@@ -164,44 +172,44 @@ export class CampaignService {
   /**
    * Generate sample message for preview
    */
-  private generateSampleMessage(
-    templateBody: string,
-    variableMappings: any[],
-    sampleContact: any,
-  ): string {
-    if (!variableMappings || variableMappings.length === 0) {
-      return templateBody;
-    }
+  // private generateSampleMessage(
+  //   templateBody: string,
+  //   variableMappings: any[],
+  //   sampleContact: any,
+  // ): string {
+  //   if (!variableMappings || variableMappings.length === 0) {
+  //     return templateBody;
+  //   }
 
-    let message = templateBody;
-    variableMappings.forEach((mapping) => {
-      const placeholder = mapping.variable;
-      let value = '';
+  //   let message = templateBody;
+  //   variableMappings.forEach((mapping) => {
+  //     const placeholder = mapping.variable;
+  //     let value = '';
 
-      if (mapping.isDynamic) {
-        // Use contact field value with fallback
-        const contactField = mapping.contactField.replace('$', ''); // Remove $ prefix
-        const contactValue = sampleContact[contactField];
+  //     if (mapping.isDynamic) {
+  //       // Use contact field value with fallback
+  //       const contactField = mapping.contactField.replace('$', ''); // Remove $ prefix
+  //       const contactValue = sampleContact[contactField];
 
-        // Use contact value if available, otherwise use fallback value
-        if (contactValue && contactValue.trim() !== '') {
-          value = contactValue;
-        } else {
-          value = mapping.fallbackValue || placeholder;
-        }
-      } else {
-        // Use static value
-        value = mapping.staticValue || placeholder;
-      }
+  //       // Use contact value if available, otherwise use fallback value
+  //       if (contactValue && contactValue.trim() !== '') {
+  //         value = contactValue;
+  //       } else {
+  //         value = mapping.fallbackValue || placeholder;
+  //       }
+  //     } else {
+  //       // Use static value
+  //       value = mapping.staticValue || placeholder;
+  //     }
 
-      message = message.replace(
-        new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'),
-        value,
-      );
-    });
+  //     message = message.replace(
+  //       new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'),
+  //       value,
+  //     );
+  //   });
 
-    return message;
-  }
+  //   return message;
+  // }
 
   async findAll(
     adminId: string,
@@ -245,7 +253,6 @@ export class CampaignService {
   }
 
   async findOne(id: string, adminId: string): Promise<any> {
-    console.log(id, adminId, mongoose.Types.ObjectId.isValid(id), mongoose.Types.ObjectId.isValid(adminId));
     const campaign = await this.campaignModel
       .findOne({
         _id: new Types.ObjectId(id),
@@ -371,7 +378,7 @@ export class CampaignService {
     executeCampaignDto: ExecuteCampaignDto,
     adminId: string,
   ): Promise<any> {
-    const { campaignId, contacts, bodyVariables: rawBodyVariables, dynamicVariables: rawDynamicVariables, fallbackValues: rawFallbackValues, headerMediaAssetId, language } =
+    const { contactType, wlhAttendeeFilters, campaignId, contacts, bodyVariables: rawBodyVariables, dynamicVariables: rawDynamicVariables, fallbackValues: rawFallbackValues, headerMediaAssetId, language } =
       executeCampaignDto;
     console.log('executeCampaignDto ------------------------- > ', executeCampaignDto);
 
@@ -411,6 +418,7 @@ export class CampaignService {
       throw new NotFoundException('Campaign not found');
     }
 
+
     if (campaign.status !== CampaignStatus.DRAFT) {
       throw new BadRequestException(
         'Campaign can only be executed when in draft status');
@@ -422,11 +430,13 @@ export class CampaignService {
       campaign.project,
     );
 
+
     if (!project) {
       throw new UnauthorizedException(
         'You do not have permission to access this project',
       );
     }
+
 
     // Check if WhatsApp credentials are configured
     if (!project.permanentAccessToken || !project.phoneNumberId) {
@@ -434,6 +444,7 @@ export class CampaignService {
         'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
       );
     }
+
 
     // Update campaign status to in-progress
     await this.update(campaignId, { status: CampaignStatus.IN_PROGRESS }, adminId);
@@ -446,80 +457,187 @@ export class CampaignService {
     };
 
     // Send messages to each contact using the unified WhatsApp service method
-    for (const contact of contacts) {
-      try {
-        // Process variables with fallback values for this specific contact
-        const processedBodyVariables = bodyVariables.map((variable, index) => {
-          const isDynamic = dynamicVariables[index];
-          const fallbackValue = fallbackValues[index];
+    if(contactType === CampaignContactType.WHATSAPP){
 
-          if (isDynamic) {
-            // Extract field name from variable (e.g., "$firstName" -> "firstName")
-            const fieldName = variable.replace('$', '');
-            const contactValue = contact[fieldName];
+      const fetchedContacts = await this.contactsService.getContactsByIds(
+        new Types.ObjectId(`${adminId}`),
+        contacts.map(contact => new Types.ObjectId(contact.contactId))
+      )
 
-            // Use contact value if available and not empty, otherwise use fallback
-            if (contactValue && contactValue.trim() !== '') {
-              return contactValue;
+      
+      for (const contact of fetchedContacts) {
+        try {
+          // Process variables with fallback values for this specific contact
+          const processedBodyVariables = bodyVariables.map((variable, index) => {
+            const isDynamic = dynamicVariables[index];
+            const fallbackValue = fallbackValues[index];
+  
+            if (isDynamic) {
+              // Extract field name from variable (e.g., "$firstName" -> "firstName")
+              const fieldName = variable.replace('$', '');
+              const contactValue = contact[fieldName];
+              console.log('contactValue', contactValue, fieldName, contact);
+  
+              // Use contact value if available and not empty, otherwise use fallback
+              if (contactValue && contactValue.trim() !== '') {
+                return contactValue;
+              } else {
+                return fallbackValue || variable;
+              }
             } else {
-              return fallbackValue || variable;
+              // Static variable, use as-is
+              return variable;
             }
-          } else {
-            // Static variable, use as-is
-            return variable;
+          });
+  
+          const messageResult = await this.whatsappService.sendSingleTemplateMessage(
+           {
+            adminId: new Types.ObjectId(`${adminId}`),
+            projectId: project._id.toString(),
+            recipientPhoneNumber: contact.phone,
+            templateName: campaign.messageTemplate.templateName,
+            bodyVariables: processedBodyVariables,
+            headerMediaAssetId,
+            language,
+            contactId: contact._id.toString(),
+            messageType: 'campaign',
+            campaignId,
+           }
+          );
+  
+          results.sent++;
+          results.messageIds.push(messageResult.messages[0].id);
+  
+          this.logger.log(
+            `Message sent successfully to ${contact.phone}. Message ID: ${messageResult.messages[0].id}`,
+          );
+  
+          // Add a delay between messages to avoid rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        } catch (error) {
+          results.failed++;
+          results.errors.push({
+            contactId: contact._id.toString(),
+            phoneNumber: contact.phone,
+            error: error.response?.data?.error || error.message,
+          });
+  
+          const wabaMessageId = uuidv4();
+          await this.wabaMessageService.create({
+            projectId: project._id.toString(),
+            adminId: adminId,
+              campaignId: campaignId,
+              phoneNumber: contact.phone,
+            contactId: contact._id.toString(),
+            wabaMessageId: wabaMessageId, //
+            messageType: 'campaign',
+            templateName: campaign.messageTemplate.templateName,
+            failureReason: error.response?.data?.error || error.message,
+            status: CampaignStatus.FAILED,
+          });
+  
+  
+          this.logger.error(
+            `Failed to send message to ${contact.phone} (Contact ID: ${contact._id.toString()})`,
+            error.response?.data?.error,
+          );
+        }
+      }
+    }
+    else {
+
+      const webinarId = wlhAttendeeFilters.filters.webinarId;
+      const tags = wlhAttendeeFilters.filters.tags;
+
+      const attendees = await this.attendeesService.getAttendees(
+        webinarId,adminId,false,0,0,{
+          filters: {
+            tags: tags,
           }
-        });
-
-        const messageResult = await this.whatsappService.sendSingleTemplateMessage(
-          new Types.ObjectId(`${adminId}`),
-          project._id.toString(),
-          contact.phoneNumber,
-          campaign.messageTemplate.templateName,
-          processedBodyVariables,
-          dynamicVariables,
-          headerMediaAssetId,
-          language,
-          contact.contactId,
-          'campaign',
-          campaignId,
-        );
-
-        results.sent++;
-        results.messageIds.push(messageResult.messages[0].id);
-
-        this.logger.log(
-          `Message sent successfully to ${contact.phoneNumber}. Message ID: ${messageResult.messages[0].id}`,
-        );
-
-        // Add a delay between messages to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      } catch (error) {
-        results.failed++;
-        results.errors.push({
-          contactId: contact.contactId,
-          phoneNumber: contact.phoneNumber,
-          error: error.response?.data?.error || error.message,
-        });
-
-        const wabaMessageId = uuidv4();
-        await this.wabaMessageService.create({
-          projectId: project._id.toString(),
-          adminId: adminId,
-          campaignId: campaignId,
-          phoneNumber: contact.phoneNumber,
-          contactId: contact.contactId,
-          wabaMessageId: wabaMessageId, //
-          messageType: 'campaign',
-          templateName: campaign.messageTemplate.templateName,
-          failureReason: error.response?.data?.error || error.message,
-          status: CampaignStatus.FAILED,
-        });
+        }
+      )
+      const attendeeResults = attendees.result || [];
 
 
-        this.logger.error(
-          `Failed to send message to ${contact.phoneNumber} (Contact ID: ${contact.contactId})`,
-          error.response?.data?.error,
-        );
+
+      for (const contact of attendeeResults) {
+        console.log('contact', contact);
+        try {
+          // Process variables with fallback values for this specific contact
+          const processedBodyVariables = bodyVariables.map((variable, index) => {
+            const isDynamic = dynamicVariables[index];
+            const fallbackValue = fallbackValues[index];
+  
+            if (isDynamic) {
+              // Extract field name from variable (e.g., "$firstName" -> "firstName")
+              const fieldName = variable.replace('$', '');
+              const contactValue = contact[fieldName];
+              console.log('attendee contactValue', contactValue, fieldName, contact);
+  
+              // Use contact value if available and not empty, otherwise use fallback
+              if (contactValue && (typeof contactValue === 'string' && contactValue.trim() !== '' || typeof contactValue === 'number')) {
+                return contactValue.toString();
+              } else {
+                return fallbackValue || variable;
+              }
+            } else {
+              // Static variable, use as-is
+              return variable;
+            }
+          });
+  
+          const messageResult = await this.whatsappService.sendSingleTemplateMessage(
+            {
+              adminId: new Types.ObjectId(`${adminId}`),
+            projectId: project._id.toString(),
+            recipientPhoneNumber: contact.phone,
+            templateName: campaign.messageTemplate.templateName,
+            bodyVariables: processedBodyVariables,
+            headerMediaAssetId,
+            language,
+            attendeeId: contact._id,
+            messageType: 'campaign',
+            campaignId,
+            }
+          );
+  
+          results.sent++;
+          results.messageIds.push(messageResult.messages[0].id);
+  
+          this.logger.log(
+            `Message sent successfully to ${contact.phone}. Message ID: ${messageResult.messages[0].id}`,
+          );
+  
+          // Add a delay between messages to avoid rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        } catch (error) {
+          results.failed++;
+          results.errors.push({
+            contactId: contact?._id,
+            phoneNumber: contact?.phone,
+            error: error.response?.data?.error || error.message,
+          });
+  
+          const wabaMessageId = uuidv4();
+          await this.wabaMessageService.create({
+            projectId: project._id.toString(),
+            adminId: adminId,
+            campaignId: campaignId,
+            phoneNumber: contact.phone,
+            contactId: contact._id,
+            wabaMessageId: wabaMessageId, //
+            messageType: 'campaign',
+            templateName: campaign.messageTemplate.templateName,
+            failureReason: error.response?.data?.error || error.message,
+            status: CampaignStatus.FAILED,
+          });
+  
+  
+          this.logger.error(
+            `Failed to send message to ${contact.phone} (Contact ID: ${contact._id})`,
+            error.response?.data?.error,
+          );
+        }
       }
     }
 
@@ -985,6 +1103,8 @@ export class CampaignService {
       fallbackValues: fallbackValues || [],
       language: language,
       headerMediaAssetId: headerMediaAssetId,
+      contactType: campaign.contactType,
+      wlhAttendeeFilters: campaign.wlhAttendeeFilters,
     };
   }
 

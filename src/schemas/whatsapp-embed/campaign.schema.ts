@@ -12,6 +12,11 @@ export enum CampaignStatus {
   FAILED = 'failed',
 }
 
+export enum CampaignContactType {
+  WHATSAPP = 'whatsapp',
+  WLH = 'wlh',
+}
+
 // Message Template sub-schema
 @Schema({ _id: false })
 export class MessageTemplate {
@@ -133,6 +138,20 @@ export class Campaign extends Document {
     maxlength: 100,
   })
   name: string;
+
+  @Prop({
+    type: String,
+    enum: Object.values(CampaignContactType),
+    default: CampaignContactType.WHATSAPP,
+  })
+  contactType: CampaignContactType;
+
+
+  @Prop({
+    type: Object,
+    required: false,
+  })
+  wlhAttendeeFilters: any;
 
   @Prop({
     type: Types.ObjectId,

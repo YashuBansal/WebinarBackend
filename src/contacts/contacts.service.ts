@@ -553,4 +553,12 @@ export class ContactsService {
       contactsByProject,
     };
   }
+
+  async getContactsByIds(adminId: Types.ObjectId, contactIds: Types.ObjectId[]) {
+    return this.contactModel.find({
+      _id: { $in: contactIds },
+      adminId,
+      isDeleted: false,
+    });
+  }
 }

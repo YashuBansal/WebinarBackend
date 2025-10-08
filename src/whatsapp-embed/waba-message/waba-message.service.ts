@@ -19,6 +19,7 @@ export class WabaMessageService {
     phoneNumber: string;
     campaignId?: string;
     contactId?: string;
+    attendeeId?: string;
     wabaMessageId: string;
     messageType?: string;
     templateName: string;
@@ -31,6 +32,7 @@ export class WabaMessageService {
       adminId: new Types.ObjectId(wabaMessageData.adminId),
       campaignId: mongoose.isValidObjectId(wabaMessageData.campaignId) ? new Types.ObjectId(wabaMessageData.campaignId) : undefined,
       contactId: mongoose.isValidObjectId(wabaMessageData.contactId) ? new Types.ObjectId(wabaMessageData.contactId) : undefined,
+      attendeeId: mongoose.isValidObjectId(wabaMessageData.attendeeId) ? new Types.ObjectId(wabaMessageData.attendeeId) : undefined,
       messageType: wabaMessageData.messageType || 'individual',
     });
 

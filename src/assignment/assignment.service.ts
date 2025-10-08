@@ -44,6 +44,7 @@ import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { User } from 'src/schemas/User.schema';
 import { Webinar } from 'src/schemas/Webinar.schema';
 import mongoose from 'mongoose';
+import { WebinarAutoMessageService } from 'src/webinar-auto-message/webinar-auto-message.service';
 
 @Injectable()
 export class AssignmentService {
@@ -62,6 +63,7 @@ export class AssignmentService {
     private readonly userService: UsersService,
     private readonly enrollmentService: EnrollmentsService,
     private readonly attendeeLogService: AttendeeLogService,
+    private readonly autoMessageService: WebinarAutoMessageService,
   ) {}
 
   async getAssignments(
@@ -1252,6 +1254,26 @@ export class AssignmentService {
     }, 2000);
 
     const newAttendee = newAttendees[0];
+
+    // Fire-and-forget: auto message on registration (do not block assignment flow)
+    try {
+      const contactPhone = newAttendee.phone;
+      if (contactPhone) {
+      
+        this.autoMessageService
+        .sendForRegistration(
+          adminId,
+          webinarId,
+          {
+            phoneNumber: contactPhone,
+            email: newAttendee.email,
+            firstName: newAttendee.firstName,
+            lastName: newAttendee.lastName,
+          },
+        )
+        .catch(() => {});
+      }
+    } catch {}
 
     this.attendeeLogService.createSingleAttendeeLog({
       attendee: newAttendee.email,

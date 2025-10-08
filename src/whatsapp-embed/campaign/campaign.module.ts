@@ -13,6 +13,8 @@ import { AuthAdminTokenMiddleware } from '../../middlewares/authAdmin.Middleware
 import { UsersModule } from 'src/users/users.module';
 import { forwardRef } from '@nestjs/common';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
+import { AttendeesModule } from 'src/attendees/attendees.module';
+import { ContactsModule } from 'src/contacts/contacts.module';
 
 @Module({
   imports: [
@@ -23,7 +25,9 @@ import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
     WabaMessageModule,
     ProjectsModule,
      forwardRef(() => UsersModule),
-     WhatsappModule
+     WhatsappModule,
+     AttendeesModule,
+     ContactsModule
   ],
   controllers: [CampaignController],
   providers: [CampaignService],

@@ -74,6 +74,18 @@ export class AttendeesService {
     // private readonly tagsService: TagsService,
   ) {}
 
+
+  async getAttendeesCount(webinarId:Types.ObjectId, tags: string[], adminId: Types.ObjectId): Promise<number> {
+    const attendees = await this.attendeeModel.
+    countDocuments({
+      webinar: webinarId,
+      adminId: adminId,
+      tags: { $in: tags },
+      isAttended: false,
+    })
+    return attendees
+  }
+
   async addAttendees(attendees: [PreWebinarPostAttendeeDTO]): Promise<any> {
     const result = await this.attendeeModel.create(attendees);
     return result;

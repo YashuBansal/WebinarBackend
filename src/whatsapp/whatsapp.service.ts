@@ -889,19 +889,25 @@ export class WhatsappService {
   /**
    * Unified method to send a single template message with support for dynamic variables
    */
-  async sendSingleTemplateMessage(
+  async sendSingleTemplateMessage(payload:{
     adminId: Types.ObjectId,
     projectId: string,
     recipientPhoneNumber: string,
     templateName: string,
     bodyVariables?: string[],
-    dynamicVariables?: boolean[],
     headerMediaAssetId?: string,
     language?: string,
     contactId?: string,
-    messageType: 'individual' | 'campaign' = 'individual',
+    messageType: 'individual' | 'campaign' | 'auto-message',
     campaignId?: string,
+    attendeeId?: Types.ObjectId,
+  }
+    
   ): Promise<any> {
+    console.log('payload', payload);
+
+
+    const { adminId, projectId, recipientPhoneNumber, templateName, bodyVariables, headerMediaAssetId, language, contactId, attendeeId, messageType='individual', campaignId } = payload;
     this.logger.log(
       `Attempting to send template '${templateName}' from WABA ${projectId} to ${recipientPhoneNumber}`,
     );
@@ -928,9 +934,7 @@ export class WhatsappService {
     const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
 
     // Resolve variables for this specific contact if dynamic variables are provided
-    const resolvedVariables = bodyVariables && bodyVariables.length > 0 && contactId
-      ? await this.resolveVariablesForContact(contactId, bodyVariables, dynamicVariables || [])
-      : bodyVariables || [];
+    const resolvedVariables = bodyVariables || [];
 
     // Create template structure for this contact with resolved variables
     const templateStructure: any = {
@@ -1055,6 +1059,7 @@ export class WhatsappService {
             messageType,
             templateName: templateName,
             campaignId,
+            attendeeId: attendeeId?.toString(),
           });
         } catch (error) {
           this.logger.error('Failed to create WABA message record:', error);
@@ -1093,18 +1098,20 @@ export class WhatsappService {
     } = sendTemplateDto;
 
     return this.sendSingleTemplateMessage(
-      adminId,
-      projectId,
-      recipientPhoneNumber,
-      templateName,
-      bodyVariables,
-      undefined, // No dynamic variables support in single message
-      headerMediaAssetId,
-      language,
-      contactId,
-      messageType,
-      campaignId,
+      {
+        adminId,
+        projectId,
+        recipientPhoneNumber,
+        templateName,
+        bodyVariables,
+        headerMediaAssetId,
+        language,
+        contactId,
+        messageType,
+        campaignId,
+      }
     );
+     
   }
 
   async sendBulkTemplateMessage(
@@ -1136,17 +1143,20 @@ export class WhatsappService {
     for (const contact of contacts) {
       try {
         const response = await this.sendSingleTemplateMessage(
-          adminId,
-          projectId,
-          contact.phoneNumber,
-          templateName,
-          bodyVariables,
-          dynamicVariables,
-          headerMediaAssetId,
-          language,
-          contact.contactId,
-          'individual',
-          undefined,
+          
+          {
+            adminId,
+            projectId,
+            recipientPhoneNumber: contact.phoneNumber,
+            templateName,
+            bodyVariables,
+            headerMediaAssetId,
+            language,
+            contactId: contact.contactId,
+            messageType: 'individual',
+            campaignId: undefined,
+          }
+           
         );
 
         results.sent++;

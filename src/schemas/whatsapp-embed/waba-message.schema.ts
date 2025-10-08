@@ -4,6 +4,7 @@ import { Campaign } from './campaign.schema';
 import { Contact } from '../../contacts/Contact.schema';
 import { Project } from '../project.schema';
 import { User } from '../User.schema';
+import { Attendee } from '../Attendee.schema';
 
 export type WabaMessageDocument = WabaMessage & Document;
 
@@ -58,6 +59,14 @@ export class WabaMessage extends Document {
   })
   contactId?: Types.ObjectId;
 
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: Attendee.name,
+    required: false,
+  })
+  attendeeId?: Types.ObjectId;
+
   @Prop({
     type: String,
     required: [true, 'WABA message ID is required'],
@@ -83,7 +92,7 @@ export class WabaMessage extends Document {
 
   @Prop({
     type: String,
-    enum: ['campaign', 'individual', 'template'],
+    enum: ['campaign', 'individual', 'template', 'auto-message'],
     default: 'individual',
   })
   messageType: string;

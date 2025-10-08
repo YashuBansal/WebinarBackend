@@ -7,6 +7,9 @@ import {
   IsDateString,
   IsEnum,
   IsBoolean,
+  IsObject,
+  IsNumber,
+  IsMongoId,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -52,6 +55,27 @@ export class ContactSelectionDto {
   phoneNumber: string;
 }
 
+export class WlhAttendeeFiltersFiltersDto {
+  @IsMongoId()
+  webinarId: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  tags: string[];
+}
+
+export class WlhAttendeeFiltersDto {
+  
+  @IsObject()
+  @ValidateNested()
+  @Type(() => WlhAttendeeFiltersFiltersDto)
+  filters: WlhAttendeeFiltersFiltersDto;
+
+  @IsNumber()
+  contactCount: number;
+  
+}
+
 export class CreateCampaignWorkflowDto {
   @IsString()
   @IsNotEmpty()
@@ -87,6 +111,15 @@ export class CreateCampaignWorkflowDto {
   @IsOptional()
   @IsString()
   headerMediaAssetId?: string;
+
+  @IsEnum(['whatsapp', 'wlh'])
+  @IsNotEmpty()
+  contactType: 'whatsapp' | 'wlh';
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WlhAttendeeFiltersDto)
+  wlhAttendeeFilters?: WlhAttendeeFiltersDto;
 }
 
 export class CampaignPreviewDto {

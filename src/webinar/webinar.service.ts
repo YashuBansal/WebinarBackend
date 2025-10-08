@@ -73,6 +73,29 @@ export class WebinarService {
     return result;
   }
 
+  async getPreWebinarAttendeeCount(
+    adminId: string,
+    webinarId: string,
+    tags: string[]
+  ): Promise<number> {
+    const webinar = await this.webinarModel.findById(webinarId);
+    if (!webinar) {
+      throw new NotFoundException('Webinar not found');
+    }
+
+    const attendees = await this.attendeesService.getAttendeesCount(
+      webinar._id as Types.ObjectId,
+      tags,
+      new Types.ObjectId(`${adminId}`)
+    )
+    return attendees;
+  }
+
+
+  async getAllWebinars(adminId: string): Promise<any> {
+    return await this.webinarModel.find({ adminId: new Types.ObjectId(adminId) });
+  }
+
   async updateWebinarSettings(
     adminId: Types.ObjectId,
     data: UpdateWebinarSettingDto,

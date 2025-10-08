@@ -45,6 +45,21 @@ export class WebinarController {
     return result;
   }
 
+  @Get('all')
+  async getAllWebinars(@Id() adminId: string): Promise<any> {
+    return await this.webinarService.getAllWebinars(adminId);
+  }
+
+  @Get('attendee-count')
+  async getAttendeeCount(@Id() adminId: string, @Query() query: { webinarId: string, tags: string[] }): Promise<any> {
+    const count = await this.webinarService.getPreWebinarAttendeeCount(adminId, query.webinarId, query.tags);
+    return {
+      message: 'Attendee Count Fetched Successfully',
+      data: count,
+      success: true,
+    };
+  }
+
   @Patch('setting')
   async updateWebinarSetting(
     @Id() adminId: string,

@@ -60,6 +60,9 @@ import { WhatsappEmbedModule } from './whatsapp-embed/whatsapp-embed.module';
 import { ProfileModule } from './profile/profile.module';
 import { FileStorageService } from './file-storage/file-storage.service';
 import { ZoomModule } from './zoom/zoom.module';
+import { AutomationsModule } from './automations/automations.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { WebinarAutoMessageModule } from './webinar-auto-message/webinar-auto-message.module';
 
 @Module({
   imports: [
@@ -142,6 +145,9 @@ import { ZoomModule } from './zoom/zoom.module';
     WhatsappEmbedModule,
     ProfileModule,
     ZoomModule,
+    AutomationsModule,
+    WebhooksModule,
+    WebinarAutoMessageModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService, FileStorageService],
