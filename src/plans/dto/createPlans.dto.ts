@@ -23,9 +23,6 @@ export class CreatePlansDto {
   @IsNotEmpty()
   internalName: string;
 
-  @IsNumber()
-  @IsNotEmpty()
-  amount: number;
 
   @IsNumber()
   @IsNotEmpty()
@@ -42,6 +39,14 @@ export class CreatePlansDto {
   @IsNumber()
   @Min(0, { message: 'Minimum value is 0' })
   toggleLimit: number;
+
+  @IsNumber()
+  @Min(0, { message: 'Minimum value is 0' })
+  whatsappProjectLimit: number;
+
+  @IsNumber()
+  @Min(0, { message: 'Minimum value is 0' })
+  zoomProjectLimit: number;
 
   @IsEnum(PlanType)
   planType: PlanType;
@@ -90,6 +95,10 @@ export class CreatePlansDto {
   @IsOptional()
   @IsBoolean()
   assignmentMetrics: boolean;
+
+  @IsObject()
+  @IsNotEmpty()
+  planDurationConfig: Map<string, any>;
 }
 
 class PlanDTO {

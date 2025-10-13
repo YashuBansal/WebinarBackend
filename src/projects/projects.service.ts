@@ -1,4 +1,6 @@
 import {
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotAcceptableException,
@@ -14,6 +16,7 @@ import { firstValueFrom } from 'rxjs';
 import { FetchWabaDetailsDto } from './dto/waba.dto';
 import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
 import { WabaMessage } from 'src/schemas/whatsapp-embed/waba-message.schema';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class ProjectsService {
@@ -24,6 +27,8 @@ export class ProjectsService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly wabaMessageService: WabaMessageService,
+    @Inject(forwardRef(() => UsersService))
+    private readonly usersService: UsersService,
   ) { }
 
 
@@ -61,6 +66,16 @@ export class ProjectsService {
     createProjectDto: CreateProjectDto,
     adminId: Types.ObjectId,
   ): Promise<Project> {
+    const userSubscription: any = await this.usersService.getUserSubscription(adminId.toString());
+    if (!userSubscription) {
+      throw new NotAcceptableException('User not found');
+    }
+
+    const projectCount = await this.projectModel.countDocuments({ adminId,  });
+    
+    if (userSubscription.plan.whatsappProjectLimit <= projectCount) {
+      throw new NotAcceptableException('You have reached the limit of WhatsApp projects');
+    }
     const { projectName } = createProjectDto;
 
     const project = await this.projectModel.findOne({
@@ -132,6 +147,10 @@ export class ProjectsService {
     }
 
     return project;
+  }
+
+  async findWhatsAppProjectsByUserId(adminId: Types.ObjectId): Promise<Project[]> {
+    return this.projectModel.find({ adminId }).exec();
   }
 
   async update(

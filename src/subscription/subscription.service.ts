@@ -325,13 +325,18 @@ export class SubscriptionService {
 
     const durationConfig = plan.planDurationConfig.get(durationType);
 
+    let billingStartDate = null;
+
     if (String(subscription.plan) === String(planId) && !isPlanExpired) {
+      billingStartDate = subscription.expiryDate;
+      
       subscription.expiryDate = new Date(
         subscription.expiryDate.getTime() +
           durationConfig.duration * 24 * 60 * 60 * 1000,
       );
     } else {
-      subscription.startDate = new Date();
+      billingStartDate = new Date();
+      subscription.startDate = billingStartDate;
       subscription.expiryDate = new Date(
         Date.now() + durationConfig.duration * 24 * 60 * 60 * 1000,
       );
@@ -343,7 +348,7 @@ export class SubscriptionService {
     subscription.toggleLimit = plan.toggleLimit;
 
     const { totalWithGST, itemAmount, discountAmount, gst } =
-      this.generatePriceForPlan(plan.amount, durationType, durationConfig);
+      this.generatePriceForPlan(durationConfig);
 
     const billing = await this.BillingHistoryService.addBillingHistory(
       {
@@ -355,7 +360,7 @@ export class SubscriptionService {
         taxPercent: this.GST_VALUE,
         taxAmount: gst,
         durationType: durationType,
-        startDate: subscription.startDate,
+        startDate: billingStartDate,
         expiryDate: subscription.expiryDate,
       },
       BillingType.RENEWAL,
@@ -398,9 +403,12 @@ export class SubscriptionService {
     );
   }
 
+  /**
+   * Enterprise-grade price calculation with robust GST handling
+   * Includes comprehensive validation, precision handling, and error management
+   * GST is calculated as inclusive of the price
+   */
   generatePriceForPlan(
-    amount: number,
-    durationType: DurationType,
     durationConfig: PlanDurationConfig,
   ): {
     totalWithGST: number;
@@ -408,24 +416,85 @@ export class SubscriptionService {
     discountAmount: number;
     gst: number;
   } {
-    let itemAmount = 0;
-    if (durationType === 'custom') itemAmount = amount;
-    else itemAmount = amount * monthMultiplier[durationType];
-    const discountAmount =
-      durationConfig.discountType === 'flat'
-        ? durationConfig.discountValue
-        : (itemAmount * durationConfig.discountValue) / 100;
+    // Input validation
+    if (!durationConfig) {
+      throw new Error('Duration configuration is required');
+    }
 
-    const subTotal = itemAmount - discountAmount;
-    const gst = subTotal * (this.GST_VALUE / 100);
-    const totalWithGST = subTotal + gst;
+    const { price, discountType, discountValue } = durationConfig;
+
+    // Validate price
+    if (typeof price !== 'number' || price < 0 || !isFinite(price)) {
+      throw new Error('Invalid price: must be a non-negative finite number');
+    }
+
+    // Validate discount configuration
+    if (!discountType || !['flat', 'percent'].includes(discountType)) {
+      throw new Error('Invalid discount type: must be "flat" or "percent"');
+    }
+
+    if (typeof discountValue !== 'number' || discountValue < 0 || !isFinite(discountValue)) {
+      throw new Error('Invalid discount value: must be a non-negative finite number');
+    }
+
+    // Handle GST configuration - treat undefined, null, or 0 as 0
+    const gstValue = this.GST_VALUE || 0;
+    if (typeof gstValue !== 'number' || gstValue < 0 || gstValue > 100) {
+      throw new Error('Invalid GST value: must be between 0 and 100');
+    }
+
+    // Calculate discount amount with precision handling
+    let discountAmount: number;
+    if (discountType === 'flat') {
+      discountAmount = Math.min(discountValue, price); // Ensure discount doesn't exceed price
+    } else {
+      // Percentage discount - ensure it doesn't exceed 100%
+      const cappedDiscountValue = Math.min(discountValue, 100);
+      discountAmount = Math.min((price * cappedDiscountValue) / 100, price);
+    }
+
+    // Calculate price after discount
+    const priceAfterDiscount = Math.max(price - discountAmount, 0); // Ensure non-negative
+
+    // Calculate inclusive GST from the price after discount
+    // Formula: GST = (Price * GST_RATE) / (100 + GST_RATE)
+    const gst = this.calculateInclusiveGST(priceAfterDiscount, gstValue);
+
+    // Calculate item amount (price without GST)
+    const itemAmount = this.roundToTwoDecimals(priceAfterDiscount - gst);
+
+    // Total with GST is the original price after discount
+    const totalWithGST = this.roundToTwoDecimals(priceAfterDiscount);
 
     return {
+      totalWithGST,
       itemAmount,
-      discountAmount,
-      gst,
-      totalWithGST: totalWithGST,
+      discountAmount: this.roundToTwoDecimals(discountAmount),
+      gst: this.roundToTwoDecimals(gst),
     };
+  }
+
+  /**
+   * Calculate inclusive GST with proper precision handling
+   * Formula: GST = (Price * GST_RATE) / (100 + GST_RATE)
+   * Handles undefined, null, or 0 GST values
+   */
+  private calculateInclusiveGST(price: number, gstPercentage: number): number {
+    // Handle undefined, null, or 0 GST values
+    const gstValue = gstPercentage || 0;
+    if (gstValue === 0) return 0;
+    
+    // Use integer arithmetic to avoid floating point precision issues
+    const priceInCents = Math.round(price * 100);
+    const gstInCents = Math.round((priceInCents * gstValue) / (100 + gstValue));
+    return gstInCents / 100;
+  }
+
+  /**
+   * Round to two decimal places using proper rounding method
+   */
+  private roundToTwoDecimals(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 
   async getPlanSubscriptionCount(): Promise<
@@ -740,8 +809,6 @@ export class SubscriptionService {
       throw new NotAcceptableException('Duration type not found.');
 
     const { totalWithGST } = this.generatePriceForPlan(
-      plan.amount,
-      durationType,
       durationConfig,
     );
 

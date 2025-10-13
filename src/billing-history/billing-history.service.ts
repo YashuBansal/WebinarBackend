@@ -34,11 +34,6 @@ export class BillingHistoryService {
     return `${this.INVOICE_PREFIX}${sequenceString}`;
   }
 
-  private async isInvoiceNumberUnique(invoiceNumber: string): Promise<boolean> {
-    const existing = await this.BillingHistoryModel.findOne({ invoiceNumber });
-    return !existing;
-  }
-
   async addBillingHistory(
     billingHistoryDto: BillingHistoryDto,
     billingType: BillingType,
@@ -142,7 +137,7 @@ export class BillingHistoryService {
         })
         .populate({
           path: 'admin',
-          select: 'userName _id email',
+          select: 'userName _id email gst phone companyName address',
         })
         .sort({ date: -1 })
         .skip(skip)

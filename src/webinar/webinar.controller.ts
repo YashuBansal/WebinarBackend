@@ -154,4 +154,31 @@ export class WebinarController {
   async getAssignedEmployees(@Param('id') webinarId: string) {
     return await this.webinarService.getAssignedEmployees(webinarId);
   }
+
+  @Patch(':id/meeting')
+  async updateWebinarMeetingId(
+    @Id() adminId: string,
+    @Param('id') webinarId: string,
+    @Body() body: { meetingId: string }
+  ): Promise<any> {
+    const result = await this.webinarService.updateWebinarMeetingId(webinarId, body.meetingId, adminId);
+    return {
+      message: 'Webinar meeting ID updated successfully',
+      data: result,
+      success: true,
+    };
+  }
+
+  @Delete(':id/meeting')
+  async removeWebinarMeetingId(
+    @Id() adminId: string,
+    @Param('id') webinarId: string
+  ): Promise<any> {
+    const result = await this.webinarService.removeWebinarMeetingId(webinarId, adminId);
+    return {
+      message: 'Webinar meeting ID removed successfully',
+      data: result,
+      success: true,
+    };
+  }
 }

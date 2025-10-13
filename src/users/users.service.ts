@@ -68,6 +68,10 @@ export class UsersService implements OnModuleInit {
     await this.loadExpiredPablyTokens();
   }
 
+  async getUserSubscription(userId: string) {
+    return this.subscriptionService.getSubscription(userId);
+  }
+
   async loadExpiredPablyTokens() {
     const tokens = await this.apiTokenService.fetchExpiredTokens();
     tokens.forEach((token) => this.expiredPablyTokens.add(token.token));
@@ -1142,8 +1146,6 @@ export class UsersService implements OnModuleInit {
 
     const { totalWithGST, itemAmount, discountAmount, gst } =
       this.subscriptionService.generatePriceForPlan(
-        plan.amount,
-        createClientDto.durationType,
         durationConfig,
       );
 
@@ -1157,6 +1159,7 @@ export class UsersService implements OnModuleInit {
         taxPercent: this.subscriptionService.GST_VALUE,
         taxAmount: gst,
         durationType: createClientDto.durationType,
+        startDate: new Date(),
         expiryDate: new Date(currentPlanExpiry),
       },
       BillingType.NEW_PLAN,

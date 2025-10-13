@@ -6,6 +6,7 @@ export enum ZoomWebhookEvent {
   MeetingParticipantLeft = 'meeting.participant_left',
   MeetingStarted = 'meeting.started',
   MeetingEnded = 'meeting.ended',
+  MeetingRegistrationCreated = 'meeting.registration_created',
 }
 
 export default ZoomWebhookEvent;

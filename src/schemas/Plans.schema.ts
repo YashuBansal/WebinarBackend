@@ -18,6 +18,8 @@ export type PlanDurationConfig = {
   duration: number;
   discountType: string;
   discountValue: number;
+  price: number;
+  isEnabled: boolean;
 };
 
 @Schema({ timestamps: true })
@@ -37,12 +39,6 @@ export class Plans extends Document {
   })
   internalName: string;
 
-  @Prop({
-    type: Number,
-    min: 1,
-    required: [true, 'Plan Amount is required'],
-  })
-  amount: number; //plan amount
 
   @Prop({
     type: Number,
@@ -65,6 +61,22 @@ export class Plans extends Document {
     required: [true, 'Toggle Limit is required'],
   })
   toggleLimit: number; //Plan duration
+
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0,
+    required: [true, 'WhatsApp Project Limit is required'],
+  })
+  whatsappProjectLimit: number;
+
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0,
+    required: [true, 'Zoom Project Limit is required'],
+  })
+  zoomProjectLimit: number;
 
   @Prop({ type: Map, of: MongooseSchema.Types.Mixed, required: true })
   attendeeTableConfig: Map<string, any>;
@@ -138,6 +150,8 @@ export class Plans extends Document {
         required: true,
         min: 0,
       },
+      price: { type: Number, required: true, min: 0 },
+      isEnabled: { type: Boolean, default: false },
     }),
     required: true,
   })
@@ -179,9 +193,11 @@ export class Plans extends Document {
         );
       }
 
-      if (discountType === 'flat' && discountValue > this.amount) {
+      // Get the base price for this duration to validate flat discount
+      const pricingConfig = this.planDurationConfig.get(key);
+      if (discountType === 'flat' && pricingConfig && discountValue > pricingConfig.price) {
         throw new Error(
-          `The discount value for "${key}" cannot exceed the plan amount (${this.amount}) if the discount type is "flat".`,
+          `The discount value for "${key}" cannot exceed the plan price (${pricingConfig.price}) if the discount type is "flat".`,
         );
       }
 

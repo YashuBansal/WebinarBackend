@@ -8,7 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, PipelineStage, Types } from 'mongoose';
+import mongoose, { Model, PipelineStage, Types } from 'mongoose';
 import { Attendee } from 'src/schemas/Attendee.schema';
 import {
   AttendeesFilterDto,
@@ -80,7 +80,7 @@ export class AttendeesService {
     countDocuments({
       webinar: webinarId,
       adminId: adminId,
-      tags: { $in: tags },
+      ...(tags?.length > 0 && { tags: { $in: tags } }),
       isAttended: false,
     })
     return attendees
@@ -1621,10 +1621,10 @@ export class AttendeesService {
     return { message: 'Attendees updated successfully', success: true };
   }
 
-  async getPostWebinarAttendee(webinarId: string, adminId: string) {
+  async getPostWebinarAttendee(webinarId: string, adminId?: string) {
     const result = await this.attendeeModel.findOne({
       webinar: new Types.ObjectId(`${webinarId}`),
-      adminId: new Types.ObjectId(`${adminId}`),
+      ...(mongoose.isValidObjectId(adminId) ? { adminId: new Types.ObjectId(`${adminId}`) } : {}),
       isAttended: true,
     });
 
@@ -1646,6 +1646,7 @@ export class AttendeesService {
     if (!attendeeBeforeUpdate) {
       throw new NotFoundException('Attendee not found.');
     }
+    console.log(attendeeBeforeUpdate , userId);
 
     // Permission check: Allow if userId is the assignedTo, tempAssignedTo, or adminId of the *existing* attendee
     if (
@@ -1654,7 +1655,7 @@ export class AttendeesService {
       String(userId) !== String(attendeeBeforeUpdate.adminId)
     ) {
       throw new UnauthorizedException(
-        'Only Admin or assigned user is allowed to update attendee data.',
+        'Only Admin or assigned Employee is allowed to update attendee data.',
       );
     }
 
@@ -3264,6 +3265,14 @@ export class AttendeesService {
 
   async getAttendeeById(attendee: string): Promise<Attendee | null> {
     return this.attendeeModel.findById(new Types.ObjectId(`${attendee}`));
+  }
+
+  async getAttendeeByWebinarAndEmail(webinarId: string, email: string): Promise<Attendee | null> {
+    return this.attendeeModel.findOne({
+      webinar: new Types.ObjectId(webinarId),
+      email,
+      
+    });
   }
 
   async bulkUpdateAttendees(

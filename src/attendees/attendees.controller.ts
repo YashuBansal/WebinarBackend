@@ -181,7 +181,7 @@ export class AttendeesController {
       await this.attendeesService.getPostWebinarAttendee(
         body.webinarId,
         adminId,
-      );
+      );  
 
     if (postWebinarExists && !body.isAttended) {
       throw new NotAcceptableException(

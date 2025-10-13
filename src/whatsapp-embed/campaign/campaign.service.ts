@@ -455,7 +455,7 @@ export class CampaignService {
       errors: [] as any[],
       messageIds: [] as string[],
     };
-
+    this.logger.log('contactType', contactType);
     // Send messages to each contact using the unified WhatsApp service method
     if(contactType === CampaignContactType.WHATSAPP){
 
@@ -548,15 +548,17 @@ export class CampaignService {
 
       const webinarId = wlhAttendeeFilters.filters.webinarId;
       const tags = wlhAttendeeFilters.filters.tags;
+      this.logger.log(`webinarId: ${webinarId}, tags: ${tags}`);
 
       const attendees = await this.attendeesService.getAttendees(
         webinarId,adminId,false,0,0,{
           filters: {
-            tags: tags,
+            ...(tags?.length > 0 && { tags: tags }),
           }
         }
       )
       const attendeeResults = attendees.result || [];
+      this.logger.log(`attendeeResults: ${attendeeResults.length}`);
 
 
 
@@ -673,12 +675,14 @@ export class CampaignService {
       { name: templateName },
     );
 
-    if (!templates || templates.length === 0) {
+    const ourTemplate = templates.find((template: any) => template.name === templateName);
+
+    if(!ourTemplate) {
       throw new NotFoundException(`Template '${templateName}' not found`);
     }
 
-    const templateDetails = templates[0];
-    const headerComponent = templateDetails.components.find(
+    this.logger.log('templateDetails', ourTemplate);
+    const headerComponent = ourTemplate.components.find(
       (c) => c.type === 'HEADER',
     );
 

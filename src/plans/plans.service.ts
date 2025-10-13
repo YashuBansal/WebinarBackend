@@ -82,6 +82,7 @@ export class PlansService {
   }
 
   async addPlan(createPlanDto: CreatePlansDto): Promise<any> {
+    console.log(createPlanDto);
     const existingPlan = await this.plansModel.findOne({
       internalName: createPlanDto.internalName,
     });

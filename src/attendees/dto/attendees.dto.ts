@@ -177,6 +177,10 @@ export class UpdateAttendeeDto {
   firstName?: string | null;
 
   @IsOptional()
+  @IsString({ message: 'Source must be a string' })
+  source?: string;
+
+  @IsOptional()
   @IsString({ message: 'Last name must be a string' })
   @MaxLength(100, { message: 'Last name can be up to 100 characters long' })
   lastName?: string | null;

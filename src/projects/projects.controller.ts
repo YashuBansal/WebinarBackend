@@ -100,6 +100,14 @@ export class ProjectsController {
     }, { page, limit }, dateFilter);
   }
 
+  @Get('whatsapp')
+  async fetchWhatsAppProjects(
+    @Id() adminId: string,
+  ) {
+    return this.projectsService.findWhatsAppProjectsByUserId(new Types.ObjectId(adminId));
+  }
+
+
   @Get(':id')
   async fetchProjectsById(
     @Id() adminId: string, // Assumes your custom @Id() decorator works

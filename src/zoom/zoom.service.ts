@@ -1,22 +1,35 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, NotAcceptableException } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger, NotAcceptableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import { ZoomProject, ZoomProjectDocument } from './schemas/zoom-project.schema';
-import { ZoomMeetingEvent, ZoomMeetingEventDocument, ZoomMeetingEventType } from './schemas/zoom-meeting-event.schema';
+import { ZoomMeetingEventType } from './schemas/zoom-meeting-event.schema';
 import { ZoomWebhookEvent } from './enums/zoom-webhook-event.enum';
 import * as crypto from 'crypto';
+import { ZoomEventService } from './zoom-event/zoom-event.service';
+import { WebinarService } from '../webinar/webinar.service';
+import { UsersService } from 'src/users/users.service';
+import { MeetingEventConfigService } from 'src/meeting-event-config/meeting-event-config.service';
+import { ConfiguredTemplatesService } from 'src/configured-templates/configured-templates.service';
+import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 
 @Injectable()
 export class ZoomService {
+  private readonly logger = new Logger(ZoomService.name);
   constructor(
     private readonly http: HttpService,
     @InjectModel(ZoomProject.name) private readonly zoomProjectModel: Model<ZoomProjectDocument>,
-    @InjectModel(ZoomMeetingEvent.name) private readonly zoomMeetingEventModel: Model<ZoomMeetingEventDocument>,
+    private readonly zoomEventService: ZoomEventService,
+    private readonly webinarService: WebinarService,
     private readonly config: ConfigService,
-  ) {}
+    private readonly meetingEventConfigService: MeetingEventConfigService,
+    private readonly ConfiguredTemplateService: ConfiguredTemplatesService,
+    private readonly whatsappService: WhatsappService,
+    @Inject(forwardRef(() => UsersService))
+    private readonly usersService: UsersService,
+  ) { }
 
   // ====== Access Token Utilities ======
   private async refreshAccessTokenForProject(project: ZoomProjectDocument) {
@@ -265,7 +278,6 @@ export class ZoomService {
         );
         return resp.data;
       });
-      console.log(" )))))))) < ", data);
     } catch (error: any) {
       const status = error?.response?.status;
       const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
@@ -297,15 +309,23 @@ export class ZoomService {
       throw new Error('plainToken is missing in the validation payload.');
     }
 
+    let realSecretToken: any;
+
     const secretToken = await this.zoomProjectModel.findOne({ _id: projectId }).select('secretToken');
     console.log('secretToken', secretToken, projectId, plainToken);
-    if (!secretToken || !secretToken.secretToken) {
+    if (secretToken && secretToken.secretToken) {
+      realSecretToken = secretToken.secretToken;
+    } else {
+      realSecretToken = this.config.get<string>('ZOOM_CLIENT_SECRET_TOKEN');
+    }
+
+    if (!realSecretToken) {
       throw new Error('Zoom webhook secret token is not configured.');
     }
 
 
 
-    const hash = crypto.createHmac('sha256', secretToken.secretToken) 
+    const hash = crypto.createHmac('sha256', realSecretToken)
       .update(plainToken)
       .digest('hex');
 
@@ -319,24 +339,59 @@ export class ZoomService {
     return response;
   }
 
+  async handleRegistrationCreated(
+    meetingId: string,
+    registrant: {
+      id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone: string;
+    }) {
+    console.log('Meeting registration created', registrant);
+
+    try {
+      // Use webinar service to handle the registration
+      const result = await this.webinarService.handleMeetingRegistration(meetingId, registrant);
+      console.log('Registration handled:', result);
+      return result;
+    } catch (error) {
+      console.error('Error handling registration:', error);
+      throw error;
+    }
+  }
+
   async processWebhookPayload(payload: any) {
     // TODO: verify Zoom signature for production
     console.log('processWebhookPayload', payload);
+    // try {
+    //   this.http.axiosRef.post('https://b31f906b85a4.ngrok-free.app/api/v1/zoom/webhook', payload);
+    // } catch (error) {
+    //   console.error('processWebhookPayload failed:', error);
+    // }
     const event: string = payload?.event ?? '';
     const accountId: string | undefined = payload?.account_id || payload?.payload?.account_id;
     const object = payload?.payload?.object || payload?.object || {};
     const meetingId: string | undefined = String(object?.id || object?.uuid || '');
     const participant = object?.participant || object?.participant_data || {};
+    const registrant = object?.registrant || object?.registration || {};
+
+    if (event === ZoomWebhookEvent.MeetingRegistrationCreated) {
+      this.handleRegistrationCreated(meetingId, registrant);
+      return true;
+    }
 
     let eventType: ZoomMeetingEventType | undefined;
     if (event === ZoomWebhookEvent.MeetingParticipantJoined) eventType = ZoomMeetingEventType.ParticipantJoined;
     if (event === ZoomWebhookEvent.MeetingParticipantLeft) eventType = ZoomMeetingEventType.ParticipantLeft;
-    console.log('eventType', eventType, meetingId);
+    if (event === ZoomWebhookEvent.MeetingStarted) eventType = ZoomMeetingEventType.MeetingStarted;
+    if (event === ZoomWebhookEvent.MeetingEnded) eventType = ZoomMeetingEventType.MeetingEnded;
+    // console.log('eventType', eventType, meetingId);
     if (!eventType || !meetingId) {
       return true;
     }
 
-    await this.zoomMeetingEventModel.create({
+    await this.zoomEventService.createMeetingEvent({
       accountId,
       meetingId,
       eventType,
@@ -349,7 +404,241 @@ export class ZoomService {
 
     return true;
   }
-  
+
+
+  // In zoom.service.ts
+
+  async processWebhookPayloadV2(payload: any) {
+    // TODO: VERIFY ZOOM SIGNATURE - This is critical for production security.
+
+    // TODO: verify Zoom signature for production
+    this.logger.log('processWebhookPayload', payload);
+    // try {
+    //   this.http.axiosRef.post('https://b31f906b85a4.ngrok-free.app/api/v1/zoom/webhook', payload);
+    // } catch (error) {
+    //   console.error('processWebhookPayload failed:', error);
+    // }
+    const event: string = payload?.event ?? '';
+    const accountId: string | undefined = payload?.account_id || payload?.payload?.account_id;
+    const object = payload?.payload?.object || payload?.object || {};
+    const meetingId: string | undefined = String(object?.id || object?.uuid || '');
+    const participant = object?.participant || object?.participant_data || {};
+    const registrant = object?.registrant || object?.registration || {};
+    let eventType: ZoomMeetingEventType | undefined;
+
+
+    // --- NEW NOTIFICATION LOGIC ---
+    // Now, route to the correct notification handler based on the event
+    switch (event) {
+      case ZoomWebhookEvent.MeetingStarted:
+        const meetingTopic = object?.topic || 'the meeting';
+        // Trigger notifications for both registrants and the non-attendee check
+        this.handleMeetingStarted(meetingId, meetingTopic);
+        eventType = ZoomMeetingEventType.MeetingStarted;
+        break;
+
+      case ZoomWebhookEvent.MeetingParticipantJoined:
+        const participant = object?.participant || {};
+        // Mark the participant as "attended"
+        this.handleParticipantJoined(meetingId, participant.email);
+        eventType = ZoomMeetingEventType.ParticipantJoined;
+        break;
+
+      case ZoomWebhookEvent.MeetingParticipantLeft:
+        const leftParticipant = object?.participant || {};
+        // Trigger the "rejoin" message
+        this.handleParticipantLeft(meetingId, leftParticipant);
+        eventType = ZoomMeetingEventType.ParticipantLeft;
+        break;
+
+      case ZoomWebhookEvent.MeetingEnded:
+        const endedMeetingTopic = object?.topic || 'the meeting';
+        // Trigger the final messages to attendees and non-attendees
+        this.handleMeetingEnded(meetingId, endedMeetingTopic);
+        eventType = ZoomMeetingEventType.MeetingEnded;
+        break;
+
+      case ZoomWebhookEvent.MeetingRegistrationCreated:
+        this.handleRegistrationCreated(meetingId, registrant);
+        return;
+
+      default:
+        return;
+    }
+
+    this.logger.log('eventType --------==================-------------', eventType);
+    await this.zoomEventService.createMeetingEvent({
+      accountId,
+      meetingId,
+      eventType,
+      participantId: participant?.id,
+      participantUserId: participant?.user_id,
+      participantName: participant?.user_name || participant?.name,
+      participantEmail: participant?.email,
+      raw: payload,
+    });
+
+    return; // Respond quickly
+  }
+
+  async handleMeetingStarted(meetingId: string, meetingTopic: string) {
+    this.logger.log('handleMeetingStarted --------==================-------------', meetingId, meetingTopic);
+    const meetingEventConfig = await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
+    this.logger.log('meetingEventConfig --------==================-------------', meetingEventConfig);
+    if (!meetingEventConfig) return;
+
+    const { meetingStarted } = meetingEventConfig;
+    this.logger.log('meetingStarted --------==================-------------', meetingStarted);
+    if (!meetingStarted.enabled || !mongoose.isValidObjectId(meetingStarted.configuredTemplateId)) return;
+
+    const configuredTemplate = await this.ConfiguredTemplateService.getConfiguredTemplate(meetingStarted.configuredTemplateId);
+    this.logger.log('configuredTemplate --------==================-------------', configuredTemplate);
+    if (!configuredTemplate) return;
+
+    const registrations = await this.getMeetingRegistrations({ meetingId, adminId: meetingEventConfig.adminId, projectId: meetingEventConfig.whatsappProjectId, webinarID: meetingEventConfig.webinarId });
+    this.logger.log('registrations --------==================-------------', registrations);
+    await this.whatsappService.sendTemplateMessages( {fetchedContacts: registrations, template: configuredTemplate} );
+    return;
+  }
+
+
+  async getMeetingRegistrations(data: { meetingId: string, adminId: Types.ObjectId, projectId: Types.ObjectId, webinarID?: Types.ObjectId }) {
+    if (mongoose.isValidObjectId(data.webinarID)) {
+      const registrations = await this.webinarService.getWebinarRegistrations(data.webinarID, data.adminId);
+      if(Array.isArray(registrations)) return registrations;
+      
+    }
+    else {
+      const registrations = await this.getMeetingRegistrants(data.adminId, data.projectId, data.meetingId);
+      if(Array.isArray(registrations?.registrants)) 
+      
+        return registrations.registrants.map((registrant) => ({
+          email: registrant.email,
+          phone: registrant.phone,
+          firstName: registrant.first_name,
+          lastName: registrant.last_name,
+        }))
+    
+    }
+
+    return [];
+
+  }
+
+  async getMeetingAttendees(data: { meetingId: string, adminId: Types.ObjectId, projectId: Types.ObjectId, webinarID?: Types.ObjectId }) {
+    // Get all registrations first
+    const allRegistrations = await this.getMeetingRegistrations(data);
+    
+    // Get participants who actually joined the meeting
+    const meetingEvents = await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId);
+    const attendedEmails = new Set(
+      meetingEvents
+        .filter(event => event.eventType === ZoomMeetingEventType.ParticipantJoined)
+        .map(event => event.participantEmail)
+        .filter(email => email)
+    );
+
+    // Filter registrations to only include those who attended
+    return allRegistrations.filter(registration => 
+      registration.email && attendedEmails.has(registration.email)
+    );
+  }
+
+  async getMeetingNonAttendees(data: { meetingId: string, adminId: Types.ObjectId, projectId: Types.ObjectId, webinarID?: Types.ObjectId }) {
+    // Get all registrations first
+    const allRegistrations = await this.getMeetingRegistrations(data);
+    
+    // Get participants who actually joined the meeting
+    const meetingEvents = await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId);
+    const attendedEmails = new Set(
+      meetingEvents
+        .filter(event => event.eventType === ZoomMeetingEventType.ParticipantJoined)
+        .map(event => event.participantEmail)
+        .filter(email => email)
+    );
+
+    // Filter registrations to only include those who did NOT attend
+    return allRegistrations.filter(registration => 
+      registration.email && !attendedEmails.has(registration.email)
+    );
+  }
+
+  async getParticipantByEmail(data: { meetingId: string, adminId: Types.ObjectId, projectId: Types.ObjectId, webinarID?: Types.ObjectId, participantEmail: string }) {
+    // Get all registrations first
+    const allRegistrations = await this.getMeetingRegistrations(data);
+    
+    // Find the specific participant by email
+    return allRegistrations.find(registration => 
+      registration.email && registration.email.toLowerCase() === data.participantEmail.toLowerCase()
+    );
+  }
+
+  async handleParticipantJoined(meetingId: string, participantEmail: string) { }
+
+  async handleParticipantLeft(meetingId: string, participantData: any) {
+    this.logger.log('handleParticipantLeft --------==================-------------', meetingId, participantData);
+    const meetingEventConfig = await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
+    this.logger.log('meetingEventConfig --------==================-------------', meetingEventConfig);
+    if (!meetingEventConfig) return;
+
+    const { participantLeft } = meetingEventConfig;
+    this.logger.log('participantLeft --------==================-------------', participantLeft);
+    if (!participantLeft.enabled || !mongoose.isValidObjectId(participantLeft.configuredTemplateId)) return;
+
+    const configuredTemplate = await this.ConfiguredTemplateService.getConfiguredTemplate(participantLeft.configuredTemplateId);
+    this.logger.log('configuredTemplate --------==================-------------', configuredTemplate);
+    if (!configuredTemplate) return;
+
+    // Get the specific participant who left
+    const participant = await this.getParticipantByEmail({ meetingId, adminId: meetingEventConfig.adminId, projectId: meetingEventConfig.whatsappProjectId, webinarID: meetingEventConfig.webinarId, participantEmail: participantData.email });
+    this.logger.log('participant --------==================-------------', participant);
+    if (!participant) return;
+
+    await this.whatsappService.sendTemplateMessages({ fetchedContacts: [participant], template: configuredTemplate });
+    return;
+  }
+
+  async handleMeetingEnded(meetingId: string, meetingTopic: string) {
+    this.logger.log('handleMeetingEnded --------==================-------------', meetingId, meetingTopic);
+    const meetingEventConfig = await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
+    this.logger.log('meetingEventConfig --------==================-------------', meetingEventConfig);
+    if (!meetingEventConfig) return;
+
+    const { meetingEndedAttendees, meetingEndedNonAttendees } = meetingEventConfig;
+    
+    // Handle attendees messages
+    if (meetingEndedAttendees.enabled && mongoose.isValidObjectId(meetingEndedAttendees.configuredTemplateId)) {
+      this.logger.log('meetingEndedAttendees --------==================-------------', meetingEndedAttendees);
+      const configuredTemplate = await this.ConfiguredTemplateService.getConfiguredTemplate(meetingEndedAttendees.configuredTemplateId);
+      this.logger.log('configuredTemplate for attendees --------==================-------------', configuredTemplate);
+      
+      if (configuredTemplate) {
+        const attendees = await this.getMeetingAttendees({ meetingId, adminId: meetingEventConfig.adminId, projectId: meetingEventConfig.whatsappProjectId, webinarID: meetingEventConfig.webinarId });
+        this.logger.log('attendees --------==================-------------', attendees);
+        if (attendees.length > 0) {
+          await this.whatsappService.sendTemplateMessages({ fetchedContacts: attendees, template: configuredTemplate });
+        }
+      }
+    }
+
+    // Handle non-attendees messages
+    if (meetingEndedNonAttendees.enabled && mongoose.isValidObjectId(meetingEndedNonAttendees.configuredTemplateId)) {
+      this.logger.log('meetingEndedNonAttendees --------==================-------------', meetingEndedNonAttendees);
+      const configuredTemplate = await this.ConfiguredTemplateService.getConfiguredTemplate(meetingEndedNonAttendees.configuredTemplateId);
+      this.logger.log('configuredTemplate for non-attendees --------==================-------------', configuredTemplate);
+      
+      if (configuredTemplate) {
+        const nonAttendees = await this.getMeetingNonAttendees({ meetingId, adminId: meetingEventConfig.adminId, projectId: meetingEventConfig.whatsappProjectId, webinarID: meetingEventConfig.webinarId });
+        this.logger.log('nonAttendees --------==================-------------', nonAttendees);
+        if (nonAttendees.length > 0) {
+          await this.whatsappService.sendTemplateMessages({ fetchedContacts: nonAttendees, template: configuredTemplate });
+        }
+      }
+    }
+
+    return;
+  }
+
 
   async getMeetingDetails(adminId: Types.ObjectId, projectId: Types.ObjectId, meetingId: string) {
     const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
@@ -387,12 +676,14 @@ export class ZoomService {
         const resp = await firstValueFrom(
           this.http.get(`https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}/registrants`, {
             headers: { Authorization: `Bearer ${token}` },
-            params: { status },
+            params: { status, page_size: 500 },
           }),
         );
         return resp.data;
       });
+      this.logger.log('Zoom registrants fetch success:', data);
       return data;
+
     } catch (error: any) {
       const status = error?.response?.status;
       const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
@@ -551,6 +842,18 @@ export class ZoomService {
       secretToken?: string;
     },
   ) {
+
+    const userSubscription: any = await this.usersService.getUserSubscription(adminId.toString());
+    if (!userSubscription) {
+      throw new NotAcceptableException('User not found');
+    }
+
+    const projectCount = await this.zoomProjectModel.countDocuments({ adminId, });
+
+    if (userSubscription.plan.zoomProjectLimit <= projectCount) {
+      throw new NotAcceptableException('You have reached the limit of Zoom projects');
+    }
+
     const tokenEndpoint = 'https://zoom.us/oauth/token';
     const authHeader = Buffer.from(`${payload.clientId}:${payload.clientSecret}`).toString('base64');
     const params = new URLSearchParams({
@@ -577,7 +880,6 @@ export class ZoomService {
     }
 
     const expiresAt = new Date(Date.now() + (tokenData.expires_in ?? 0) * 1000);
-    console.log('tokenData', tokenData);
 
     // Create project record with provided credentials and mark configured
     const project = new this.zoomProjectModel({
@@ -635,16 +937,16 @@ export class ZoomService {
 
   async getProjectConfigurationStatus(adminId: Types.ObjectId, projectId: Types.ObjectId) {
     const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
-    
+
     if (!project) {
       return { isConfigured: false, missingFields: ['Project not found'] };
     }
 
     const missingFields: string[] = [];
-    
+
     if (!project.accountId) missingFields.push('Account ID');
     if (!project.accessToken) missingFields.push('Access Token');
-    
+
     return {
       isConfigured: missingFields.length === 0,
       missingFields,

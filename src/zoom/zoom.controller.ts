@@ -81,7 +81,7 @@ export class ZoomController {
       return await this.zoomService.validateWebhook(body, new Types.ObjectId(`${projectId}`));
     }
 
-    await this.zoomService.processWebhookPayload(body);
+    await this.zoomService.processWebhookPayloadV2(body);
     return;
   }
 

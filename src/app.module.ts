@@ -63,12 +63,56 @@ import { ZoomModule } from './zoom/zoom.module';
 import { AutomationsModule } from './automations/automations.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebinarAutoMessageModule } from './webinar-auto-message/webinar-auto-message.module';
+import { ZoomEventModule } from './zoom/zoom-event/zoom-event.module';
+import { ConfiguredTemplatesModule } from './configured-templates/configured-templates.module';
+import { MeetingEventConfigModule } from './meeting-event-config/meeting-event-config.module';
+import { WinstonModule } from 'nest-winston';
+import * as winston from 'winston';
+import 'winston-daily-rotate-file';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       load: [configurations],
       isGlobal: true,
+    }),
+    WinstonModule.forRoot({
+      transports: [
+        // Console transport for development
+        new winston.transports.Console({
+          format: winston.format.combine(
+            winston.format.colorize(),
+            winston.format.timestamp(),
+            winston.format.printf(({ timestamp, level, message, context }) => {
+              return `${timestamp} [${context}] ${level}: ${message}`;
+            }),
+          ),
+        }),
+        // Daily rotate file transport for all logs
+        new winston.transports.DailyRotateFile({
+          filename: 'logs/application-%DATE%.log',
+          datePattern: 'YYYY-MM-DD',
+          maxFiles: '14d',
+          zippedArchive: true,
+          format: winston.format.combine(
+            winston.format.timestamp(),
+            winston.format.json(),
+          ),
+          level: 'info',
+        }),
+        // Daily rotate file transport for error logs
+        new winston.transports.DailyRotateFile({
+          filename: 'logs/error-%DATE%.log',
+          datePattern: 'YYYY-MM-DD',
+          maxFiles: '14d',
+          zippedArchive: true,
+          format: winston.format.combine(
+            winston.format.timestamp(),
+            winston.format.json(),
+          ),
+          level: 'error',
+        }),
+      ],
     }),
     MongooseModule.forRoot(process.env.MONGO_URI),
     ServeStaticModule.forRoot({
@@ -148,6 +192,9 @@ import { WebinarAutoMessageModule } from './webinar-auto-message/webinar-auto-me
     AutomationsModule,
     WebhooksModule,
     WebinarAutoMessageModule,
+    ZoomEventModule,
+    ConfiguredTemplatesModule,
+    MeetingEventConfigModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService, FileStorageService],

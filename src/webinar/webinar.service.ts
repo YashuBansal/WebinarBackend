@@ -499,4 +499,152 @@ export class WebinarService {
       { new: true },
     );
   }
+
+  async updateWebinarMeetingId(webinarId: string, meetingId: string, adminId: string): Promise<any> {
+    const session = await this.webinarModel.startSession();
+    
+    try {
+      await session.withTransaction(async (currentSession) => {
+        // First, remove meetingId from any existing webinar that has it
+        await this.webinarModel.updateMany(
+          { 
+            adminId: new Types.ObjectId(adminId),
+            meetingId: meetingId,
+            _id: { $ne: new Types.ObjectId(webinarId) }
+          },
+          { $unset: { meetingId: 1 } },
+          { session: currentSession }
+        );
+
+        // Then update the target webinar with the meetingId
+        const result = await this.webinarModel.findOneAndUpdate(
+          {
+            _id: new Types.ObjectId(webinarId),
+            adminId: new Types.ObjectId(adminId),
+          },
+          { $set: { meetingId } },
+          { new: true, session: currentSession }
+        );
+
+        if (!result) {
+          throw new NotFoundException('Webinar not found');
+        }
+
+        return result;
+      });
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async removeWebinarMeetingId(webinarId: string, adminId: string): Promise<any> {
+    const result = await this.webinarModel.findOneAndUpdate(
+      {
+        _id: new Types.ObjectId(webinarId),
+        adminId: new Types.ObjectId(adminId),
+      },
+      { $unset: { meetingId: 1 } },
+      { new: true }
+    );
+
+    if (!result) {
+      throw new NotFoundException('Webinar not found');
+    }
+
+    return result;
+  }
+
+  async handleMeetingRegistration(
+    meetingId: string,
+    registrant: {
+      id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone: string;
+    }
+  ): Promise<any> {
+    try {
+      // Step 1: Check if meetingId is associated with a webinar
+      const webinar = await this.webinarModel.findOne({ meetingId });
+      
+      if (!webinar) {
+        this.logger.log(`No webinar found for meetingId: ${meetingId}`);
+        return { message: 'No webinar associated with this meeting', webinar: null };
+      }
+
+      this.logger.log(`Found webinar: ${webinar.webinarName} for meetingId: ${meetingId}`);
+
+      const postWebinarExists =
+      await this.attendeesService.getPostWebinarAttendee(
+        webinar._id.toString(),
+      );  
+
+      if (postWebinarExists) {
+        this.logger.log(`Post webinar already exists for webinar: ${webinar.webinarName}`);
+        return { message: 'Post webinar already exists', webinar: webinar.webinarName, attendee: postWebinarExists, action: 'exists' };
+      }
+
+      // Step 2: Check if attendee with this email already exists for this webinar
+      const webinarAttendee = await this.attendeesService.getAttendeeByWebinarAndEmail(
+        webinar._id.toString(),
+        registrant.email
+      );
+      console.log('webinarAttendee', webinarAttendee);
+
+      if (webinarAttendee) {
+        // Update existing attendee data
+        const updatedAttendee = await this.attendeesService.updateAttendee(
+          webinarAttendee._id.toString(),
+          webinar.adminId.toString(),
+          webinar.adminId.toString(),  
+          {
+            firstName: registrant.first_name,
+            lastName: registrant.last_name,
+            isAttended: false, // Registration means not yet attended
+            phone: registrant.phone,
+            source: 'zoom',
+          }
+        );
+        
+        this.logger.log(`Updated existing attendee: ${registrant.email} for webinar: ${webinar.webinarName}`);
+        return { 
+          message: 'Attendee updated successfully', 
+          webinar: webinar.webinarName,
+          attendee: updatedAttendee,
+          action: 'updated'
+        };
+      }
+
+      // Create new attendee
+      const newAttendeeData = {
+        email: registrant.email,
+        firstName: registrant.first_name,
+        lastName: registrant.last_name,
+        phone: registrant.phone,
+        webinar: webinar._id as Types.ObjectId,
+        adminId: webinar.adminId,
+        isAttended: false, // Registration means not yet attended
+        timeInSession: 0,
+        source: 'zoom'
+      };
+
+      const newAttendee = await this.attendeesService.addAttendees([newAttendeeData]);
+
+      this.logger.log(`Created new attendee: ${registrant.email} for webinar: ${webinar.webinarName}`);
+      return { 
+        message: 'Attendee created successfully', 
+        webinar: webinar.webinarName,
+        attendee: newAttendee[0],
+        action: 'created'
+      };
+    } catch (error) {
+      this.logger.error(`Error handling meeting registration for meetingId: ${meetingId}`, error);
+      throw new BadRequestException(`Failed to handle meeting registration: ${error.message}`);
+    }
+  }
+
+  async getWebinarRegistrations(webinarId: Types.ObjectId, adminId: Types.ObjectId) {
+    return this.attendeesService.getAttendees(webinarId.toString(), adminId.toString(), false, 0,0,{filters: {}}, false);
+  }
 }

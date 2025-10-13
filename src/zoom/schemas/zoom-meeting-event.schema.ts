@@ -4,6 +4,8 @@ import { HydratedDocument, Types } from 'mongoose';
 export enum ZoomMeetingEventType {
   ParticipantJoined = 'participant_joined',
   ParticipantLeft = 'participant_left',
+  MeetingStarted = 'meeting_started',
+  MeetingEnded = 'meeting_ended',
 }
 
 @Schema({ timestamps: true })

@@ -46,6 +46,7 @@ export class NotesController {
     const attendee = await this.attendeeService.fetchAttendeeById(
       new Types.ObjectId(`${body.attendee}`),
     );
+    console.log(attendee , createdBy);
 
     if (
       !attendee ||
@@ -56,7 +57,7 @@ export class NotesController {
       ].includes(createdBy)
     ) {
       throw new UnauthorizedException(
-        'Only Admin or assigned attendee is allowed to update attendee data.',
+        'Only Admin or assigned Employee is allowed to update attendee data.',
       );
     }
 
