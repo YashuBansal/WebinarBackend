@@ -10,11 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Cache Node modules
       - name: Cache Node modules
         uses: actions/cache@v3
         with:
@@ -23,24 +21,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # Step 4: Build NestJS
       - name: Build NestJS app
         run: npm run build
 
-      # Step 5: Upload files via FTP
-      - name: Upload files to cPanel via FTP
+      - name: Upload files via FTP
         uses: appleboy/ftp-action@master
         with:
-          host: ${{ secrets.CPANEL_HOST }}       # e.g., cpanel.rittikbansal.com
-          username: ${{ secrets.CPANEL_USER }}   # your cPanel FTP username
-          password: ${{ secrets.CPANEL_PASS }}   # your cPanel password
-          port: 21                               # FTP port, usually 21
-          protocol: ftp                          # or sftp if supported
-          local-dir: "dist"                      # built NestJS files
+          host: ${{ secrets.CPANEL_HOST }}       # cpanel.rittikbansal.com
+          username: ${{ secrets.CPANEL_USER }}   # your FTP username
+          password: ${{ secrets.CPANEL_PASS }}   # your FTP password
+          port: 21                               # FTP port
+          protocol: ftp                          # use ftp or ftps if supported
+          local-dir: "dist"                      # folder to upload
           remote-dir: "/www/wwwroot/saasCrm_backend-test"
-          delete: true                           # optional: delete remote files before upload
-          passive: true                          # enables passive FTP mode
+          delete: true                           # optional: remove old files first
+          passive: true                          # usually needed for external FTP
