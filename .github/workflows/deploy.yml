@@ -38,7 +38,8 @@ jobs:
           host: cpanel.rittikbansal.com        # plain hostname
           username: ${{ secrets.CPANEL_USER }}
           password: ${{ secrets.CPANEL_PASS }}
-          port: 22                           # hardcoded SSH port
+          port: 22
+          sftp: true                           # hardcoded SSH port
           source: "dist/**,package.json,package-lock.json"
           target: "/www/wwwroot/saasCrm_backend-test"
 
@@ -50,6 +51,7 @@ jobs:
           username: ${{ secrets.CPANEL_USER }}
           password: ${{ secrets.CPANEL_PASS }}
           port: 22
+          sftp: true
           script: |
             cd /www/wwwroot/saasCrm_backend-test
             npm install --omit=dev
