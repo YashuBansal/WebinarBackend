@@ -71,7 +71,7 @@ export class MeetingEventConfigController {
       throw new NotAcceptableException('Invalid Admin ID');
     }
 
-    const config = await this.meetingEventConfigService.updateMeetingEventConfig(meetingId, updateDto, new Types.ObjectId(`${adminId}`));
+    const config = await this.meetingEventConfigService.updateMeetingEventConfig(meetingId, updateDto);
 
     return {
       statusCode: 200,

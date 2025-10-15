@@ -8,6 +8,14 @@ import { Attendee } from '../Attendee.schema';
 
 export type WabaMessageDocument = WabaMessage & Document;
 
+export enum WabaMessageType {
+  CAMPAIGN = 'campaign',
+  INDIVIDUAL = 'individual',
+  TEMPLATE = 'template',
+  AUTO_MESSAGE = 'auto-message',
+  ZOOM_EVENT = 'zoom-event',
+}
+
 // Status History sub-schema
 @Schema({ _id: false })
 export class StatusHistory {
@@ -59,13 +67,18 @@ export class WabaMessage extends Document {
   })
   contactId?: Types.ObjectId;
 
-
   @Prop({
     type: Types.ObjectId,
     ref: Attendee.name,
     required: false,
   })
   attendeeId?: Types.ObjectId;
+
+  @Prop({
+    type: String,
+    required: false,
+  })
+  meetingId?: string;
 
   @Prop({
     type: String,
@@ -92,10 +105,10 @@ export class WabaMessage extends Document {
 
   @Prop({
     type: String,
-    enum: ['campaign', 'individual', 'template', 'auto-message'],
-    default: 'individual',
+    enum: Object.values(WabaMessageType),
+    default: WabaMessageType.INDIVIDUAL,
   })
-  messageType: string;
+  messageType: WabaMessageType;
 
   @Prop({
     type: String,

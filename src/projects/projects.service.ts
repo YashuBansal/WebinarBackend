@@ -15,7 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { FetchWabaDetailsDto } from './dto/waba.dto';
 import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
-import { WabaMessage } from 'src/schemas/whatsapp-embed/waba-message.schema';
+import { WabaMessage, WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
 import { UsersService } from 'src/users/users.service';
 
 @Injectable()
@@ -29,15 +29,19 @@ export class ProjectsService {
     private readonly wabaMessageService: WabaMessageService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
-  ) { }
-
+  ) {}
 
   async fetchWabaMessages(
-    data: { projectId: Types.ObjectId; adminId: Types.ObjectId; campaignId?: Types.ObjectId },
+    data: {
+      projectId?: Types.ObjectId;
+      adminId: Types.ObjectId;
+      campaignId?: Types.ObjectId;
+      messageType?: WabaMessageType;
+      meetingId?: string;
+    },
     paginationOptions: { page: number; limit: number },
-    dateFilter?: { start?: Date; end?: Date }
+    dateFilter?: { start?: Date; end?: Date },
   ) {
-    console.log(dateFilter);
     if (dateFilter) {
       // Non-paginated when date filter is present: fetch all within range
       const query: any = { ...data };
@@ -66,15 +70,19 @@ export class ProjectsService {
     createProjectDto: CreateProjectDto,
     adminId: Types.ObjectId,
   ): Promise<Project> {
-    const userSubscription: any = await this.usersService.getUserSubscription(adminId.toString());
+    const userSubscription: any = await this.usersService.getUserSubscription(
+      adminId.toString(),
+    );
     if (!userSubscription) {
       throw new NotAcceptableException('User not found');
     }
 
-    const projectCount = await this.projectModel.countDocuments({ adminId,  });
-    
+    const projectCount = await this.projectModel.countDocuments({ adminId });
+
     if (userSubscription.plan.whatsappProjectLimit <= projectCount) {
-      throw new NotAcceptableException('You have reached the limit of WhatsApp projects');
+      throw new NotAcceptableException(
+        'You have reached the limit of WhatsApp projects',
+      );
     }
     const { projectName } = createProjectDto;
 
@@ -149,7 +157,9 @@ export class ProjectsService {
     return project;
   }
 
-  async findWhatsAppProjectsByUserId(adminId: Types.ObjectId): Promise<Project[]> {
+  async findWhatsAppProjectsByUserId(
+    adminId: Types.ObjectId,
+  ): Promise<Project[]> {
     return this.projectModel.find({ adminId }).exec();
   }
 

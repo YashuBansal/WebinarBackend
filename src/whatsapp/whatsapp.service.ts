@@ -20,6 +20,9 @@ import { ProjectsService } from 'src/projects/projects.service';
 import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
 import * as fs from 'fs';
 import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import { ValidationUtil } from 'src/common/utils/validation.util';
+import { MonitoringUtil } from 'src/common/utils/monitoring.util';
 import {
   CreateTemplateDto,
   UpdateTemplateDto,
@@ -37,7 +40,7 @@ import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { ContactsService } from 'src/contacts/contacts.service';
 import { FileStorageService } from 'src/file-storage/file-storage.service';
 import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-template.schema';
-import { v4 as uuidv4 } from 'uuid';
+import { WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
 
 @Injectable()
 export class WhatsappService {
@@ -127,8 +130,6 @@ export class WhatsappService {
     console.log(JSON.stringify(payload, null, 2));
     this.logger.log('Processing webhook payload for WhatsApp messages');
 
-
-
     try {
       // Process status updates
       if (payload.entry?.[0]?.changes?.[0]?.value?.statuses) {
@@ -141,8 +142,11 @@ export class WhatsappService {
             status.status,
             status.timestamp,
             status.errors?.[0]?.message,
-          ).catch(error => {
-            this.logger.error(`Failed to process status update for ${status.id}:`, error);
+          ).catch((error) => {
+            this.logger.error(
+              `Failed to process status update for ${status.id}:`,
+              error,
+            );
           });
         }
       }
@@ -156,9 +160,6 @@ export class WhatsappService {
     } catch (error) {
       this.logger.error('Error processing webhook payload', error);
     }
-
-
-
   }
 
   /**
@@ -506,7 +507,10 @@ export class WhatsappService {
         `Successfully fetched ${response.data.data?.length || 0} templates for WABA ${wabaId}`,
       );
 
-      if (!Array.isArray(response.data.data) || response.data.data.length === 0) {
+      if (
+        !Array.isArray(response.data.data) ||
+        response.data.data.length === 0
+      ) {
         throw new NotFoundException('No templates found for WABA ${wabaId}');
       }
 
@@ -546,8 +550,11 @@ export class WhatsappService {
     createTemplateDto: CreateTemplateDto,
   ): Promise<TemplateResponseDto> {
     const account = await this.projectService.findOne(adminId, projectId);
-    console.log('account info', account, JSON.stringify(createTemplateDto
-      , null, 2));
+    console.log(
+      'account info',
+      account,
+      JSON.stringify(createTemplateDto, null, 2),
+    );
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this project.',
@@ -641,7 +648,9 @@ export class WhatsappService {
           }
 
           processedComponent.example = {
-            header_handle: processedHandles.map((handle) => String(handle).trim()),
+            header_handle: processedHandles.map((handle) =>
+              String(handle).trim(),
+            ),
           };
         }
 
@@ -871,14 +880,16 @@ export class WhatsappService {
 
       if (isDynamic && variable.startsWith('$')) {
         // This is a dynamic variable, fetch contact data
-        const contact = await this.contactsService.findById(new Types.ObjectId(contactId));
+        const contact = await this.contactsService.findById(
+          new Types.ObjectId(contactId),
+        );
 
         // Map dynamic variable to contact field
         const fieldMap: { [key: string]: string } = {
-          '$firstName': contact.firstName,
-          '$lastName': contact.lastName || '',
-          '$email': contact.email,
-          '$phone': contact.phone,
+          $firstName: contact.firstName,
+          $lastName: contact.lastName || '',
+          $email: contact.email,
+          $phone: contact.phone,
         };
 
         resolvedVariables.push(fieldMap[variable] || variable);
@@ -895,24 +906,35 @@ export class WhatsappService {
    * Unified method to send a single template message with support for dynamic variables
    */
   async sendSingleTemplateMessage(payload: {
-    adminId: Types.ObjectId,
-    projectId: string,
-    recipientPhoneNumber: string,
-    templateName: string,
-    bodyVariables?: string[],
-    headerMediaAssetId?: string,
-    language?: string,
-    contactId?: string,
-    messageType: 'individual' | 'campaign' | 'auto-message',
-    campaignId?: string,
-    attendeeId?: Types.ObjectId,
-  }
-
-  ): Promise<any> {
+    adminId: Types.ObjectId;
+    projectId: string;
+    recipientPhoneNumber: string;
+    templateName: string;
+    bodyVariables?: string[];
+    headerMediaAssetId?: string;
+    language?: string;
+    contactId?: string;
+    messageType: WabaMessageType;
+    campaignId?: string;
+    attendeeId?: Types.ObjectId;
+    meetingId?: string;
+  }): Promise<any> {
     console.log('payload', payload);
 
-
-    const { adminId, projectId, recipientPhoneNumber, templateName, bodyVariables, headerMediaAssetId, language, contactId, attendeeId, messageType = 'individual', campaignId } = payload;
+    const {
+      adminId,
+      projectId,
+      meetingId,
+      recipientPhoneNumber,
+      templateName,
+      bodyVariables,
+      headerMediaAssetId,
+      language,
+      contactId,
+      attendeeId,
+      messageType = 'individual',
+      campaignId,
+    } = payload;
     this.logger.log(
       `Attempting to send template '${templateName}' from WABA ${projectId} to ${recipientPhoneNumber}`,
     );
@@ -963,7 +985,8 @@ export class WhatsappService {
 
     // Add header component if media asset is provided
     if (headerMediaAssetId) {
-      const mediaAsset = await this.mediaAssetModel.findById(headerMediaAssetId);
+      const mediaAsset =
+        await this.mediaAssetModel.findById(headerMediaAssetId);
       this.logger.log('mediaAsset', mediaAsset);
       if (!mediaAsset) {
         throw new NotFoundException('Media asset not found');
@@ -976,7 +999,9 @@ export class WhatsappService {
         { name: templateName },
       );
 
-      const ourTemplate = templates.find((template: any) => template.name === templateName);
+      const ourTemplate = templates.find(
+        (template: any) => template.name === templateName,
+      );
 
       if (!ourTemplate) {
         throw new NotFoundException(`Template '${templateName}' not found`);
@@ -1044,7 +1069,6 @@ export class WhatsappService {
     };
 
     try {
-
       this.logger.log('Sending template message to Meta', metaPayload);
       const response = await firstValueFrom(
         this.httpService.post(url, metaPayload, {
@@ -1071,6 +1095,7 @@ export class WhatsappService {
             templateName: templateName,
             campaignId,
             attendeeId: attendeeId?.toString(),
+            meetingId,
           });
         } catch (error) {
           this.logger.error('Failed to create WABA message record:', error);
@@ -1086,7 +1111,7 @@ export class WhatsappService {
       );
       throw new InternalServerErrorException(
         error.response?.data?.error?.message ||
-        'Could not send template message.',
+          'Could not send template message.',
       );
     }
   }
@@ -1094,9 +1119,8 @@ export class WhatsappService {
   async sendTemplateMessage(
     adminId: Types.ObjectId,
     sendTemplateDto: SendTemplateMessageDto,
-    messageType: 'individual' | 'campaign' = 'individual',
+    messageType: WabaMessageType = WabaMessageType.INDIVIDUAL,
     campaignId?: string,
-
   ): Promise<any> {
     const {
       projectId,
@@ -1108,21 +1132,18 @@ export class WhatsappService {
       contactId,
     } = sendTemplateDto;
 
-    return this.sendSingleTemplateMessage(
-      {
-        adminId,
-        projectId,
-        recipientPhoneNumber,
-        templateName,
-        bodyVariables,
-        headerMediaAssetId,
-        language,
-        contactId,
-        messageType,
-        campaignId,
-      }
-    );
-
+    return this.sendSingleTemplateMessage({
+      adminId,
+      projectId,
+      recipientPhoneNumber,
+      templateName,
+      bodyVariables,
+      headerMediaAssetId,
+      language,
+      contactId,
+      messageType,
+      campaignId,
+    });
   }
 
   async sendBulkTemplateMessage(
@@ -1153,22 +1174,18 @@ export class WhatsappService {
     // Send messages to each contact using the unified helper
     for (const contact of contacts) {
       try {
-        const response = await this.sendSingleTemplateMessage(
-
-          {
-            adminId,
-            projectId,
-            recipientPhoneNumber: contact.phoneNumber,
-            templateName,
-            bodyVariables,
-            headerMediaAssetId,
-            language,
-            contactId: contact.contactId,
-            messageType: 'individual',
-            campaignId: undefined,
-          }
-
-        );
+        const response = await this.sendSingleTemplateMessage({
+          adminId,
+          projectId,
+          recipientPhoneNumber: contact.phoneNumber,
+          templateName,
+          bodyVariables,
+          headerMediaAssetId,
+          language,
+          contactId: contact.contactId,
+          messageType: WabaMessageType.INDIVIDUAL,
+          campaignId: undefined,
+        });
 
         results.sent++;
         results.messageIds.push(response.messages[0].id);
@@ -1473,7 +1490,9 @@ export class WhatsappService {
     projectId: Types.ObjectId,
   ): Promise<string> {
     try {
-      this.logger.log(`Uploading sample file to Meta using WhatsApp Media API: ${originalName}`);
+      this.logger.log(
+        `Uploading sample file to Meta using WhatsApp Media API: ${originalName}`,
+      );
 
       const project = await this.projectService.findOne(adminId, projectId);
       console.log('project info', project);
@@ -1485,7 +1504,9 @@ export class WhatsappService {
       const appId = project.appId;
 
       if (!phoneNumberId) {
-        throw new InternalServerErrorException('WABA Phone Number ID is not configured.');
+        throw new InternalServerErrorException(
+          'WABA Phone Number ID is not configured.',
+        );
       }
 
       // Step 1: Start an upload session
@@ -1525,8 +1546,8 @@ export class WhatsappService {
       const uploadResponse = await firstValueFrom(
         this.httpService.post(uploadUrl, fileBuffer, {
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'file_offset': '0',
+            Authorization: `Bearer ${accessToken}`,
+            file_offset: '0',
             'Content-Type': mimeType,
           },
         }),
@@ -1544,7 +1565,6 @@ export class WhatsappService {
       this.logger.log(`File uploaded successfully, handle: ${fileHandle}`);
 
       return fileHandle;
-
     } catch (error) {
       // Log the detailed error from Meta's API
       this.logger.error(
@@ -1576,17 +1596,32 @@ export class WhatsappService {
         image: {
           filename: 'generic-image.png',
           mimeType: 'image/png',
-          path: path.join(process.cwd(), 'public', 'generic', 'generic-image.png'),
+          path: path.join(
+            process.cwd(),
+            'public',
+            'generic',
+            'generic-image.png',
+          ),
         },
         video: {
           filename: 'generic-video.mp4',
           mimeType: 'video/mp4',
-          path: path.join(process.cwd(), 'public', 'generic', 'generic-video.mp4'),
+          path: path.join(
+            process.cwd(),
+            'public',
+            'generic',
+            'generic-video.mp4',
+          ),
         },
         document: {
           filename: 'generic-doc.pdf',
           mimeType: 'application/pdf',
-          path: path.join(process.cwd(), 'public', 'generic', 'generic-doc.pdf'),
+          path: path.join(
+            process.cwd(),
+            'public',
+            'generic',
+            'generic-doc.pdf',
+          ),
         },
       };
 
@@ -1619,7 +1654,6 @@ export class WhatsappService {
         `Generic ${mediaType} uploaded to Meta with handle: ${metaHandle}`,
       );
       return metaHandle;
-
     } catch (error) {
       this.logger.error(
         `Failed to get generic ${mediaType} Meta handle: ${error.message}`,
@@ -1651,7 +1685,10 @@ export class WhatsappService {
       const subfolder = userId.toString();
 
       // Save the file using the new service
-      const { publicUrl } = await this.fileStorageService.saveFile(file, subfolder);
+      const { publicUrl } = await this.fileStorageService.saveFile(
+        file,
+        subfolder,
+      );
 
       if (!publicUrl) {
         throw new Error('Failed to save file to server');
@@ -1669,14 +1706,17 @@ export class WhatsappService {
 
       const savedMediaAsset = await mediaAsset.save();
 
-      this.logger.log(
-        `Media asset saved successfully: ${savedMediaAsset._id}`,
-      );
+      this.logger.log(`Media asset saved successfully: ${savedMediaAsset._id}`);
       return savedMediaAsset;
     } catch (error) {
-      this.logger.error(`Failed to upload media asset: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to upload media asset: ${error.message}`,
+        error.stack,
+      );
       // Avoid leaking implementation details in the error message
-      throw new InternalServerErrorException('A server error occurred while uploading the media asset.');
+      throw new InternalServerErrorException(
+        'A server error occurred while uploading the media asset.',
+      );
     }
   }
 
@@ -1694,7 +1734,12 @@ export class WhatsappService {
     page: number = 1,
     limit: number = 20,
     type?: 'image' | 'video' | 'document',
-  ): Promise<{ data: MediaAssetDocument[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    data: MediaAssetDocument[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     try {
       this.logger.log(
         `Fetching media assets for user ${userId}, project ${projectId}, page ${page}, limit ${limit}`,
@@ -1721,7 +1766,9 @@ export class WhatsappService {
         this.mediaAssetModel.countDocuments(baseQuery).exec(),
       ]);
 
-      this.logger.log(`Found ${data.length} media assets out of ${total} total`);
+      this.logger.log(
+        `Found ${data.length} media assets out of ${total} total`,
+      );
 
       return {
         data,
@@ -1730,8 +1777,13 @@ export class WhatsappService {
         limit,
       };
     } catch (error) {
-      this.logger.error(`Failed to get media assets: ${error.message}`, error.stack);
-      throw new InternalServerErrorException('A server error occurred while fetching media assets.');
+      this.logger.error(
+        `Failed to get media assets: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        'A server error occurred while fetching media assets.',
+      );
     }
   }
 
@@ -1753,11 +1805,13 @@ export class WhatsappService {
       );
 
       // Find the media asset first to get file path
-      const mediaAsset = await this.mediaAssetModel.findOne({
-        _id: mediaAssetId,
-        userId,
-        projectId,
-      }).exec();
+      const mediaAsset = await this.mediaAssetModel
+        .findOne({
+          _id: mediaAssetId,
+          userId,
+          projectId,
+        })
+        .exec();
 
       if (!mediaAsset) {
         throw new NotFoundException('Media asset not found');
@@ -1775,16 +1829,20 @@ export class WhatsappService {
           this.logger.log(`File deleted from server: ${filePath}`);
         }
       } catch (fileError) {
-        this.logger.warn(`Failed to delete file from server: ${fileError.message}`);
+        this.logger.warn(
+          `Failed to delete file from server: ${fileError.message}`,
+        );
         // Continue with database deletion even if file deletion fails
       }
 
       // Delete from database
-      const deletedMediaAsset = await this.mediaAssetModel.findOneAndDelete({
-        _id: mediaAssetId,
-        userId,
-        projectId,
-      }).exec();
+      const deletedMediaAsset = await this.mediaAssetModel
+        .findOneAndDelete({
+          _id: mediaAssetId,
+          userId,
+          projectId,
+        })
+        .exec();
 
       if (!deletedMediaAsset) {
         throw new NotFoundException('Media asset not found');
@@ -1793,87 +1851,231 @@ export class WhatsappService {
       this.logger.log(`Media asset deleted successfully: ${mediaAssetId}`);
       return deletedMediaAsset;
     } catch (error) {
-      this.logger.error(`Failed to delete media asset: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to delete media asset: ${error.message}`,
+        error.stack,
+      );
       if (error instanceof NotFoundException) {
         throw error;
       }
-      throw new InternalServerErrorException('A server error occurred while deleting the media asset.');
+      throw new InternalServerErrorException(
+        'A server error occurred while deleting the media asset.',
+      );
     }
   }
 
+  async sendTemplateMessages(data: {
+    fetchedContacts: any[];
+    template: ConfiguredTemplate;
+    meetingId: string;
+  }) {
+    const { fetchedContacts, template, meetingId } = data;
 
-  async sendTemplateMessages(data:{
-    fetchedContacts: any[],
-    template: ConfiguredTemplate
-  }){
-    const { fetchedContacts, template } = data;
-    for (const contact of fetchedContacts) {
-      try {
-        const { variableMappings} = template;
-        // Process variables with fallback values for this specific contact
-        const processedBodyVariables = variableMappings.map((variable, index) => {
-          const isDynamic = variable.isDynamic;
-          const fallbackValue = variable.fallbackValue;
+    // Input validation
+    if (!fetchedContacts || !Array.isArray(fetchedContacts)) {
+      throw new BadRequestException('fetchedContacts must be a valid array');
+    }
 
-          if (isDynamic) {
-            // Extract field name from variable (e.g., "$firstName" -> "firstName")
-            const fieldName = variable.dynamicField.replace('$', '');
-            const contactValue = contact[fieldName];
-            console.log('contactValue', contactValue, fieldName, contact);
+    if (!template) {
+      throw new BadRequestException('Template is required');
+    }
 
-            // Use contact value if available and not empty, otherwise use fallback
-            if (contactValue && contactValue.trim() !== '') {
-              return contactValue;
-            } else {
-              return fallbackValue || variable.dynamicField;
-            }
-          } else {
-            // Static variable, use as-is
-            return variable.staticValue;
+    if (!template.templateName) {
+      throw new BadRequestException('Template name is required');
+    }
+
+    if (!template.adminId) {
+      throw new BadRequestException('Template adminId is required');
+    }
+
+    if (!template.project) {
+      throw new BadRequestException('Template project is required');
+    }
+
+    this.logger.log(
+      `Starting to send template messages to ${fetchedContacts.length} contacts using template: ${template.templateName}`,
+    );
+
+    const timer = MonitoringUtil.createTimer();
+    const results = {
+      total: fetchedContacts.length,
+      successful: 0,
+      failed: 0,
+      errors: [] as Array<{ contactId: string; phone: string; error: string }>,
+    };
+
+    try {
+      for (const contact of fetchedContacts) {
+        try {
+          // Validate contact data
+          if (!contact) {
+            this.logger.warn('Skipping null/undefined contact');
+            results.failed++;
+            continue;
           }
-        });
 
-        const messageResult = await this.sendSingleTemplateMessage(
-         {
-          adminId: template.adminId,
-          projectId: template.project.toString(),
-          recipientPhoneNumber: contact.phone,
-          templateName: template.templateName,
-          bodyVariables: processedBodyVariables,
-          headerMediaAssetId : template.headerMediaAssetId?.toString(),
-          language: 'en_US',
-          contactId: contact._id.toString(),
-          messageType: 'individual',
-         }
-        );
+          if (!contact.phone) {
+            this.logger.warn(
+              `Skipping contact without phone number: ${contact._id || 'unknown'}`,
+            );
+            results.failed++;
+            results.errors.push({
+              contactId: contact._id?.toString() || 'unknown',
+              phone: 'N/A',
+              error: 'Missing phone number',
+            });
+            continue;
+          }
 
-        this.logger.log(
-          `Message sent successfully to ${contact.phone}. Message ID: ${messageResult.messages[0].id}`,
-        );
+          // Validate phone number format
+          let validatedPhone: string;
+          try {
+            validatedPhone = ValidationUtil.validatePhoneNumber(contact.phone);
+          } catch (validationError) {
+            this.logger.warn(
+              `Invalid phone number for contact ${contact._id}: ${contact.phone}`,
+            );
+            results.failed++;
+            results.errors.push({
+              contactId: contact._id?.toString() || 'unknown',
+              phone: contact.phone,
+              error: 'Invalid phone number format',
+            });
+            continue;
+          }
 
-        // Add a delay between messages to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      } catch (error) {
-        
-        const wabaMessageId = uuidv4();
-        await this.wabaMessageService.create({
-          projectId: template.project.toString(),
-          adminId: template.adminId.toString(),
-          phoneNumber: contact.phone,
-          contactId: contact._id.toString(),
-          wabaMessageId: wabaMessageId, 
-          messageType: 'individual',
-          templateName: template.templateName,
-          failureReason: error.response?.data?.error || error.message,
-          status: 'failed',
-        });
+          const { variableMappings = [] } = template;
 
+          // Process variables with enhanced validation and sanitization
+          const processedBodyVariables = variableMappings.map(
+            (variable, index) => {
+              try {
+                const isDynamic = variable.isDynamic;
+                const fallbackValue = variable.fallbackValue;
 
-        this.logger.error(
-          `Failed to send message to ${contact.phone} (Contact ID: ${contact._id.toString()})`,
-          error.response?.data?.error,
-        );
+                if (isDynamic) {
+                  // Extract field name from variable (e.g., "$firstName" -> "firstName")
+                  const fieldName = variable.dynamicField?.replace('$', '');
+                  if (!fieldName) {
+                    this.logger.warn(
+                      `Invalid dynamic field for variable ${index}: ${variable.dynamicField}`,
+                    );
+                    return fallbackValue || '[Invalid Field]';
+                  }
+
+                  const contactValue = contact[fieldName];
+                  this.logger.debug(
+                    `Processing dynamic variable ${fieldName} for contact ${contact._id}: ${contactValue}`,
+                  );
+
+                  // Use contact value if available and not empty, otherwise use fallback
+                  if (contactValue && contactValue.toString().trim() !== '') {
+                    return ValidationUtil.sanitizeText(contactValue.toString());
+                  } else {
+                    return ValidationUtil.sanitizeText(
+                      fallbackValue ||
+                        variable.dynamicField ||
+                        '[Missing Value]',
+                    );
+                  }
+                } else {
+                  // Static variable, sanitize the value
+                  return ValidationUtil.sanitizeText(
+                    variable.staticValue || '[Missing Value]',
+                  );
+                }
+              } catch (variableError) {
+                this.logger.warn(
+                  `Error processing variable ${index}: ${variableError.message}`,
+                );
+                return '[Processing Error]';
+              }
+            },
+          );
+
+          const messageResult = await this.sendSingleTemplateMessage({
+            adminId: template.adminId,
+            projectId: template.project.toString(),
+            recipientPhoneNumber: validatedPhone,
+            templateName: template.templateName,
+            bodyVariables: processedBodyVariables,
+            headerMediaAssetId: template.headerMediaAssetId?.toString(),
+            language: 'en_US',
+            contactId: contact._id?.toString(),
+            messageType: WabaMessageType.ZOOM_EVENT,
+            meetingId,
+          });
+
+          this.logger.log(
+            `Message sent successfully to ${validatedPhone}. Message ID: ${messageResult.messages?.[0]?.id || 'unknown'}`,
+          );
+
+          results.successful++;
+
+          // Add a delay between messages to avoid rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        } catch (error) {
+          results.failed++;
+
+          const errorMessage =
+            error.response?.data?.error?.message ||
+            error.response?.data?.error ||
+            error.message ||
+            'Unknown error';
+
+          results.errors.push({
+            contactId: contact._id?.toString() || 'unknown',
+            phone: contact.phone || 'N/A',
+            error: errorMessage,
+          });
+
+          // Create failed message record
+          try {
+            const wabaMessageId = uuidv4();
+            await this.wabaMessageService.create({
+              projectId: template.project.toString(),
+              adminId: template.adminId.toString(),
+              phoneNumber: contact.phone || 'N/A',
+              contactId: contact._id?.toString() || 'unknown',
+              wabaMessageId: wabaMessageId,
+              messageType: 'individual',
+              templateName: template.templateName,
+              failureReason: errorMessage,
+              status: 'failed',
+            });
+          } catch (dbError) {
+            this.logger.error('Failed to create WABA message record:', dbError);
+          }
+
+          this.logger.error(
+            `Failed to send message to ${contact.phone || 'N/A'} (Contact ID: ${contact._id?.toString() || 'unknown'})`,
+            errorMessage,
+          );
+        }
       }
+
+      this.logger.log(
+        `Template message sending completed. Results: ${results.successful}/${results.total} successful, ${results.failed} failed`,
+      );
+
+      // Log metrics
+      MonitoringUtil.logMessageEventMetrics({
+        eventType: 'template_message_batch',
+        templateName: template.templateName,
+        totalContacts: results.total,
+        successfulMessages: results.successful,
+        failedMessages: results.failed,
+        processingTimeMs: timer(),
+        timestamp: new Date(),
+        errors: results.errors,
+      });
+
+      return results;
+    } catch (error) {
+      this.logger.error('Critical error in sendTemplateMessages:', error);
+      throw new InternalServerErrorException(
+        'Failed to process template messages',
+      );
     }
   }
 }

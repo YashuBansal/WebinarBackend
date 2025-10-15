@@ -4,6 +4,7 @@ import mongoose, { Model, Types } from 'mongoose';
 import {
   WabaMessage,
   WabaMessageDocument,
+  WabaMessageType,
 } from '../../schemas/whatsapp-embed/waba-message.schema';
 
 @Injectable()
@@ -11,7 +12,7 @@ export class WabaMessageService {
   constructor(
     @InjectModel(WabaMessage.name)
     private wabaMessageModel: Model<WabaMessageDocument>,
-  ) { }
+  ) {}
 
   async create(wabaMessageData: {
     projectId: string;
@@ -25,41 +26,53 @@ export class WabaMessageService {
     templateName: string;
     failureReason?: string;
     status?: string;
+    meetingId?: string;
   }): Promise<WabaMessage> {
     const wabaMessage = new this.wabaMessageModel({
       ...wabaMessageData,
       projectId: new Types.ObjectId(wabaMessageData.projectId),
       adminId: new Types.ObjectId(wabaMessageData.adminId),
-      campaignId: mongoose.isValidObjectId(wabaMessageData.campaignId) ? new Types.ObjectId(wabaMessageData.campaignId) : undefined,
-      contactId: mongoose.isValidObjectId(wabaMessageData.contactId) ? new Types.ObjectId(wabaMessageData.contactId) : undefined,
-      attendeeId: mongoose.isValidObjectId(wabaMessageData.attendeeId) ? new Types.ObjectId(wabaMessageData.attendeeId) : undefined,
+      campaignId: mongoose.isValidObjectId(wabaMessageData.campaignId)
+        ? new Types.ObjectId(wabaMessageData.campaignId)
+        : undefined,
+      contactId: mongoose.isValidObjectId(wabaMessageData.contactId)
+        ? new Types.ObjectId(wabaMessageData.contactId)
+        : undefined,
+      attendeeId: mongoose.isValidObjectId(wabaMessageData.attendeeId)
+        ? new Types.ObjectId(wabaMessageData.attendeeId)
+        : undefined,
       messageType: wabaMessageData.messageType || 'individual',
+      meetingId: wabaMessageData.meetingId || undefined,
     });
 
     return wabaMessage.save();
   }
 
-
-  async findPaginatedAll(query:
-    {
-      projectId?: Types.ObjectId,
-      adminId?: Types.ObjectId,
-      campaignId?: Types.ObjectId,
-      contactId?: Types.ObjectId,
-      messageType?: string,
-      templateName?: string,
+  async findPaginatedAll(
+    query: {
+      projectId?: Types.ObjectId;
+      adminId?: Types.ObjectId;
+      campaignId?: Types.ObjectId;
+      contactId?: Types.ObjectId;
+      messageType?: WabaMessageType;
+      templateName?: string;
+      meetingId?: string;
     },
     paginationOptions: {
-      page: number,
-      limit: number,
-    }
+      page: number;
+      limit: number;
+    },
   ) {
-
     const { page, limit } = paginationOptions;
     const skip = (page - 1) * limit;
     console.log(skip, limit);
     const count = await this.wabaMessageModel.countDocuments(query);
-    const wabaMessages = await this.wabaMessageModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).exec();
+    const wabaMessages = await this.wabaMessageModel
+      .find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .exec();
     return {
       wabaMessages,
       total: count,
@@ -67,18 +80,12 @@ export class WabaMessageService {
       page,
       limit,
     };
-
-
   }
 
   async findAllRange(query: any) {
     console.log(query);
-    return this.wabaMessageModel
-      .find(query)
-      .sort({ createdAt: -1 })
-      .exec();
+    return this.wabaMessageModel.find(query).sort({ createdAt: -1 }).exec();
   }
-
 
   async findAll(
     projectId?: string,
@@ -111,10 +118,7 @@ export class WabaMessageService {
       filter.messageType = messageType;
     }
 
-    return this.wabaMessageModel
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .exec();
+    return this.wabaMessageModel.find(filter).sort({ createdAt: -1 }).exec();
   }
 
   async findOne(id: string): Promise<WabaMessage> {
@@ -136,7 +140,9 @@ export class WabaMessageService {
     return wabaMessage;
   }
 
-  async findByWabaMessageId(wabaMessageId: string): Promise<WabaMessage | null> {
+  async findByWabaMessageId(
+    wabaMessageId: string,
+  ): Promise<WabaMessage | null> {
     const wabaMessage = await this.wabaMessageModel
       .findOne({
         wabaMessageId,
@@ -197,61 +203,60 @@ export class WabaMessageService {
       .exec();
   }
 
+  async getMessageStats(campaignId: string): Promise<any> {
+    const result = await this.wabaMessageModel.aggregate([
+      {
+        $match: {
+          campaignId: new Types.ObjectId(campaignId),
+          isDeleted: false,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          pending: {
+            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
+          },
+          sent: {
+            $sum: { $cond: ['$sentAt', 1, 0] },
+          },
+          delivered: {
+            $sum: { $cond: ['$deliveredAt', 1, 0] },
+          },
+          read: {
+            $sum: { $cond: ['$readAt', 1, 0] },
+          },
+          clicked: {
+            $sum: { $cond: [{ $eq: ['$status', 'clicked'] }, 1, 0] },
+          },
+          failed: {
+            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+        },
+      },
+    ]);
 
-async getMessageStats(campaignId: string): Promise<any> {
-  const result = await this.wabaMessageModel.aggregate([
-    {
-      $match: {
-        campaignId: new Types.ObjectId(campaignId),
-        isDeleted: false,
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: 1 },
-        pending: {
-          $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
-        },
-        sent: {
-          $sum: { $cond: ['$sentAt', 1, 0] },
-        },
-        delivered: {
-          $sum: { $cond: ['$deliveredAt', 1, 0] },
-        },
-        read: {
-          $sum: { $cond: ['$readAt', 1, 0] },
-        },
-        clicked: {
-          $sum: { $cond: [{ $eq: ['$status', 'clicked'] }, 1, 0] },
-        },
-        failed: {
-          $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
-        },
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-      },
-    },
-  ]);
-
-  // Handle the case where no documents match the campaignId
-  if (result.length > 0) {
-    return result[0];
-  } else {
-    return {
-      total: 0,
-      pending: 0,
-      sent: 0,
-      delivered: 0,
-      read: 0,
-      clicked: 0,
-      failed: 0,
-    };
+    // Handle the case where no documents match the campaignId
+    if (result.length > 0) {
+      return result[0];
+    } else {
+      return {
+        total: 0,
+        pending: 0,
+        sent: 0,
+        delivered: 0,
+        read: 0,
+        clicked: 0,
+        failed: 0,
+      };
+    }
   }
-}
 
   async remove(id: string): Promise<void> {
     const result = await this.wabaMessageModel
@@ -269,30 +274,6 @@ async getMessageStats(campaignId: string): Promise<any> {
     }
   }
 
-  async bulkCreate(
-    messages: Array<{
-      campaignId?: string;
-      contactId: string;
-      wabaMessageId: string;
-      messageType?: string;
-      templateName: string;
-      phoneNumber: string;
-    }>,
-    projectId: string,
-    adminId: string,
-  ): Promise<WabaMessage[]> {
-    const formattedMessages = messages.map((msg) => ({
-      ...msg,
-      projectId: new Types.ObjectId(`${projectId}`),
-      adminId: new Types.ObjectId(`${adminId}`),
-      campaignId: msg.campaignId ? new Types.ObjectId(`${msg.campaignId}`) : undefined,
-      contactId: new Types.ObjectId(`${msg.contactId}`),
-      messageType: msg.messageType || 'individual',
-    }));
-
-    return this.wabaMessageModel.insertMany(formattedMessages);
-  }
-
   async getFailedMessages(campaignId?: string): Promise<WabaMessage[]> {
     const filter: any = {
       status: 'failed',
@@ -303,9 +284,6 @@ async getMessageStats(campaignId: string): Promise<any> {
       filter.campaignId = new Types.ObjectId(campaignId);
     }
 
-    return this.wabaMessageModel
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .exec();
+    return this.wabaMessageModel.find(filter).sort({ createdAt: -1 }).exec();
   }
 }

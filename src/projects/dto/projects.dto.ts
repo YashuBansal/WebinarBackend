@@ -7,7 +7,9 @@ import {
   IsOptional,
   Min,
   IsMongoId,
+  IsEnum,
 } from 'class-validator';
+import { WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
 
 export class CreateProjectDto {
   @IsString()
@@ -80,4 +82,12 @@ startDate?: string; // ISO date string
 @IsOptional()
 @IsString()
 endDate?: string; // ISO date string
+
+@IsOptional()
+@IsEnum(WabaMessageType)
+messageType?: WabaMessageType;
+
+@IsOptional()
+@IsString()
+meetingId?: string;
 }

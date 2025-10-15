@@ -3,6 +3,7 @@ import { HydratedDocument, Types } from 'mongoose';
 import { Project } from 'src/schemas/project.schema';
 import { User } from 'src/schemas/User.schema';
 import { Webinar } from 'src/schemas/Webinar.schema';
+import { ZoomProject } from 'src/zoom/schemas/zoom-project.schema';
 
 @Schema({ _id: false })
 export class MeetingEventConfig {
@@ -57,10 +58,18 @@ export class MeetingEventConfiguration {
 
   @Prop({
     type: Types.ObjectId,
-    ref: 'Project',
+    ref: Project.name,
     required: true,
   })
   whatsappProjectId: Types.ObjectId;
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: ZoomProject.name,
+    required: true,
+  })
+  zoomProjectId: Types.ObjectId;
+
 
   @Prop({
     type: MeetingEventConfig,

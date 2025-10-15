@@ -1,14 +1,26 @@
 import { HttpService } from '@nestjs/axios';
-import { forwardRef, Inject, Injectable, Logger, NotAcceptableException } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+  NotAcceptableException,
+  BadRequestException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
-import { ZoomProject, ZoomProjectDocument } from './schemas/zoom-project.schema';
+import {
+  ZoomProject,
+  ZoomProjectDocument,
+} from './schemas/zoom-project.schema';
 import { ZoomMeetingEventType } from './schemas/zoom-meeting-event.schema';
 import { ZoomWebhookEvent } from './enums/zoom-webhook-event.enum';
 import * as crypto from 'crypto';
 import { ZoomEventService } from './zoom-event/zoom-event.service';
+import { ValidationUtil } from 'src/common/utils/validation.util';
+import { MonitoringUtil } from 'src/common/utils/monitoring.util';
 import { WebinarService } from '../webinar/webinar.service';
 import { UsersService } from 'src/users/users.service';
 import { MeetingEventConfigService } from 'src/meeting-event-config/meeting-event-config.service';
@@ -20,7 +32,8 @@ export class ZoomService {
   private readonly logger = new Logger(ZoomService.name);
   constructor(
     private readonly http: HttpService,
-    @InjectModel(ZoomProject.name) private readonly zoomProjectModel: Model<ZoomProjectDocument>,
+    @InjectModel(ZoomProject.name)
+    private readonly zoomProjectModel: Model<ZoomProjectDocument>,
     private readonly zoomEventService: ZoomEventService,
     private readonly webinarService: WebinarService,
     private readonly config: ConfigService,
@@ -29,7 +42,7 @@ export class ZoomService {
     private readonly whatsappService: WhatsappService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
-  ) { }
+  ) {}
 
   // ====== Access Token Utilities ======
   private async refreshAccessTokenForProject(project: ZoomProjectDocument) {
@@ -39,7 +52,9 @@ export class ZoomService {
     if (project?.refreshToken) {
       const clientId = this.config.get<string>('ZOOM_CLIENT_ID');
       const clientSecret = this.config.get<string>('ZOOM_CLIENT_SECRET');
-      const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+      const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString(
+        'base64',
+      );
       const params = new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: project.refreshToken,
@@ -48,7 +63,7 @@ export class ZoomService {
       const { data } = await firstValueFrom(
         this.http.post(tokenEndpoint, params.toString(), {
           headers: {
-            'Authorization': `Basic ${authHeader}`,
+            Authorization: `Basic ${authHeader}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
         }),
@@ -56,7 +71,9 @@ export class ZoomService {
 
       project.accessToken = data.access_token;
       project.refreshToken = data.refresh_token ?? project.refreshToken;
-      project.accessTokenExpiresAt = new Date(Date.now() + (data.expires_in ?? 0) * 1000);
+      project.accessTokenExpiresAt = new Date(
+        Date.now() + (data.expires_in ?? 0) * 1000,
+      );
       await project.save();
       return project;
     }
@@ -64,7 +81,9 @@ export class ZoomService {
     // Path 2: Server-to-Server OAuth (account_credentials) does NOT return refresh_token.
     // Re-acquire an access token using stored clientId/clientSecret/accountId.
     if (project?.clientId && project?.clientSecret && project?.accountId) {
-      const authHeader = Buffer.from(`${project.clientId}:${project.clientSecret}`).toString('base64');
+      const authHeader = Buffer.from(
+        `${project.clientId}:${project.clientSecret}`,
+      ).toString('base64');
       const params = new URLSearchParams({
         grant_type: 'account_credentials',
         account_id: project.accountId,
@@ -73,7 +92,7 @@ export class ZoomService {
       const { data } = await firstValueFrom(
         this.http.post(tokenEndpoint, params.toString(), {
           headers: {
-            'Authorization': `Basic ${authHeader}`,
+            Authorization: `Basic ${authHeader}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
         }),
@@ -81,12 +100,16 @@ export class ZoomService {
 
       project.accessToken = data.access_token;
       // No refresh token expected here
-      project.accessTokenExpiresAt = new Date(Date.now() + (data.expires_in ?? 0) * 1000);
+      project.accessTokenExpiresAt = new Date(
+        Date.now() + (data.expires_in ?? 0) * 1000,
+      );
       await project.save();
       return project;
     }
 
-    throw new NotAcceptableException('No method available to refresh Zoom access token');
+    throw new NotAcceptableException(
+      'No method available to refresh Zoom access token',
+    );
   }
 
   private isAccessTokenExpired(project?: ZoomProjectDocument | null) {
@@ -103,7 +126,10 @@ export class ZoomService {
     return project;
   }
 
-  private async executeWithTokenRetry<T>(project: ZoomProjectDocument, fn: (token: string) => Promise<T>): Promise<T> {
+  private async executeWithTokenRetry<T>(
+    project: ZoomProjectDocument,
+    fn: (token: string) => Promise<T>,
+  ): Promise<T> {
     // Ensure not expired before first call
     const current = await this.ensureValidAccessToken(project);
     try {
@@ -115,7 +141,11 @@ export class ZoomService {
       // Zoom returns 401 with code 124 when token expired
       const isExpired401 = status === 401 && code === 124;
       // Zoom may return 400 invalid_grant/invalid_token for dead tokens
-      const isInvalidGrant = status === 400 && (err?.error === 'invalid_grant' || err?.error === 'invalid_token' || /invalid token/i.test(err?.reason || ''));
+      const isInvalidGrant =
+        status === 400 &&
+        (err?.error === 'invalid_grant' ||
+          err?.error === 'invalid_token' ||
+          /invalid token/i.test(err?.reason || ''));
       if (isExpired401 || isInvalidGrant) {
         await this.refreshAccessTokenForProject(project);
         return await fn(project.accessToken!);
@@ -139,7 +169,9 @@ export class ZoomService {
     const tokenEndpoint = 'https://zoom.us/oauth/token';
     console.log(clientId, clientSecret, tokenEndpoint);
 
-    const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString(
+      'base64',
+    );
     const params = new URLSearchParams({
       grant_type: 'authorization_code',
       code,
@@ -151,7 +183,7 @@ export class ZoomService {
       const response = await firstValueFrom(
         this.http.post(tokenEndpoint, params.toString(), {
           headers: {
-            'Authorization': `Basic ${authHeader}`,
+            Authorization: `Basic ${authHeader}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
         }),
@@ -160,10 +192,13 @@ export class ZoomService {
       console.log(data);
     } catch (error: any) {
       const status = error?.response?.status;
-      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
       // Log full error for diagnostics
       console.error('Zoom token exchange failed:', { status, payload });
-      throw new NotAcceptableException('Failed to exchange authorization code with Zoom');
+      throw new NotAcceptableException(
+        'Failed to exchange authorization code with Zoom',
+      );
     }
 
     const expiresAt = new Date(Date.now() + (data.expires_in ?? 0) * 1000);
@@ -174,14 +209,17 @@ export class ZoomService {
       const profileResponse = await firstValueFrom(
         this.http.get('https://api.zoom.us/v2/users/me', {
           headers: {
-            'Authorization': `Bearer ${data.access_token}`,
+            Authorization: `Bearer ${data.access_token}`,
           },
         }),
       );
       accountId = profileResponse.data.account_id;
       console.log('Retrieved account ID:', accountId);
     } catch (error: any) {
-      console.error('Failed to get user profile:', error?.response?.data || error?.message);
+      console.error(
+        'Failed to get user profile:',
+        error?.response?.data || error?.message,
+      );
       // If we can't get account_id, we'll still save the tokens but without accountId
       accountId = '';
     }
@@ -210,12 +248,15 @@ export class ZoomService {
 
   async refreshAccessToken(adminId: Types.ObjectId, accountId: string) {
     const doc = await this.zoomProjectModel.findOne({ adminId, accountId });
-    if (!doc?.refreshToken) throw new NotAcceptableException('No refresh token found');
+    if (!doc?.refreshToken)
+      throw new NotAcceptableException('No refresh token found');
 
     const clientId = this.config.get<string>('ZOOM_CLIENT_ID');
     const clientSecret = this.config.get<string>('ZOOM_CLIENT_SECRET');
     const tokenEndpoint = 'https://zoom.us/oauth/token';
-    const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString(
+      'base64',
+    );
     const params = new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: doc.refreshToken,
@@ -224,7 +265,7 @@ export class ZoomService {
     const { data } = await firstValueFrom(
       this.http.post(tokenEndpoint, params.toString(), {
         headers: {
-          'Authorization': `Basic ${authHeader}`,
+          Authorization: `Basic ${authHeader}`,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
       }),
@@ -232,14 +273,20 @@ export class ZoomService {
 
     doc.accessToken = data.access_token;
     doc.refreshToken = data.refresh_token ?? doc.refreshToken;
-    doc.accessTokenExpiresAt = new Date(Date.now() + (data.expires_in ?? 0) * 1000);
+    doc.accessTokenExpiresAt = new Date(
+      Date.now() + (data.expires_in ?? 0) * 1000,
+    );
     await doc.save();
-    return { accountId: doc.accountId, accessTokenExpiresAt: doc.accessTokenExpiresAt };
+    return {
+      accountId: doc.accountId,
+      accessTokenExpiresAt: doc.accessTokenExpiresAt,
+    };
   }
 
   async getZoomUserProfile(adminId: Types.ObjectId, accountId: string) {
     const doc = await this.zoomProjectModel.findOne({ adminId, accountId });
-    if (!doc?.accessToken) throw new NotAcceptableException('No access token found');
+    if (!doc?.accessToken)
+      throw new NotAcceptableException('No access token found');
     try {
       const data = await this.executeWithTokenRetry(doc, async (token) => {
         const resp = await firstValueFrom(
@@ -252,7 +299,8 @@ export class ZoomService {
       return data;
     } catch (error: any) {
       const status = error?.response?.status;
-      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom user profile failed:', { status, payload });
       throw new NotAcceptableException('Failed to fetch Zoom profile');
     }
@@ -264,8 +312,12 @@ export class ZoomService {
     type: 'scheduled' | 'upcoming' | 'live' | 'past' | 'pending' = 'upcoming',
     pageSize: number = 30,
   ) {
-    const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
-    if (!project?.accessToken) throw new NotAcceptableException('No access token found');
+    const project = await this.zoomProjectModel.findOne({
+      _id: projectId,
+      adminId,
+    });
+    if (!project?.accessToken)
+      throw new NotAcceptableException('No access token found');
 
     let data: any;
     try {
@@ -280,7 +332,8 @@ export class ZoomService {
       });
     } catch (error: any) {
       const status = error?.response?.status;
-      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom list meetings failed:', { status, payload });
       throw new NotAcceptableException('Failed to fetch meetings from Zoom');
     }
@@ -311,7 +364,9 @@ export class ZoomService {
 
     let realSecretToken: any;
 
-    const secretToken = await this.zoomProjectModel.findOne({ _id: projectId }).select('secretToken');
+    const secretToken = await this.zoomProjectModel
+      .findOne({ _id: projectId })
+      .select('secretToken');
     console.log('secretToken', secretToken, projectId, plainToken);
     if (secretToken && secretToken.secretToken) {
       realSecretToken = secretToken.secretToken;
@@ -323,15 +378,14 @@ export class ZoomService {
       throw new Error('Zoom webhook secret token is not configured.');
     }
 
-
-
-    const hash = crypto.createHmac('sha256', realSecretToken)
+    const hash = crypto
+      .createHmac('sha256', realSecretToken)
       .update(plainToken)
       .digest('hex');
 
     const response = {
       plainToken: plainToken,
-      encryptedToken: hash
+      encryptedToken: hash,
     };
 
     console.log('response', response);
@@ -347,12 +401,16 @@ export class ZoomService {
       last_name: string;
       email: string;
       phone: string;
-    }) {
+    },
+  ) {
     console.log('Meeting registration created', registrant);
 
     try {
       // Use webinar service to handle the registration
-      const result = await this.webinarService.handleMeetingRegistration(meetingId, registrant);
+      const result = await this.webinarService.handleMeetingRegistration(
+        meetingId,
+        registrant,
+      );
       console.log('Registration handled:', result);
       return result;
     } catch (error) {
@@ -370,9 +428,12 @@ export class ZoomService {
     //   console.error('processWebhookPayload failed:', error);
     // }
     const event: string = payload?.event ?? '';
-    const accountId: string | undefined = payload?.account_id || payload?.payload?.account_id;
+    const accountId: string | undefined =
+      payload?.account_id || payload?.payload?.account_id;
     const object = payload?.payload?.object || payload?.object || {};
-    const meetingId: string | undefined = String(object?.id || object?.uuid || '');
+    const meetingId: string | undefined = String(
+      object?.id || object?.uuid || '',
+    );
     const participant = object?.participant || object?.participant_data || {};
     const registrant = object?.registrant || object?.registration || {};
 
@@ -382,10 +443,14 @@ export class ZoomService {
     }
 
     let eventType: ZoomMeetingEventType | undefined;
-    if (event === ZoomWebhookEvent.MeetingParticipantJoined) eventType = ZoomMeetingEventType.ParticipantJoined;
-    if (event === ZoomWebhookEvent.MeetingParticipantLeft) eventType = ZoomMeetingEventType.ParticipantLeft;
-    if (event === ZoomWebhookEvent.MeetingStarted) eventType = ZoomMeetingEventType.MeetingStarted;
-    if (event === ZoomWebhookEvent.MeetingEnded) eventType = ZoomMeetingEventType.MeetingEnded;
+    if (event === ZoomWebhookEvent.MeetingParticipantJoined)
+      eventType = ZoomMeetingEventType.ParticipantJoined;
+    if (event === ZoomWebhookEvent.MeetingParticipantLeft)
+      eventType = ZoomMeetingEventType.ParticipantLeft;
+    if (event === ZoomWebhookEvent.MeetingStarted)
+      eventType = ZoomMeetingEventType.MeetingStarted;
+    if (event === ZoomWebhookEvent.MeetingEnded)
+      eventType = ZoomMeetingEventType.MeetingEnded;
     // console.log('eventType', eventType, meetingId);
     if (!eventType || !meetingId) {
       return true;
@@ -405,290 +470,607 @@ export class ZoomService {
     return true;
   }
 
-
   // In zoom.service.ts
 
   async processWebhookPayloadV2(payload: any) {
-    // TODO: VERIFY ZOOM SIGNATURE - This is critical for production security.
+    const timer = MonitoringUtil.createTimer();
+    try {
+      // Validate webhook payload structure
+      ValidationUtil.validateWebhookPayload(payload);
 
-    // TODO: verify Zoom signature for production
-    this.logger.log('processWebhookPayload', payload);
-    // try {
-    //   this.http.axiosRef.post('https://b31f906b85a4.ngrok-free.app/api/v1/zoom/webhook', payload);
-    // } catch (error) {
-    //   console.error('processWebhookPayload failed:', error);
-    // }
-    const event: string = payload?.event ?? '';
-    const accountId: string | undefined = payload?.account_id || payload?.payload?.account_id;
-    const object = payload?.payload?.object || payload?.object || {};
-    const meetingId: string | undefined = String(object?.id || object?.uuid || '');
-    const participant = object?.participant || object?.participant_data || {};
-    const registrant = object?.registrant || object?.registration || {};
-    let eventType: ZoomMeetingEventType | undefined;
+      this.logger.log('Processing webhook payload:', {
+        event: payload?.event,
+        meetingId: payload?.payload?.object?.id || payload?.object?.id,
+        timestamp: new Date().toISOString(),
+      });
 
+      const event: string = payload?.event ?? '';
+      const accountId: string | undefined =
+        payload?.account_id || payload?.payload?.account_id;
+      const object = payload?.payload?.object || payload?.object || {};
+      const meetingId: string | undefined = String(
+        object?.id || object?.uuid || '',
+      );
 
-    // --- NEW NOTIFICATION LOGIC ---
-    // Now, route to the correct notification handler based on the event
-    switch (event) {
-      case ZoomWebhookEvent.MeetingStarted:
-        const meetingTopic = object?.topic || 'the meeting';
-        // Trigger notifications for both registrants and the non-attendee check
-        this.handleMeetingStarted(meetingId, meetingTopic);
-        eventType = ZoomMeetingEventType.MeetingStarted;
-        break;
-
-      case ZoomWebhookEvent.MeetingParticipantJoined:
-        const participant = object?.participant || {};
-        // Mark the participant as "attended"
-        this.handleParticipantJoined(meetingId, participant.email);
-        eventType = ZoomMeetingEventType.ParticipantJoined;
-        break;
-
-      case ZoomWebhookEvent.MeetingParticipantLeft:
-        const leftParticipant = object?.participant || {};
-        // Trigger the "rejoin" message
-        this.handleParticipantLeft(meetingId, leftParticipant);
-        eventType = ZoomMeetingEventType.ParticipantLeft;
-        break;
-
-      case ZoomWebhookEvent.MeetingEnded:
-        const endedMeetingTopic = object?.topic || 'the meeting';
-        // Trigger the final messages to attendees and non-attendees
-        this.handleMeetingEnded(meetingId, endedMeetingTopic);
-        eventType = ZoomMeetingEventType.MeetingEnded;
-        break;
-
-      case ZoomWebhookEvent.MeetingRegistrationCreated:
-        this.handleRegistrationCreated(meetingId, registrant);
+      // Validate required fields
+      if (!meetingId || meetingId === 'undefined' || meetingId === 'null') {
+        this.logger.warn('Invalid meeting ID in webhook payload:', payload);
         return;
+      }
 
-      default:
+      const participant = object?.participant || object?.participant_data || {};
+      const registrant = object?.registrant || object?.registration || {};
+      let eventType: ZoomMeetingEventType | undefined;
+
+      // Route to the correct notification handler based on the event
+      switch (event) {
+        case ZoomWebhookEvent.MeetingStarted:
+          const meetingTopic = ValidationUtil.sanitizeText(
+            object?.topic || 'the meeting',
+          );
+          await this.handleMeetingStarted(meetingId, meetingTopic);
+          eventType = ZoomMeetingEventType.MeetingStarted;
+          break;
+
+        case ZoomWebhookEvent.MeetingParticipantJoined:
+          const participantEmail = participant?.email;
+          if (participantEmail) {
+            try {
+              ValidationUtil.validateEmail(participantEmail);
+              await this.handleParticipantJoined(meetingId, participantEmail);
+            } catch (emailError) {
+              this.logger.warn(
+                `Invalid participant email in webhook: ${participantEmail}`,
+                emailError.message,
+              );
+            }
+          }
+          eventType = ZoomMeetingEventType.ParticipantJoined;
+          break;
+
+        case ZoomWebhookEvent.MeetingParticipantLeft:
+          const leftParticipant = object?.participant || {};
+          await this.handleParticipantLeft(meetingId, leftParticipant);
+          eventType = ZoomMeetingEventType.ParticipantLeft;
+          break;
+
+        case ZoomWebhookEvent.MeetingEnded:
+          const endedMeetingTopic = ValidationUtil.sanitizeText(
+            object?.topic || 'the meeting',
+          );
+          await this.handleMeetingEnded(meetingId, endedMeetingTopic);
+          eventType = ZoomMeetingEventType.MeetingEnded;
+          break;
+
+        case ZoomWebhookEvent.MeetingRegistrationCreated:
+          await this.handleRegistrationCreated(meetingId, registrant);
+          return;
+
+        default:
+          this.logger.warn(`Unhandled webhook event: ${event}`);
+          return;
+      }
+
+      // Create meeting event record
+      if (eventType) {
+        try {
+          await this.zoomEventService.createMeetingEvent({
+            accountId,
+            meetingId,
+            eventType,
+            participantId: participant?.id,
+            participantUserId: participant?.user_id,
+            participantName: ValidationUtil.sanitizeText(
+              participant?.user_name || participant?.name || '',
+            ),
+            participantEmail: participant?.email,
+            raw: payload,
+          });
+        } catch (eventError) {
+          this.logger.error(
+            'Failed to create meeting event record:',
+            eventError,
+          );
+          // Don't throw here as the main webhook processing succeeded
+        }
+      }
+
+      this.logger.log(
+        `Successfully processed webhook event: ${event} for meeting: ${meetingId}`,
+      );
+
+      // Log webhook processing metrics
+      MonitoringUtil.logWebhookMetrics(event, meetingId, timer(), true);
+    } catch (error) {
+      this.logger.error('Failed to process webhook payload:', {
+        error: error.message,
+        payload: payload,
+        stack: error.stack,
+      });
+
+      // Log failed webhook processing
+      MonitoringUtil.logWebhookMetrics(
+        payload?.event || 'unknown',
+        payload?.payload?.object?.id || 'unknown',
+        timer(),
+        false,
+      );
+
+      // Don't throw the error to avoid webhook retries for validation issues
+      if (error instanceof BadRequestException) {
+        this.logger.warn(
+          'Webhook payload validation failed, ignoring:',
+          error.message,
+        );
         return;
+      }
+
+      throw error;
     }
-
-    this.logger.log('eventType --------==================-------------', eventType);
-    await this.zoomEventService.createMeetingEvent({
-      accountId,
-      meetingId,
-      eventType,
-      participantId: participant?.id,
-      participantUserId: participant?.user_id,
-      participantName: participant?.user_name || participant?.name,
-      participantEmail: participant?.email,
-      raw: payload,
-    });
-
-    return; // Respond quickly
   }
 
   async handleMeetingStarted(meetingId: string, meetingTopic: string) {
-    this.logger.log('handleMeetingStarted --------==================-------------', meetingId, meetingTopic);
-    const meetingEventConfig = await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
-    this.logger.log('meetingEventConfig --------==================-------------', meetingEventConfig);
-    if (!meetingEventConfig) return;
+    try {
+      this.logger.log(
+        `Handling meeting started event for meeting: ${meetingId}, topic: ${meetingTopic}`,
+      );
 
-    const { meetingStarted } = meetingEventConfig;
-    this.logger.log('meetingStarted --------==================-------------', meetingStarted);
-    if (!meetingStarted.enabled || !mongoose.isValidObjectId(meetingStarted.configuredTemplateId)) return;
+      // Validate inputs
+      if (!meetingId || meetingId === 'undefined' || meetingId === 'null') {
+        this.logger.warn('Invalid meeting ID provided to handleMeetingStarted');
+        return;
+      }
 
-    const configuredTemplate = await this.ConfiguredTemplateService.getConfiguredTemplate(meetingStarted.configuredTemplateId);
-    this.logger.log('configuredTemplate --------==================-------------', configuredTemplate);
-    if (!configuredTemplate) return;
+      const meetingEventConfig =
+        await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
 
-    const registrations = await this.getMeetingRegistrations({ meetingId, adminId: meetingEventConfig.adminId, projectId: meetingEventConfig.whatsappProjectId, webinarID: meetingEventConfig.webinarId });
-    this.logger.log('registrations --------==================-------------', registrations);
-    await this.whatsappService.sendTemplateMessages( {fetchedContacts: registrations, template: configuredTemplate} );
-    return;
+      if (!meetingEventConfig) {
+        this.logger.warn(
+          `No meeting event config found for meeting: ${meetingId}`,
+        );
+        return;
+      }
+
+      this.logger.log(`Found meeting event config for meeting: ${meetingId}`);
+
+      const { meetingStarted } = meetingEventConfig;
+
+      if (!meetingStarted?.enabled) {
+        this.logger.log(
+          `Meeting started notifications disabled for meeting: ${meetingId}`,
+        );
+        return;
+      }
+
+      if (!mongoose.isValidObjectId(meetingStarted.configuredTemplateId)) {
+        this.logger.warn(
+          `Invalid configured template ID for meeting: ${meetingId}`,
+        );
+        return;
+      }
+
+      const configuredTemplate =
+        await this.ConfiguredTemplateService.getConfiguredTemplate(
+          meetingStarted.configuredTemplateId,
+        );
+
+      if (!configuredTemplate) {
+        this.logger.warn(
+          `Configured template not found for meeting: ${meetingId}`,
+        );
+        return;
+      }
+
+      this.logger.log(
+        `Using configured template: ${configuredTemplate.configuredTemplateName} for meeting: ${meetingId}`,
+      );
+
+      const registrations = await this.getMeetingRegistrations({
+        meetingId,
+        adminId: meetingEventConfig.adminId,
+        projectId: meetingEventConfig.whatsappProjectId,
+        webinarID: meetingEventConfig.webinarId,
+        zoomProjectId: meetingEventConfig.zoomProjectId,
+      });
+
+      if (!registrations || registrations.length === 0) {
+        this.logger.log(`No registrations found for meeting: ${meetingId}`);
+        return;
+      }
+
+      this.logger.log(
+        `Found ${registrations.length} registrations for meeting: ${meetingId}`,
+      );
+
+      // Send template messages with enhanced error handling
+      const results = await this.whatsappService.sendTemplateMessages({
+        fetchedContacts: registrations,
+        template: configuredTemplate,
+        meetingId,
+      });
+
+      this.logger.log(
+        `Meeting started notifications completed for meeting: ${meetingId}. Results: ${results.successful}/${results.total} successful`,
+      );
+
+      if (results.failed > 0) {
+        this.logger.warn(
+          `Some notifications failed for meeting: ${meetingId}. Failed: ${results.failed}`,
+        );
+        results.errors.forEach((error) => {
+          this.logger.warn(
+            `Failed notification for contact ${error.contactId}: ${error.error}`,
+          );
+        });
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle meeting started event for meeting: ${meetingId}`,
+        {
+          error: error.message,
+          stack: error.stack,
+          meetingTopic,
+        },
+      );
+      // Don't throw to avoid breaking the webhook processing
+    }
   }
 
-
-  async getMeetingRegistrations(data: { meetingId: string, adminId: Types.ObjectId, projectId: Types.ObjectId, webinarID?: Types.ObjectId }) {
+  async getMeetingRegistrations(data: {
+    meetingId: string;
+    adminId: Types.ObjectId;
+    projectId: Types.ObjectId;
+    webinarID?: Types.ObjectId;
+    zoomProjectId: Types.ObjectId;
+  }) {
     if (mongoose.isValidObjectId(data.webinarID)) {
-      const registrations = await this.webinarService.getWebinarRegistrations(data.webinarID, data.adminId);
-      if(Array.isArray(registrations)) return registrations;
-      
-    }
-    else {
-      const registrations = await this.getMeetingRegistrants(data.adminId, data.projectId, data.meetingId);
-      if(Array.isArray(registrations?.registrants)) 
-      
+      const registrations = await this.webinarService.getWebinarRegistrations(
+        data.webinarID,
+        data.adminId,
+      );
+      if (Array.isArray(registrations)) return registrations;
+    } else {
+      const registrations = await this.getMeetingRegistrants(
+        data.adminId,
+        data.zoomProjectId,
+        data.meetingId,
+      );
+      this.logger.log(
+        `registration count ====> > ${registrations?.registrants?.length}`,
+      );
+      if (Array.isArray(registrations?.registrants))
         return registrations.registrants.map((registrant) => ({
           email: registrant.email,
           phone: registrant.phone,
           firstName: registrant.first_name,
           lastName: registrant.last_name,
-        }))
-    
+        }));
     }
 
     return [];
-
   }
 
-  async getMeetingAttendees(data: { meetingId: string, adminId: Types.ObjectId, projectId: Types.ObjectId, webinarID?: Types.ObjectId }) {
+  async getMeetingAttendees(data: {
+    meetingId: string;
+    adminId: Types.ObjectId;
+    projectId: Types.ObjectId;
+    webinarID?: Types.ObjectId;
+    zoomProjectId: Types.ObjectId;
+  }) {
     // Get all registrations first
     const allRegistrations = await this.getMeetingRegistrations(data);
-    
+
     // Get participants who actually joined the meeting
-    const meetingEvents = await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId);
+    const meetingEvents =
+      await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId);
     const attendedEmails = new Set(
       meetingEvents
-        .filter(event => event.eventType === ZoomMeetingEventType.ParticipantJoined)
-        .map(event => event.participantEmail)
-        .filter(email => email)
+        .filter(
+          (event) => event.eventType === ZoomMeetingEventType.ParticipantJoined,
+        )
+        .map((event) => event.participantEmail)
+        .filter((email) => email),
     );
 
     // Filter registrations to only include those who attended
-    return allRegistrations.filter(registration => 
-      registration.email && attendedEmails.has(registration.email)
+    return allRegistrations.filter(
+      (registration) =>
+        registration.email && attendedEmails.has(registration.email),
     );
   }
 
-  async getMeetingNonAttendees(data: { meetingId: string, adminId: Types.ObjectId, projectId: Types.ObjectId, webinarID?: Types.ObjectId }) {
+  async getMeetingNonAttendees(data: {
+    meetingId: string;
+    adminId: Types.ObjectId;
+    projectId: Types.ObjectId;
+    webinarID?: Types.ObjectId;
+    zoomProjectId: Types.ObjectId;
+  }) {
     // Get all registrations first
     const allRegistrations = await this.getMeetingRegistrations(data);
-    
+
     // Get participants who actually joined the meeting
-    const meetingEvents = await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId);
+    const meetingEvents =
+      await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId);
     const attendedEmails = new Set(
       meetingEvents
-        .filter(event => event.eventType === ZoomMeetingEventType.ParticipantJoined)
-        .map(event => event.participantEmail)
-        .filter(email => email)
+        .filter(
+          (event) => event.eventType === ZoomMeetingEventType.ParticipantJoined,
+        )
+        .map((event) => event.participantEmail)
+        .filter((email) => email),
     );
 
     // Filter registrations to only include those who did NOT attend
-    return allRegistrations.filter(registration => 
-      registration.email && !attendedEmails.has(registration.email)
+    return allRegistrations.filter(
+      (registration) =>
+        registration.email && !attendedEmails.has(registration.email),
     );
   }
 
-  async getParticipantByEmail(data: { meetingId: string, adminId: Types.ObjectId, projectId: Types.ObjectId, webinarID?: Types.ObjectId, participantEmail: string }) {
+  async getParticipantByEmail(data: {
+    meetingId: string;
+    adminId: Types.ObjectId;
+    projectId: Types.ObjectId;
+    webinarID?: Types.ObjectId;
+    participantEmail: string;
+    zoomProjectId: Types.ObjectId;
+  }) {
     // Get all registrations first
     const allRegistrations = await this.getMeetingRegistrations(data);
-    
+
     // Find the specific participant by email
-    return allRegistrations.find(registration => 
-      registration.email && registration.email.toLowerCase() === data.participantEmail.toLowerCase()
+    return allRegistrations.find(
+      (registration) =>
+        registration.email &&
+        registration.email.toLowerCase() ===
+          data.participantEmail.toLowerCase(),
     );
   }
 
-  async handleParticipantJoined(meetingId: string, participantEmail: string) { }
+  async handleParticipantJoined(meetingId: string, participantEmail: string) {}
 
   async handleParticipantLeft(meetingId: string, participantData: any) {
-    this.logger.log('handleParticipantLeft --------==================-------------', meetingId, participantData);
-    const meetingEventConfig = await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
-    this.logger.log('meetingEventConfig --------==================-------------', meetingEventConfig);
-    if (!meetingEventConfig) return;
+    try {
+      this.logger.log(
+        'handleParticipantLeft --------==================-------------',
+        meetingId,
+        participantData,
+      );
+      const meetingEventConfig =
+        await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
+      this.logger.log(
+        'meetingEventConfig --------==================-------------',
+        meetingEventConfig,
+      );
+      if (!meetingEventConfig) return;
 
-    const { participantLeft } = meetingEventConfig;
-    this.logger.log('participantLeft --------==================-------------', participantLeft);
-    if (!participantLeft.enabled || !mongoose.isValidObjectId(participantLeft.configuredTemplateId)) return;
+      const { participantLeft } = meetingEventConfig;
+      this.logger.log(
+        'participantLeft --------==================-------------',
+        participantLeft,
+      );
+      if (
+        !participantLeft.enabled ||
+        !mongoose.isValidObjectId(participantLeft.configuredTemplateId)
+      )
+        return;
 
-    const configuredTemplate = await this.ConfiguredTemplateService.getConfiguredTemplate(participantLeft.configuredTemplateId);
-    this.logger.log('configuredTemplate --------==================-------------', configuredTemplate);
-    if (!configuredTemplate) return;
+      const configuredTemplate =
+        await this.ConfiguredTemplateService.getConfiguredTemplate(
+          participantLeft.configuredTemplateId,
+        );
+      this.logger.log(
+        'configuredTemplate --------==================-------------',
+        configuredTemplate,
+      );
+      if (!configuredTemplate) return;
 
-    // Get the specific participant who left
-    const participant = await this.getParticipantByEmail({ meetingId, adminId: meetingEventConfig.adminId, projectId: meetingEventConfig.whatsappProjectId, webinarID: meetingEventConfig.webinarId, participantEmail: participantData.email });
-    this.logger.log('participant --------==================-------------', participant);
-    if (!participant) return;
+      // Get the specific participant who left
+      const participant = await this.getParticipantByEmail({
+        meetingId,
+        adminId: meetingEventConfig.adminId,
+        projectId: meetingEventConfig.whatsappProjectId,
+        webinarID: meetingEventConfig.webinarId,
+        participantEmail: participantData.email,
+        zoomProjectId: meetingEventConfig.zoomProjectId,
+      });
+      this.logger.log(
+        'participant --------==================-------------',
+        participant,
+      );
+      if (!participant) return;
 
-    await this.whatsappService.sendTemplateMessages({ fetchedContacts: [participant], template: configuredTemplate });
-    return;
+      await this.whatsappService.sendTemplateMessages({
+        fetchedContacts: [participant],
+        template: configuredTemplate,
+        meetingId,
+      });
+      return;
+    } catch (error) {
+      this.logger.error('handleParticipantLeft failed:', error);
+    }
   }
 
   async handleMeetingEnded(meetingId: string, meetingTopic: string) {
-    this.logger.log('handleMeetingEnded --------==================-------------', meetingId, meetingTopic);
-    const meetingEventConfig = await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
-    this.logger.log('meetingEventConfig --------==================-------------', meetingEventConfig);
-    if (!meetingEventConfig) return;
+    try {
+      this.logger.log(
+        'handleMeetingEnded --------==================-------------',
+        meetingId,
+        meetingTopic,
+      );
+      const meetingEventConfig =
+        await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
+      this.logger.log(
+        'meetingEventConfig --------==================-------------',
+        meetingEventConfig,
+      );
+      if (!meetingEventConfig) return;
 
-    const { meetingEndedAttendees, meetingEndedNonAttendees } = meetingEventConfig;
-    
-    // Handle attendees messages
-    if (meetingEndedAttendees.enabled && mongoose.isValidObjectId(meetingEndedAttendees.configuredTemplateId)) {
-      this.logger.log('meetingEndedAttendees --------==================-------------', meetingEndedAttendees);
-      const configuredTemplate = await this.ConfiguredTemplateService.getConfiguredTemplate(meetingEndedAttendees.configuredTemplateId);
-      this.logger.log('configuredTemplate for attendees --------==================-------------', configuredTemplate);
-      
-      if (configuredTemplate) {
-        const attendees = await this.getMeetingAttendees({ meetingId, adminId: meetingEventConfig.adminId, projectId: meetingEventConfig.whatsappProjectId, webinarID: meetingEventConfig.webinarId });
-        this.logger.log('attendees --------==================-------------', attendees);
-        if (attendees.length > 0) {
-          await this.whatsappService.sendTemplateMessages({ fetchedContacts: attendees, template: configuredTemplate });
+      const { meetingEndedAttendees, meetingEndedNonAttendees } =
+        meetingEventConfig;
+
+      // Handle attendees messages
+      if (
+        meetingEndedAttendees.enabled &&
+        mongoose.isValidObjectId(meetingEndedAttendees.configuredTemplateId)
+      ) {
+        this.logger.log(
+          'meetingEndedAttendees --------==================-------------',
+          meetingEndedAttendees,
+        );
+        const configuredTemplate =
+          await this.ConfiguredTemplateService.getConfiguredTemplate(
+            meetingEndedAttendees.configuredTemplateId,
+          );
+        this.logger.log(
+          'configuredTemplate for attendees --------==================-------------',
+          configuredTemplate,
+        );
+
+        if (configuredTemplate) {
+          const attendees = await this.getMeetingAttendees({
+            meetingId,
+            adminId: meetingEventConfig.adminId,
+            projectId: meetingEventConfig.whatsappProjectId,
+            webinarID: meetingEventConfig.webinarId,
+            zoomProjectId: meetingEventConfig.zoomProjectId,
+          });
+          this.logger.log(
+            'attendees --------==================-------------',
+            attendees,
+          );
+          if (attendees.length > 0) {
+            await this.whatsappService.sendTemplateMessages({
+              fetchedContacts: attendees,
+              template: configuredTemplate,
+              meetingId,
+            });
+          }
         }
       }
-    }
 
-    // Handle non-attendees messages
-    if (meetingEndedNonAttendees.enabled && mongoose.isValidObjectId(meetingEndedNonAttendees.configuredTemplateId)) {
-      this.logger.log('meetingEndedNonAttendees --------==================-------------', meetingEndedNonAttendees);
-      const configuredTemplate = await this.ConfiguredTemplateService.getConfiguredTemplate(meetingEndedNonAttendees.configuredTemplateId);
-      this.logger.log('configuredTemplate for non-attendees --------==================-------------', configuredTemplate);
-      
-      if (configuredTemplate) {
-        const nonAttendees = await this.getMeetingNonAttendees({ meetingId, adminId: meetingEventConfig.adminId, projectId: meetingEventConfig.whatsappProjectId, webinarID: meetingEventConfig.webinarId });
-        this.logger.log('nonAttendees --------==================-------------', nonAttendees);
-        if (nonAttendees.length > 0) {
-          await this.whatsappService.sendTemplateMessages({ fetchedContacts: nonAttendees, template: configuredTemplate });
+      // Handle non-attendees messages
+      if (
+        meetingEndedNonAttendees.enabled &&
+        mongoose.isValidObjectId(meetingEndedNonAttendees.configuredTemplateId)
+      ) {
+        this.logger.log(
+          'meetingEndedNonAttendees --------==================-------------',
+          meetingEndedNonAttendees,
+        );
+        const configuredTemplate =
+          await this.ConfiguredTemplateService.getConfiguredTemplate(
+            meetingEndedNonAttendees.configuredTemplateId,
+          );
+        this.logger.log(
+          'configuredTemplate for non-attendees --------==================-------------',
+          configuredTemplate,
+        );
+
+        if (configuredTemplate) {
+          const nonAttendees = await this.getMeetingNonAttendees({
+            meetingId,
+            adminId: meetingEventConfig.adminId,
+            projectId: meetingEventConfig.whatsappProjectId,
+            webinarID: meetingEventConfig.webinarId,
+            zoomProjectId: meetingEventConfig.zoomProjectId,
+          });
+          this.logger.log(
+            'nonAttendees --------==================-------------',
+            nonAttendees,
+          );
+          if (nonAttendees.length > 0) {
+            await this.whatsappService.sendTemplateMessages({
+              fetchedContacts: nonAttendees,
+              template: configuredTemplate,
+              meetingId,
+            });
+          }
         }
       }
-    }
 
-    return;
+      return;
+    } catch (error) {
+      this.logger.error('handleMeetingEnded failed:', error);
+    }
   }
 
-
-  async getMeetingDetails(adminId: Types.ObjectId, projectId: Types.ObjectId, meetingId: string) {
-    const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
-    if (!project?.accessToken) throw new NotAcceptableException('No access token found');
+  async getMeetingDetails(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    meetingId: string,
+  ) {
+    const project = await this.zoomProjectModel.findOne({
+      _id: projectId,
+      adminId,
+    });
+    if (!project?.accessToken)
+      throw new NotAcceptableException('No access token found');
 
     try {
       const data = await this.executeWithTokenRetry(project, async (token) => {
         const resp = await firstValueFrom(
-          this.http.get(`https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
+          this.http.get(
+            `https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          ),
         );
         return resp.data;
       });
       return data;
     } catch (error: any) {
       const status = error?.response?.status;
-      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom meeting details failed:', { status, payload });
-      throw new NotAcceptableException('Failed to fetch meeting details from Zoom');
+      throw new NotAcceptableException(
+        'Failed to fetch meeting details from Zoom',
+      );
     }
   }
 
   async getMeetingRegistrants(
     adminId: Types.ObjectId,
-    projectId: Types.ObjectId,
+    zoomProjectId: Types.ObjectId,
     meetingId: string,
     status: 'pending' | 'approved' | 'denied' = 'approved',
   ) {
-    const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
-    if (!project?.accessToken) throw new NotAcceptableException('No access token found');
-
     try {
+      this.logger.log(
+        `getMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${status}`,
+      );
+      const project = await this.zoomProjectModel.findOne({
+        _id: zoomProjectId,
+        adminId,
+      });
+      if (!project?.accessToken)
+        throw new NotAcceptableException('No access token found');
+
       const data = await this.executeWithTokenRetry(project, async (token) => {
         const resp = await firstValueFrom(
-          this.http.get(`https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}/registrants`, {
-            headers: { Authorization: `Bearer ${token}` },
-            params: { status, page_size: 500 },
-          }),
+          this.http.get(
+            `https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}/registrants`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+              params: { status, page_size: 500 },
+            },
+          ),
         );
         return resp.data;
       });
       this.logger.log('Zoom registrants fetch success:', data);
       return data;
-
     } catch (error: any) {
       const status = error?.response?.status;
-      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom registrants fetch failed:', { status, payload });
-      throw new NotAcceptableException('Failed to fetch meeting registrants from Zoom');
+      throw new NotAcceptableException(
+        'Failed to fetch meeting registrants from Zoom',
+      );
     }
   }
 
@@ -698,22 +1080,31 @@ export class ZoomService {
     meetingId: string,
     body: { email: string; first_name?: string; last_name?: string },
   ) {
-    const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
-    if (!project?.accessToken) throw new NotAcceptableException('No access token found');
+    const project = await this.zoomProjectModel.findOne({
+      _id: projectId,
+      adminId,
+    });
+    if (!project?.accessToken)
+      throw new NotAcceptableException('No access token found');
 
     try {
       const data = await this.executeWithTokenRetry(project, async (token) => {
         const resp = await firstValueFrom(
-          this.http.post(`https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}/registrants`, body, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
+          this.http.post(
+            `https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}/registrants`,
+            body,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          ),
         );
         return resp.data;
       });
       return data;
     } catch (error: any) {
       const status = error?.response?.status;
-      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom add registrant failed:', { status, payload });
       throw new NotAcceptableException('Failed to add meeting registrant');
     }
@@ -842,20 +1233,27 @@ export class ZoomService {
       secretToken?: string;
     },
   ) {
-
-    const userSubscription: any = await this.usersService.getUserSubscription(adminId.toString());
+    const userSubscription: any = await this.usersService.getUserSubscription(
+      adminId.toString(),
+    );
     if (!userSubscription) {
       throw new NotAcceptableException('User not found');
     }
 
-    const projectCount = await this.zoomProjectModel.countDocuments({ adminId, });
+    const projectCount = await this.zoomProjectModel.countDocuments({
+      adminId,
+    });
 
     if (userSubscription.plan.zoomProjectLimit <= projectCount) {
-      throw new NotAcceptableException('You have reached the limit of Zoom projects');
+      throw new NotAcceptableException(
+        'You have reached the limit of Zoom projects',
+      );
     }
 
     const tokenEndpoint = 'https://zoom.us/oauth/token';
-    const authHeader = Buffer.from(`${payload.clientId}:${payload.clientSecret}`).toString('base64');
+    const authHeader = Buffer.from(
+      `${payload.clientId}:${payload.clientSecret}`,
+    ).toString('base64');
     const params = new URLSearchParams({
       grant_type: 'account_credentials',
       account_id: payload.accountId,
@@ -866,7 +1264,7 @@ export class ZoomService {
       const response = await firstValueFrom(
         this.http.post(tokenEndpoint, params.toString(), {
           headers: {
-            'Authorization': `Basic ${authHeader}`,
+            Authorization: `Basic ${authHeader}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
         }),
@@ -874,7 +1272,8 @@ export class ZoomService {
       tokenData = response.data;
     } catch (error: any) {
       const status = error?.response?.status;
-      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom credential validation failed:', { status, payload });
       throw new NotAcceptableException('Invalid Zoom credentials or account');
     }
@@ -926,7 +1325,10 @@ export class ZoomService {
       .lean();
   }
 
-  async bulkDeleteProjects(adminId: Types.ObjectId, projectIds: Types.ObjectId[]) {
+  async bulkDeleteProjects(
+    adminId: Types.ObjectId,
+    projectIds: Types.ObjectId[],
+  ) {
     const result = await this.zoomProjectModel.deleteMany({
       _id: { $in: projectIds },
       adminId,
@@ -935,8 +1337,14 @@ export class ZoomService {
     return result.deletedCount;
   }
 
-  async getProjectConfigurationStatus(adminId: Types.ObjectId, projectId: Types.ObjectId) {
-    const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
+  async getProjectConfigurationStatus(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+  ) {
+    const project = await this.zoomProjectModel.findOne({
+      _id: projectId,
+      adminId,
+    });
 
     if (!project) {
       return { isConfigured: false, missingFields: ['Project not found'] };
@@ -957,8 +1365,7 @@ export class ZoomService {
         hasAccessToken: !!project.accessToken,
         // createdAt: project.createdAt,
         // updatedAt: project.updatedAt,
-      }
+      },
     };
   }
 }
-

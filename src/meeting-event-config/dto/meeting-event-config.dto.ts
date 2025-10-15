@@ -36,6 +36,10 @@ export class CreateMeetingEventConfigDto {
   @IsNotEmpty()
   whatsappProjectId: string;
 
+  @IsMongoId()
+  @IsNotEmpty()
+  zoomProjectId: string;
+
   @IsOptional()
   @IsMongoId()
   webinarId?: string;
@@ -61,6 +65,10 @@ export class UpdateMeetingEventConfigDto {
   @IsOptional()
   @IsMongoId()
   whatsappProjectId?: string;
+
+  @IsOptional()
+  @IsMongoId()
+  zoomProjectId?: string;
 
   @IsOptional()
   @IsMongoId()
@@ -92,6 +100,9 @@ export class MeetingEventConfigResponseDto {
 
   @IsString()
   whatsappProjectId: string;
+
+  @IsString()
+  zoomProjectId: string;
 
   @IsNotEmpty()
   meetingStarted: MeetingEventConfigDto;

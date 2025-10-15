@@ -29,6 +29,7 @@ import { WhatsappService } from '../../whatsapp/whatsapp.service';
 import { v4 as uuidv4 } from 'uuid';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { ContactsService } from 'src/contacts/contacts.service';
+import { WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
 
 @Injectable()
 export class CampaignService {
@@ -500,7 +501,7 @@ export class CampaignService {
             headerMediaAssetId,
             language,
             contactId: contact._id.toString(),
-            messageType: 'campaign',
+            messageType: WabaMessageType.CAMPAIGN,
             campaignId,
            }
           );
@@ -598,7 +599,7 @@ export class CampaignService {
             headerMediaAssetId,
             language,
             attendeeId: contact._id,
-            messageType: 'campaign',
+            messageType: WabaMessageType.CAMPAIGN,
             campaignId,
             }
           );

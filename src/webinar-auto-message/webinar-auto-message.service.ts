@@ -6,6 +6,7 @@ import { UpsertAutoMessageDto, TestSendDto, VariableMappingDto } from './dto';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { ProjectsService } from 'src/projects/projects.service';
 import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
+import { WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
 
 @Injectable()
 export class WebinarAutoMessageService {
@@ -84,7 +85,7 @@ export class WebinarAutoMessageService {
         headerMediaAssetId: dto.headerMediaAssetId,
         language: dto.language || 'en_US',
         contactId: undefined,
-        messageType: 'individual',
+        messageType: WabaMessageType.INDIVIDUAL,
       }
     );
 
@@ -108,7 +109,7 @@ export class WebinarAutoMessageService {
         headerMediaAssetId: cfg.headerMediaAssetId,
         language: cfg.language || 'en_US',
         contactId: contact.contactId,
-        messageType: 'auto-message',
+        messageType: WabaMessageType.AUTO_MESSAGE,
       }
       );
 

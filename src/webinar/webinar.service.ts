@@ -26,6 +26,7 @@ import { AlarmService } from 'src/alarm/alarm.service';
 import { EnrollmentsService } from 'src/enrollments/enrollments.service';
 import { Logger } from '@nestjs/common';
 import { SubscriptionService } from 'src/subscription/subscription.service';
+import { MeetingEventConfigService } from 'src/meeting-event-config/meeting-event-config.service';
 
 @Injectable()
 export class WebinarService {
@@ -45,6 +46,7 @@ export class WebinarService {
     private readonly enrollmentService: EnrollmentsService,
     @Inject(forwardRef(() => SubscriptionService))
     private readonly subscriptionService: SubscriptionService,
+    private readonly meetingEventConfigService: MeetingEventConfigService,
   ) {}
 
   async createWebiar(createWebinarDto: CreateWebinarDto): Promise<any> {
@@ -502,7 +504,7 @@ export class WebinarService {
 
   async updateWebinarMeetingId(webinarId: string, meetingId: string, adminId: string): Promise<any> {
     const session = await this.webinarModel.startSession();
-    
+    this.logger.log(`Updating webinar meetingId: ${meetingId} for webinarId: ${webinarId} and adminId: ${adminId}`);
     try {
       await session.withTransaction(async (currentSession) => {
         // First, remove meetingId from any existing webinar that has it
@@ -530,6 +532,12 @@ export class WebinarService {
           throw new NotFoundException('Webinar not found');
         }
 
+        await this.meetingEventConfigService.setWebinarIdIfConfigExists(
+          new Types.ObjectId(adminId),
+          meetingId,
+          webinarId,
+        );
+
         return result;
       });
     } finally {
@@ -538,6 +546,13 @@ export class WebinarService {
   }
 
   async removeWebinarMeetingId(webinarId: string, adminId: string): Promise<any> {
+    this.logger.log(`Removing webinar meetingId for webinarId: ${webinarId} and adminId: ${adminId}`);
+    
+    const webinar = await this.webinarModel.findById(webinarId);
+    if (!webinar) {
+      throw new NotFoundException('Webinar not found');
+    }
+    const previousMeetingId = webinar.meetingId;
     const result = await this.webinarModel.findOneAndUpdate(
       {
         _id: new Types.ObjectId(webinarId),
@@ -549,6 +564,19 @@ export class WebinarService {
 
     if (!result) {
       throw new NotFoundException('Webinar not found');
+    }
+
+    // Clear the linked webinarId in meeting-event-config (if a config exists) without sending webinarId
+    try {
+      
+      if (previousMeetingId) {
+        await this.meetingEventConfigService.setWebinarIdIfConfigExists(
+          new Types.ObjectId(adminId),
+          previousMeetingId,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to clear meeting-event-config webinarId on meetingId removal: ${e?.message || e}`);
     }
 
     return result;

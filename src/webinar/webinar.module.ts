@@ -18,6 +18,7 @@ import { AlarmModule } from 'src/alarm/alarm.module';
 import { AssignmentModule } from 'src/assignment/assignment.module';
 import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
+import { MeetingEventConfigModule } from 'src/meeting-event-config/meeting-event-config.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
     forwardRef(() => NotesModule),
     forwardRef(() => SubscriptionModule),
     EnrollmentsModule,
+    MeetingEventConfigModule,
   ],
   providers: [WebinarService],
   controllers: [WebinarController],
