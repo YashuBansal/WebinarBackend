@@ -35,7 +35,7 @@ jobs:
       - name: Upload files to cPanel
         uses: appleboy/scp-action@v0.1.5
         with:
-          host: 'https://hostname.example.com'        # plain hostname
+          host: 'https://cpanel.rittikbansal.com'        # plain hostname
           username: ${{ secrets.CPANEL_USER }}
           password: ${{ secrets.CPANEL_PASS }}
           port: 41063                           # hardcoded SSH port
@@ -46,7 +46,7 @@ jobs:
       - name: SSH - Restart Node app
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 'https://hostname.example.com'        # plain hostname
+          host: 'https://cpanel.rittikbansal.com'        # plain hostname
           username: ${{ secrets.CPANEL_USER }}
           password: ${{ secrets.CPANEL_PASS }}
           port: 41063
