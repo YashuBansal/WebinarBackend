@@ -10,29 +10,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Step 2: Cache Node modules for faster builds
+      - name: Cache Node modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      # Step 3: Install dependencies (local build)
       - name: Install dependencies
         run: npm install
 
+      # Step 4: Build NestJS app
       - name: Build NestJS app
         run: npm run build
 
+      # Step 5: Upload files to cPanel via SCP
       - name: Upload files to cPanel
         uses: appleboy/scp-action@v0.1.5
         with:
-          host: ${{ secrets.CPANEL_HOST }}
+          host: cpanel.rittikbansal.com        # plain hostname
           username: ${{ secrets.CPANEL_USER }}
           password: ${{ secrets.CPANEL_PASS }}
-          port: 41063
+          port: 41063                           # hardcoded SSH port
           source: "dist/**,package.json,package-lock.json"
           target: "/www/wwwroot/saasCrm_backend-test"
 
+      # Step 6: SSH into server and restart Node app
       - name: SSH - Restart Node app
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.CPANEL_HOST }}
+          host: cpanel.rittikbansal.com        # plain hostname
           username: ${{ secrets.CPANEL_USER }}
           password: ${{ secrets.CPANEL_PASS }}
           port: 41063
