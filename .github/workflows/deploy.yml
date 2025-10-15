@@ -1,0 +1,42 @@
+name: Deploy NestJS to cPanel
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build NestJS app
+        run: npm run build
+
+      - name: Upload files to cPanel
+        uses: appleboy/scp-action@v0.1.5
+        with:
+          host: ${{ secrets.CPANEL_HOST }}
+          username: ${{ secrets.CPANEL_USER }}
+          password: ${{ secrets.CPANEL_PASS }}
+          port: 41063
+          source: "dist/**,package.json,package-lock.json"
+          target: "/www/wwwroot/saasCrm_backend-test"
+
+      - name: SSH - Restart Node app
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CPANEL_HOST }}
+          username: ${{ secrets.CPANEL_USER }}
+          password: ${{ secrets.CPANEL_PASS }}
+          port: 41063
+          script: |
+            cd /www/wwwroot/saasCrm_backend-test
+            npm install --omit=dev
+            pm2 restart saasCrmBackend-test || pm2 start dist/main.js --name saasCrmBackend-test

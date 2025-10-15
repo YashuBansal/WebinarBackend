@@ -130,6 +130,7 @@ export class WhatsappService {
     console.log(JSON.stringify(payload, null, 2));
     this.logger.log('Processing webhook payload for WhatsApp messages');
 
+
     try {
       // Process status updates
       if (payload.entry?.[0]?.changes?.[0]?.value?.statuses) {
@@ -2001,7 +2002,6 @@ export class WhatsappService {
             bodyVariables: processedBodyVariables,
             headerMediaAssetId: template.headerMediaAssetId?.toString(),
             language: 'en_US',
-            contactId: contact._id?.toString(),
             messageType: WabaMessageType.ZOOM_EVENT,
             meetingId,
           });

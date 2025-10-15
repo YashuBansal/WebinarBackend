@@ -65,7 +65,6 @@ export class WabaMessageService {
   ) {
     const { page, limit } = paginationOptions;
     const skip = (page - 1) * limit;
-    console.log(skip, limit);
     const count = await this.wabaMessageModel.countDocuments(query);
     const wabaMessages = await this.wabaMessageModel
       .find(query)
