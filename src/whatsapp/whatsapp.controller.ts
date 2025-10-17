@@ -512,4 +512,96 @@ export class WhatsappController {
       );
     }
   }
+
+  @Get('chat')
+  async getChatMessages(
+    @Id() adminId: string,
+    @Query('projectId') projectId: string,
+    @Query('phoneNumber') phoneNumber: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '20',
+  ) {
+    if (!mongoose.isValidObjectId(projectId)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+    if (!phoneNumber) {
+      throw new BadRequestException('phoneNumber is required');
+    }
+
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+
+    const result = await this.whatsappService.getChatMessages(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+      phoneNumber,
+      pageNum,
+      limitNum,
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Chat messages fetched successfully',
+      data: result,
+    };
+  }
+
+  @Post('chat/send-text')
+  async sendChatText(
+    @Id() adminId: string,
+    @Body('projectId') projectId: string,
+    @Body('phoneNumber') phoneNumber: string,
+    @Body('text') text: string,
+    @Body('contactId') contactId?: string,
+  ) {
+    if (!mongoose.isValidObjectId(projectId)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+    if (contactId && !mongoose.isValidObjectId(contactId)) {
+      throw new BadRequestException('Invalid contact ID');
+    }
+    if (!phoneNumber || !text) {
+      throw new BadRequestException('phoneNumber and text are required');
+    }
+
+    const result = await this.whatsappService.sendTextMessage(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+      phoneNumber,
+      text,
+      contactId ? new Types.ObjectId(contactId) : undefined,
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Message sent',
+      data: result,
+    };
+  }
+
+  @Get('chat/can-send-direct/:projectId/:phoneNumber')
+  async canSendDirectMessage(
+    @Id() adminId: string,
+    @Param('projectId') projectId: string,
+    @Param('phoneNumber') phoneNumber: string,
+  ) {
+    if (!mongoose.isValidObjectId(projectId)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+    if (!phoneNumber) {
+      throw new BadRequestException('phoneNumber is required');
+    }
+
+    const result = await this.whatsappService.canSendDirectMessage(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+      phoneNumber,
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Direct message permission checked',
+      data: result,
+    };
+  }
 }

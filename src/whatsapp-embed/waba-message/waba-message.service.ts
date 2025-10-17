@@ -27,10 +27,17 @@ export class WabaMessageService {
     failureReason?: string;
     status?: string;
     meetingId?: string;
+    direction?: 'inbound' | 'outbound';
+    messageFormat?: 'text' | 'template' | 'media';
+    templateComponents?: any[];
+    templateLanguage?: string;
+    textBody?: string;
+    displayText?: string;
   }): Promise<WabaMessage> {
     const wabaMessage = new this.wabaMessageModel({
       ...wabaMessageData,
       projectId: new Types.ObjectId(wabaMessageData.projectId),
+      phoneNumber: wabaMessageData.phoneNumber.replace('+', ''),// remove + from phone number
       adminId: new Types.ObjectId(wabaMessageData.adminId),
       campaignId: mongoose.isValidObjectId(wabaMessageData.campaignId)
         ? new Types.ObjectId(wabaMessageData.campaignId)

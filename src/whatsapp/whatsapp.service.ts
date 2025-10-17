@@ -152,14 +152,251 @@ export class WhatsappService {
         }
       }
 
-      // Process incoming messages (if needed)
+      // Process incoming messages
       if (payload.entry?.[0]?.changes?.[0]?.value?.messages) {
-        const messages = payload.entry[0].changes[0].value.messages;
+        const value = payload.entry[0].changes[0].value;
+        const messages = value.messages;
+        const contacts = value.contacts || [];
+        const metadata = value.metadata || {};
+        const fromPhoneNumberId = metadata?.phone_number_id;
         this.logger.log(`Received ${messages.length} incoming messages`);
-        // Handle incoming messages if needed
+
+        for (const msg of messages) {
+          try {
+            const from = msg.from; // sender's wa id (phone)
+            const textBody = msg.text?.body;
+            const msgId = msg.id;
+
+            if (!from || !msgId) continue;
+
+            await this.handleInboundTextMessage({
+              from,
+              fromPhoneNumberId,
+              textBody,
+              wabaMessageId: msgId,
+            });
+          } catch (e) {
+            this.logger.error('Failed processing inbound message', e);
+          }
+        }
       }
     } catch (error) {
       this.logger.error('Error processing webhook payload', error);
+    }
+  }
+
+  private async resolveProjectByPhoneNumberId(phoneNumberId?: string) {
+    if (!phoneNumberId) return null;
+    try {
+      const model = (this.projectService as any)['projectModel'];
+      if (!model) return null;
+      const project = await model.findOne({ phoneNumberId }).exec();
+      return project || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async handleInboundTextMessage(args: {
+    from: string;
+    fromPhoneNumberId?: string;
+    textBody?: string;
+    wabaMessageId: string;
+  }) {
+    const { from, fromPhoneNumberId, textBody, wabaMessageId } = args;
+
+    // Try to resolve project via phoneNumberId; fallback skip if unknown
+    const project = await this.resolveProjectByPhoneNumberId(fromPhoneNumberId);
+    if (!project) return;
+
+    const adminId = project.adminId as any as Types.ObjectId;
+    const projectId = project._id as any as Types.ObjectId;
+
+    await this.wabaMessageService.create({
+      projectId: String(projectId),
+      adminId: String(adminId),
+      phoneNumber: from,
+      wabaMessageId,
+      messageType: 'individual',
+      templateName: '',
+      status: 'delivered',
+      direction: 'inbound' as any,
+      messageFormat: 'text',
+      textBody,
+      displayText: textBody,
+    } as any);
+
+    // Optionally emit websocket event to admin
+    try {
+      const { WebsocketGateway } = await import('../websocket/websocket.gateway');
+      const { SocketEvents } = await import('../websocket/dto/socket.dto');
+      const gateway = (global as any).app?.get?.(WebsocketGateway);
+      if (gateway?.emitSocketEvent) {
+        gateway.emitSocketEvent(String(adminId), SocketEvents.CHAT_MESSAGE, {
+          phoneNumber: from,
+          textBody,
+          wabaMessageId,
+          direction: 'inbound',
+          projectId,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    } catch (e) {
+      this.logger.warn('Websocket emit failed (non-blocking)');
+    }
+  }
+
+  async getChatMessages(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    phoneNumber: string,
+    page: number,
+    limit: number,
+  ) {
+    const skip = (page - 1) * limit;
+    const filter: any = {
+      adminId,
+      projectId,
+      phoneNumber: phoneNumber.replace('+', ''),
+      isDeleted: false,
+    };
+    console.log('filter', filter);
+    const [total, messages] = await Promise.all([
+      this.wabaMessageService['wabaMessageModel'].countDocuments(filter),
+      this.wabaMessageService['wabaMessageModel']
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
+    return {
+      messages: messages.reverse(),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async sendTextMessage(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    recipientPhoneNumber: string,
+    text: string,
+    contactId?: Types.ObjectId,
+  ) {
+    // Send via Meta Graph API using project's phoneNumberId and token
+    const project = await this.projectService.findOne(adminId, projectId);
+    if (!project?.phoneNumberId || !project?.permanentAccessToken) {
+      throw new BadRequestException('Project WABA configuration missing');
+    }
+
+    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${project.phoneNumberId}/messages`;
+    const headers = {
+      Authorization: `Bearer ${project.permanentAccessToken}`,
+      'Content-Type': 'application/json',
+    };
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: recipientPhoneNumber,
+      type: 'text',
+      text: { body: text },
+    };
+
+    const response = await lastValueFrom(
+      this.httpService.post(url, payload, { headers }).pipe(map((r) => r.data)),
+    );
+
+    const sentId = response?.messages?.[0]?.id || uuidv4();
+    await this.wabaMessageService.create({
+      projectId: String(projectId),
+      adminId: String(adminId),
+      phoneNumber: recipientPhoneNumber,
+      contactId: contactId ? String(contactId) : undefined,
+      wabaMessageId: sentId,
+      messageType: 'individual',
+      templateName: '',
+      status: 'sent',
+      direction: 'outbound' as any,
+      messageFormat: 'text',
+      textBody: text,
+      displayText: text,
+    } as any);
+
+    // Emit websocket event to admin
+    try {
+      const { WebsocketGateway } = await import('../websocket/websocket.gateway');
+      const { SocketEvents } = await import('../websocket/dto/socket.dto');
+      const gateway = (global as any).app?.get?.(WebsocketGateway);
+      if (gateway?.emitSocketEvent) {
+        gateway.emitSocketEvent(String(adminId), SocketEvents.CHAT_MESSAGE, {
+          phoneNumber: recipientPhoneNumber,
+          textBody: text,
+          wabaMessageId: sentId,
+          direction: 'outbound',
+          projectId,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    } catch {}
+
+    return { id: sentId };
+  }
+
+  /**
+   * Check if direct messages can be sent (24-hour window)
+   */
+  async canSendDirectMessage(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    phoneNumber: string,
+  ): Promise<{ canSend: boolean; reason?: string; lastInboundMessageTime?: Date }> {
+    try {
+      // Find the last inbound message from this phone number
+      const filter = {
+        projectId: new Types.ObjectId(projectId),
+        phoneNumber: phoneNumber.replace('+', ''),
+        direction: 'inbound' as any,
+        isDeleted: false,
+      };
+      const lastInboundMessage = await this.wabaMessageService['wabaMessageModel']
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .limit(1)
+        .exec();
+
+      if (!lastInboundMessage || lastInboundMessage.length === 0) {
+        return {
+          canSend: false,
+          reason: 'No previous inbound message from this contact. Use template messages to initiate conversation.',
+        };
+      }
+
+      const lastMessage = lastInboundMessage[0];
+      const lastMessageTime = new Date((lastMessage as any).createdAt);
+      const now = new Date();
+      const hoursDiff = (now.getTime() - lastMessageTime.getTime()) / (1000 * 60 * 60);
+
+      if (hoursDiff > 24) {
+        return {
+          canSend: false,
+          reason: '24-hour window has expired. Use template messages to continue conversation.',
+          lastInboundMessageTime: lastMessageTime,
+        };
+      }
+
+      return {
+        canSend: true,
+        lastInboundMessageTime: lastMessageTime,
+      };
+    } catch (error) {
+      this.logger.error('Error checking 24-hour window:', error);
+      return {
+        canSend: false,
+        reason: 'Error checking message window. Please use template messages.',
+      };
     }
   }
 
@@ -185,6 +422,37 @@ export class WhatsappService {
         error,
       );
     }
+  }
+
+  /**
+   * Render display text from template components for chat display
+   * @param components Template components array
+   * @returns Human-readable text
+   */
+  private renderDisplayText(components: any[]): string {
+    if (!components || components.length === 0) return '';
+    
+    const textParts: string[] = [];
+    
+    for (const component of components) {
+      if (component.type === 'body' && component.parameters) {
+        // Extract text from body parameters
+        const bodyTexts = component.parameters
+          .filter((param: any) => param.type === 'text')
+          .map((param: any) => param.text)
+          .join(' ');
+        if (bodyTexts) textParts.push(bodyTexts);
+      } else if (component.type === 'footer' && component.parameters) {
+        // Extract text from footer parameters
+        const footerTexts = component.parameters
+          .filter((param: any) => param.type === 'text')
+          .map((param: any) => param.text)
+          .join(' ');
+        if (footerTexts) textParts.push(footerTexts);
+      }
+    }
+    
+    return textParts.join(' ');
   }
 
   /**
@@ -1057,10 +1325,15 @@ export class WhatsappService {
       }
     }
 
+    templateStructure.components.map((component: any) => {
+      console.log(JSON.stringify(component, null, 2))
+    })
     // Remove components if empty
     if (templateStructure.components.length === 0) {
       delete templateStructure.components;
     }
+
+
 
     const metaPayload = {
       messaging_product: 'whatsapp',
@@ -1068,6 +1341,7 @@ export class WhatsappService {
       type: 'template',
       template: templateStructure,
     };
+    console.log(metaPayload)
 
     try {
       this.logger.log('Sending template message to Meta', metaPayload);
@@ -1094,9 +1368,14 @@ export class WhatsappService {
             wabaMessageId: response.data.messages[0].id,
             messageType,
             templateName: templateName,
+            templateLanguage: language || 'en_US',
+            messageFormat: 'template',
+            templateComponents: templateStructure.components || [],
+            displayText: this.renderDisplayText(templateStructure.components || []),
             campaignId,
             attendeeId: attendeeId?.toString(),
             meetingId,
+            direction: 'outbound' as any,
           });
         } catch (error) {
           this.logger.error('Failed to create WABA message record:', error);

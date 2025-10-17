@@ -163,6 +163,10 @@ export class ProjectsService {
     return this.projectModel.find({ adminId }).exec();
   }
 
+  async findByPhoneNumberId(phoneNumberId: string): Promise<Project | null> {
+    return this.projectModel.findOne({ phoneNumberId }).exec();
+  }
+
   async update(
     id: Types.ObjectId,
     projectId: Types.ObjectId,

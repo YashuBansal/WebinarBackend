@@ -112,10 +112,52 @@ export class WabaMessage extends Document {
 
   @Prop({
     type: String,
-    required: [true, 'Template name is required'],
+    required: false,
     trim: true,
   })
   templateName: string;
+
+  @Prop({
+    type: String,
+    enum: ['inbound', 'outbound'],
+    default: 'outbound',
+    index: true,
+  })
+  direction: 'inbound' | 'outbound';
+
+  @Prop({
+    type: String,
+    trim: true,
+  })
+  textBody?: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+  })
+  mediaUrl?: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+  })
+  mimeType?: string;
+
+  @Prop({
+    type: String,
+    enum: ['text', 'template', 'media'],
+    default: 'text',
+  })
+  messageFormat: 'text' | 'template' | 'media';
+
+  @Prop({ type: [Object] })
+  templateComponents?: any[];
+
+  @Prop({ type: String, trim: true })
+  templateLanguage?: string;
+
+  @Prop({ type: String, trim: true })
+  displayText?: string;
 
   @Prop({
     type: [StatusHistory],
@@ -200,5 +242,6 @@ WabaMessageSchema.index({ status: 1, createdAt: -1 });
 WabaMessageSchema.index({ sentAt: -1 });
 WabaMessageSchema.index({ deliveredAt: -1 });
 WabaMessageSchema.index({ readAt: -1 });
+WabaMessageSchema.index({ projectId: 1, phoneNumber: 1, createdAt: -1 });
 
 export { WabaMessageSchema };
