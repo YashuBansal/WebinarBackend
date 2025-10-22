@@ -23,6 +23,7 @@ async function bootstrap() {
         'https://localhost:5174',
         'https://localhost:5173',
         'http://localhost:3000',                                                                                                                                                            
+        'http://localhost:3002',                                                                                                                                                            
         'https://da5f61e2268f.ngrok-free.app', 
         'https://dashboard.webinarleadshub.com',
         'https://msg.webinarleadshub.com',
