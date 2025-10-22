@@ -28,6 +28,9 @@ async function bootstrap() {
         'https://dashboard.webinarleadshub.com',
         'https://msg.webinarleadshub.com',
         'https://livezoom.webinarleadshub.com',
+        'https://dashboard.ajaybansal.com',
+        'https://msg.ajaybansal.com',
+        'https://livezoom.ajaybansal.com',
       ];
 
       // allow requests with no origin (e.g., Postman)
