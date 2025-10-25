@@ -13,7 +13,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom, lastValueFrom, map } from 'rxjs';
 import { UsersService } from 'src/users/users.service';
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, AxiosInstance } from 'axios';
+import * as http from 'http';
+import axiosRetry from 'axios-retry';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ProjectsService } from 'src/projects/projects.service';
@@ -47,6 +49,7 @@ export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
   private readonly webhookVerifyToken: string;
   private readonly ENCRYPTION_KEY: string;
+  private readonly axiosInstance: AxiosInstance;
 
   constructor(
     private readonly httpService: HttpService,
@@ -88,6 +91,24 @@ export class WhatsappService {
       this.configService.get<string>('CLOUDINARY_API_KEY'),
       this.configService.get<string>('CLOUDINARY_API_SECRET'),
     );
+
+    // Initialize robust axios instance with IPv4 agent and retry logic
+    const httpAgent = new http.Agent({ family: 4 });
+    this.axiosInstance = axios.create({
+      httpAgent: httpAgent,
+    });
+
+    // Apply automatic retry mechanism
+    axiosRetry(this.axiosInstance, {
+      retries: 3,
+      retryDelay: (retryCount) => {
+        this.logger.warn(`Request failed. Retrying in ${retryCount * 2}s... (Attempt ${retryCount})`);
+        return retryCount * 2000;
+      },
+      retryCondition: (error) => {
+        return axiosRetry.isNetworkOrIdempotentRequestError(error) || error.code === 'ETIMEDOUT';
+      },
+    });
   }
 
   url = this.configService.get('AISENSY_URL');
@@ -1347,10 +1368,11 @@ export class WhatsappService {
 
     try {
       this.logger.log('Sending template message to Meta', metaPayload);
-      const response = await axios.post(url, metaPayload, {
+      const response = await this.axiosInstance.post(url, metaPayload, {
         headers: {
           Authorization: `Bearer ${account.permanentAccessToken}`,
         },
+        timeout: 15000, // 15 second timeout
       });
 
       
@@ -1390,10 +1412,32 @@ export class WhatsappService {
 
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `Failed to send template message to ${recipientPhoneNumber}`,
-        error,
-      );
+      // Enhanced error handling for axios errors
+      if (axios.isAxiosError(error)) {
+        this.logger.error(`Axios request failed: ${error.message}`, {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          url: error.config?.url,
+          method: error.config?.method,
+        });
+        
+        // Provide more specific error messages based on status codes
+        if (error.response?.status === 401) {
+          throw new UnauthorizedException('Invalid access token or expired credentials');
+        } else if (error.response?.status === 400) {
+          throw new BadRequestException(
+            error.response?.data?.error?.message || 'Invalid request parameters'
+          );
+        } else if (error.response?.status === 429) {
+          throw new InternalServerErrorException('Rate limit exceeded. Please try again later');
+        } else if (error.code === 'ETIMEDOUT') {
+          throw new InternalServerErrorException('Request timeout. Please try again');
+        }
+      } else {
+        this.logger.error('An unexpected error occurred while sending message', error);
+      }
+      
       throw new InternalServerErrorException(
         error.response?.data?.error?.message ||
           'Could not send template message.',
