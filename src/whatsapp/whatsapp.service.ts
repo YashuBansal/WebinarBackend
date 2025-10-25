@@ -1369,9 +1369,6 @@ export class WhatsappService {
 
       
 
-    console.log('response', response);
-
-
       this.logger.log(
         `Message sent successfully to ${recipientPhoneNumber}. Message ID: ${response.data.messages[0].id}`,
       );
