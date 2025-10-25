@@ -732,6 +732,7 @@ export class WhatsappService {
     query: GetTemplatesQueryDto = {},
   ): Promise<TemplateResponseDto[]> {
     const account = await this.projectService.findOne(adminId, projectId);
+    this.logger.log('account', account);
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this project.',
@@ -1262,6 +1263,7 @@ export class WhatsappService {
       }
 
       // Get template details to determine header format
+      this.logger.log('templateName', templateName, 'projectId', projectId, 'adminId', adminId);
       const templates = await this.getTemplatesForWaba(
         adminId,
         new Types.ObjectId(projectId),
@@ -1345,20 +1347,20 @@ export class WhatsappService {
 
     try {
       this.logger.log('Sending template message to Meta', metaPayload);
-      const response = await firstValueFrom(
+      const response = await lastValueFrom(
         this.httpService.post(url, metaPayload, {
           headers: {
             Authorization: `Bearer ${account.permanentAccessToken}`,
           },
-        }),
+        }).pipe(map((r) => r.data)),
       );
 
       this.logger.log(
-        `Message sent successfully to ${recipientPhoneNumber}. Message ID: ${response.data.messages[0].id}`,
+        `Message sent successfully to ${recipientPhoneNumber}. Message ID: ${response.messages[0].id}`,
       );
 
       // Create WABA message record
-      if (response.data?.messages[0]?.id) {
+      if (response?.messages[0]?.id) {
         try {
           await this.wabaMessageService.create({
             projectId: projectId,
@@ -1387,7 +1389,7 @@ export class WhatsappService {
     } catch (error) {
       this.logger.error(
         `Failed to send template message to ${recipientPhoneNumber}`,
-        error.response?.data?.error,
+        error,
       );
       throw new InternalServerErrorException(
         error.response?.data?.error?.message ||
