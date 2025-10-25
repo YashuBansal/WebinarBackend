@@ -13,7 +13,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom, lastValueFrom, map } from 'rxjs';
 import { UsersService } from 'src/users/users.service';
-import { AxiosError } from 'axios';
+import axios, { AxiosError } from 'axios';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ProjectsService } from 'src/projects/projects.service';
@@ -1347,20 +1347,23 @@ export class WhatsappService {
 
     try {
       this.logger.log('Sending template message to Meta', metaPayload);
-      const response = await lastValueFrom(
-        this.httpService.post(url, metaPayload, {
-          headers: {
-            Authorization: `Bearer ${account.permanentAccessToken}`,
-          },
-        }).pipe(map((r) => r.data)),
-      );
+      const response = await axios.post(url, metaPayload, {
+        headers: {
+          Authorization: `Bearer ${account.permanentAccessToken}`,
+        },
+      });
+
+      
+
+    console.log('response', response);
+
 
       this.logger.log(
-        `Message sent successfully to ${recipientPhoneNumber}. Message ID: ${response.messages[0].id}`,
+        `Message sent successfully to ${recipientPhoneNumber}. Message ID: ${response.data.messages[0].id}`,
       );
 
       // Create WABA message record
-      if (response?.messages[0]?.id) {
+      if (response.data?.messages[0]?.id) {
         try {
           await this.wabaMessageService.create({
             projectId: projectId,
