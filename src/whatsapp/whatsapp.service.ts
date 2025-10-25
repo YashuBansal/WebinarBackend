@@ -85,12 +85,6 @@ export class WhatsappService {
       api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
     });
 
-    console.log(
-      'cloudinary config',
-      this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-      this.configService.get<string>('CLOUDINARY_API_KEY'),
-      this.configService.get<string>('CLOUDINARY_API_SECRET'),
-    );
 
     // Initialize robust axios instance with IPv4 agent and retry logic
     const httpAgent = new http.Agent({ family: 4 });
@@ -148,7 +142,6 @@ export class WhatsappService {
    * @param payload The body of the POST request from Meta's webhook.
    */
   async processWebhookPayload(payload: any): Promise<void> {
-    console.log(JSON.stringify(payload, null, 2));
     this.logger.log('Processing webhook payload for WhatsApp messages');
 
 
@@ -482,7 +475,6 @@ export class WhatsappService {
    * @param payload The data to be sent to the webhook.
    */
   async callExternalWebhook(payload: Record<string, any>) {
-    console.log(payload);
     const webhookUrl = this.configService.get<string>('EXTERNAL_WEBHOOK_URL');
 
     if (!webhookUrl) {
