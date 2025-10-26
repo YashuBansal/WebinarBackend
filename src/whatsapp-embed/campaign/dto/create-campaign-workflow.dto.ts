@@ -56,8 +56,9 @@ export class ContactSelectionDto {
 }
 
 export class WlhAttendeeFiltersFiltersDto {
-  @IsMongoId()
-  webinarId: string;
+  @IsArray()
+  @IsMongoId({ each: true })
+  webinarIds: string[];
 
   @IsArray()
   @IsString({ each: true })

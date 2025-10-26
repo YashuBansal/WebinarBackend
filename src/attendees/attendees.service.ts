@@ -71,7 +71,6 @@ export class AttendeesService {
     private readonly customLeadTypeService: CustomLeadTypeService,
     private readonly webinarParticipantService: WebinarParticipantService,
     private readonly tagService: TagsService,
-    // private readonly tagsService: TagsService,
   ) {}
 
 
@@ -79,6 +78,16 @@ export class AttendeesService {
     const attendees = await this.attendeeModel.
     countDocuments({
       webinar: webinarId,
+      adminId: adminId,
+      ...(tags?.length > 0 && { tags: { $in: tags } }),
+      isAttended: false,
+    })
+    return attendees
+  }
+
+  async getAttendeesCountMultipleWebinars(webinarIds: Types.ObjectId[], tags: string[], adminId: Types.ObjectId): Promise<number> {
+    const attendees = await this.attendeeModel.countDocuments({
+      webinar: { $in: webinarIds },
       adminId: adminId,
       ...(tags?.length > 0 && { tags: { $in: tags } }),
       isAttended: false,

@@ -71,4 +71,54 @@ export class AttendeeAssociationService {
       .session(session)
       .exec();
   }
+
+
+  async addFullNamesAndPhonesToAssociation(
+    payload: 
+    {
+      fullName: string,
+      phone: string,
+      adminId: Types.ObjectId,
+      email: string,
+    }
+  ){
+    const { fullName="", phone="", adminId, email } = payload;
+
+    const association = await this.attendeeAssociationModel.findOne({ adminId: adminId, email: email });
+    
+
+    const trimmedFullName = fullName?.trim() || "";
+    const trimmedPhone = phone?.trim() || "";
+
+    if(!association){
+      const newAssociation = await this.attendeeAssociationModel.create({
+        email: email,
+        adminId: adminId,
+        fullNames: trimmedFullName ? [trimmedFullName] : [],
+        phones: trimmedPhone ? [trimmedPhone] : [],
+      });
+      return newAssociation;
+    }
+
+    const associatedFullNames = association.fullNames || [];
+    const associatedPhones = association.phones || [];
+
+    // Add new full names and phones to the association but remove duplicates
+
+    if(trimmedFullName && !associatedFullNames.includes(trimmedFullName)){
+      associatedFullNames.push(trimmedFullName);
+    }
+
+    if(trimmedPhone && !associatedPhones.includes(trimmedPhone)){
+      associatedPhones.push(trimmedPhone);
+    }
+
+    const updatedAssociation = await this.attendeeAssociationModel.updateOne(
+      { adminId: adminId, email: email },
+      { $set: { fullNames: associatedFullNames, phones: associatedPhones } },
+    );
+
+    return updatedAssociation;
+  }
+
 }

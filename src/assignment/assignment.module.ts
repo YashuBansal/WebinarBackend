@@ -21,6 +21,7 @@ import { NotificationModule } from 'src/notification/notification.module';
 import { EnrollmentsModule } from 'src/enrollments/enrollments.module';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 import { WebinarAutoMessageModule } from 'src/webinar-auto-message/webinar-auto-message.module';
+import { AttendeeAssociationModule } from 'src/attendee-association/attendee-association.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { WebinarAutoMessageModule } from 'src/webinar-auto-message/webinar-auto-
     EnrollmentsModule,
     AttendeeLogModule,
     forwardRef(() => WebinarAutoMessageModule),
+    AttendeeAssociationModule
   ],
   providers: [AssignmentService],
   controllers: [AssignmentController],

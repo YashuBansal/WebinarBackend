@@ -45,6 +45,7 @@ import { User } from 'src/schemas/User.schema';
 import { Webinar } from 'src/schemas/Webinar.schema';
 import mongoose from 'mongoose';
 import { WebinarAutoMessageService } from 'src/webinar-auto-message/webinar-auto-message.service';
+import { AttendeeAssociationService } from 'src/attendee-association/attendee-association.service';
 
 @Injectable()
 export class AssignmentService {
@@ -64,6 +65,7 @@ export class AssignmentService {
     private readonly enrollmentService: EnrollmentsService,
     private readonly attendeeLogService: AttendeeLogService,
     private readonly autoMessageService: WebinarAutoMessageService,
+    private readonly attendeeAssociationService: AttendeeAssociationService,
   ) {}
 
   async getAssignments(
@@ -1164,6 +1166,13 @@ export class AssignmentService {
         webinarId,
       );
 
+    this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
+      fullName: attendee.firstName + ' ' + attendee.lastName,
+      phone: this.formatPhoneNumber(attendee.phone),
+      adminId: new Types.ObjectId(`${adminId}`),
+      email: attendee.email,
+    })
+
     if (existingAttendee) {
       if (
         Array.isArray(existingAttendee.tags) &&
@@ -1187,6 +1196,14 @@ export class AssignmentService {
           webinar.productIds,
           webinar.assignedEmployees,
         );
+        if(attendee.firstName && attendee.lastName){
+          existingAttendee.firstName = attendee.firstName.trim();
+          existingAttendee.lastName = attendee.lastName.trim();
+        }
+
+        if(attendee.phone){
+          existingAttendee.phone = this.formatPhoneNumber(attendee.phone);
+        }
 
         await existingAttendee.save();
       }

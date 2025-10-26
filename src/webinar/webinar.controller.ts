@@ -51,8 +51,10 @@ export class WebinarController {
   }
 
   @Get('attendee-count')
-  async getAttendeeCount(@Id() adminId: string, @Query() query: { webinarId: string, tags: string[] }): Promise<any> {
-    const count = await this.webinarService.getPreWebinarAttendeeCount(adminId, query.webinarId, query.tags);
+  async getAttendeeCount(@Id() adminId: string, @Query() query: { webinarIds: string | string[], tags: string[] }): Promise<any> {
+    // Handle both single ID (string) and array of IDs
+    const webinarIds = Array.isArray(query.webinarIds) ? query.webinarIds : [query.webinarIds];
+    const count = await this.webinarService.getPreWebinarAttendeeCount(adminId, webinarIds, query.tags);
     return {
       message: 'Attendee Count Fetched Successfully',
       data: count,

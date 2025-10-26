@@ -77,19 +77,29 @@ export class WebinarService {
 
   async getPreWebinarAttendeeCount(
     adminId: string,
-    webinarId: string,
+    webinarIds: string[],
     tags: string[]
   ): Promise<number> {
-    const webinar = await this.webinarModel.findById(webinarId);
-    if (!webinar) {
-      throw new NotFoundException('Webinar not found');
+    // Validate that all webinars exist and belong to the admin
+    const webinars = await this.webinarModel.find({
+      _id: { $in: webinarIds.map(id => new Types.ObjectId(id)) },
+      adminId: new Types.ObjectId(adminId)
+    });
+
+    if (webinars.length !== webinarIds.length) {
+      throw new NotFoundException('One or more webinars not found');
     }
 
-    const attendees = await this.attendeesService.getAttendeesCount(
-      webinar._id as Types.ObjectId,
+    // Convert to ObjectIds for the query
+    const webinarObjectIds = webinarIds.map(id => new Types.ObjectId(id));
+
+    // Get total count of attendees across all specified webinars
+    const attendees = await this.attendeesService.getAttendeesCountMultipleWebinars(
+      webinarObjectIds,
       tags,
       new Types.ObjectId(`${adminId}`)
-    )
+    );
+    
     return attendees;
   }
 

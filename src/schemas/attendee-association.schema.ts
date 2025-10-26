@@ -16,9 +16,23 @@ export class AttendeeAssociation extends Document {
   @Prop({
     type: Types.ObjectId,
     ref: CustomLeadType.name,
-    required: true,
+    required: false,
   })
   leadType: Types.ObjectId; //Lead Type
+
+
+  @Prop({
+    type: [String],
+    default: [],
+  })
+  fullNames: string[]; //Full Names
+
+
+  @Prop({
+    type: [String],
+    default: [],
+  })
+  phones: string[]; //Phones
 
   @Prop({
     type: Types.ObjectId,

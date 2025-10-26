@@ -540,19 +540,40 @@ export class CampaignService {
     }
     else {
 
-      const webinarId = wlhAttendeeFilters.filters.webinarId;
+      const webinarIds = wlhAttendeeFilters.filters.webinarIds;
       const tags = wlhAttendeeFilters.filters.tags;
-      this.logger.log(`webinarId: ${webinarId}, tags: ${tags}`);
+      this.logger.log(`webinarIds: ${webinarIds}, tags: ${tags}`);
 
-      const attendees = await this.attendeesService.getAttendees(
-        webinarId,adminId,false,0,0,{
-          filters: {
-            ...(tags?.length > 0 && { tags: tags }),
+      // Handle multiple webinars - get attendees from all specified webinars
+      let attendeeResults: any[] = [];
+      const allAttendeeIds = new Set<string>(); // Use Set to deduplicate by phone number
+
+      for (const webinarId of webinarIds) {
+        const attendees = await this.attendeesService.getAttendees(
+          webinarId,
+          adminId,
+          false,
+          0,
+          0,
+          {
+            filters: {
+              ...(tags?.length > 0 && { tags: tags }),
+            }
+          }
+        );
+        
+        const webinarAttendees = attendees.result || [];
+        
+        // Deduplicate attendees by phone number across multiple webinars
+        for (const attendee of webinarAttendees) {
+          if (!allAttendeeIds.has(attendee.phone)) {
+            allAttendeeIds.add(attendee.phone);
+            attendeeResults.push(attendee);
           }
         }
-      )
-      const attendeeResults = attendees.result || [];
-      this.logger.log(`attendeeResults: ${attendeeResults.length}`);
+      }
+      
+      this.logger.log(`Total unique attendees from ${webinarIds.length} webinars: ${attendeeResults.length}`);
 
 
 
