@@ -1,4 +1,3 @@
-import { HttpService } from '@nestjs/axios';
 import {
   Injectable,
   forwardRef,
@@ -11,7 +10,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { firstValueFrom, lastValueFrom, map } from 'rxjs';
+// RxJS imports removed as axiosInstance is now used throughout
 import { UsersService } from 'src/users/users.service';
 import axios, { AxiosError, AxiosInstance } from 'axios';
 import * as http from 'http';
@@ -52,7 +51,6 @@ export class WhatsappService {
   private readonly axiosInstance: AxiosInstance;
 
   constructor(
-    private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
@@ -319,11 +317,12 @@ export class WhatsappService {
       text: { body: text },
     };
 
-    const response = await lastValueFrom(
-      this.httpService.post(url, payload, { headers }).pipe(map((r) => r.data)),
-    );
+    const response = await this.axiosInstance.post(url, payload, {
+      headers,
+      timeout: 15000,
+    });
 
-    const sentId = response?.messages?.[0]?.id || uuidv4();
+    const sentId = response.data?.messages?.[0]?.id || uuidv4();
     await this.wabaMessageService.create({
       projectId: String(projectId),
       adminId: String(adminId),
@@ -486,16 +485,13 @@ export class WhatsappService {
 
     try {
       this.logger.log(`Calling external webhook at: ${webhookUrl}`);
-      const result = await lastValueFrom(
-        this.httpService
-          .post(webhookUrl, payload, {
-            // Optional: Add headers if your webhook requires them, e.g., an auth token
-            // headers: { 'Authorization': `Bearer ${some_token}` }
-          })
-          .pipe(map((resp) => resp.data)),
-      );
+      const response = await this.axiosInstance.post(webhookUrl, payload, {
+        timeout: 15000,
+        // Optional: Add headers if your webhook requires them, e.g., an auth token
+        // headers: { 'Authorization': `Bearer ${some_token}` }
+      });
       this.logger.log('Successfully received response from webhook.');
-      return { success: true, data: result };
+      return { success: true, data: response.data };
     } catch (error) {
       // --- ROBUST ERROR HANDLING ---
       const axiosError = error as AxiosError;
@@ -625,9 +621,10 @@ export class WhatsappService {
     };
     console.log(url, params);
 
-    const response = await firstValueFrom(
-      this.httpService.get<{ access_token: string }>(url, { params }),
-    );
+    const response = await this.axiosInstance.get<{ access_token: string }>(url, { 
+      params,
+      timeout: 15000,
+    });
     return response.data.access_token;
   }
 
@@ -645,9 +642,10 @@ export class WhatsappService {
     };
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.get<{ access_token: string }>(url, { params }),
-      );
+      const response = await this.axiosInstance.get<{ access_token: string }>(url, { 
+        params,
+        timeout: 15000,
+      });
       return response.data.access_token;
     } catch (error) {
       this.logger.error(
@@ -674,9 +672,10 @@ export class WhatsappService {
       access_token: appAccessToken, // Your App Token to authorize the inspection.
     };
 
-    const response = await firstValueFrom(
-      this.httpService.get(url, { params }),
-    );
+    const response = await this.axiosInstance.get(url, { 
+      params,
+      timeout: 15000,
+    });
     const wabaId = response.data.data.granular_scopes.find(
       (scope) => scope.scope === 'whatsapp_business_management',
     )?.target_ids[0];
@@ -719,9 +718,10 @@ export class WhatsappService {
     this.logger.log(`Fetching WABA details from URL: ${url}`);
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.get(url, { params }),
-      );
+      const response = await this.axiosInstance.get(url, { 
+        params,
+        timeout: 15000,
+      });
       return response.data;
     } catch (error) {
       this.logger.error(
@@ -783,9 +783,10 @@ export class WhatsappService {
     );
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.get(url, { params }),
-      );
+      const response = await this.axiosInstance.get(url, { 
+        params,
+        timeout: 15000,
+      });
       this.logger.log(
         `Successfully fetched ${response.data.data?.length || 0} templates for WABA ${wabaId}`,
       );
@@ -969,14 +970,13 @@ export class WhatsappService {
     try {
       // CORRECTED API CALL
       console.log('metaPayload', JSON.stringify(metaPayload, null, 2));
-      const response = await firstValueFrom(
-        this.httpService.post(url, metaPayload, {
-          headers: {
-            // <-- Use headers instead of params
-            Authorization: `Bearer ${permanentAccessToken}`,
-          },
-        }),
-      );
+      const response = await this.axiosInstance.post(url, metaPayload, {
+        headers: {
+          // <-- Use headers instead of params
+          Authorization: `Bearer ${permanentAccessToken}`,
+        },
+        timeout: 15000,
+      });
 
       this.logger.log(
         `Template created successfully with ID: ${response.data.id}`,
@@ -1042,11 +1042,10 @@ export class WhatsappService {
     );
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(url, metaPayload, {
-          params: { access_token: permanentAccessToken },
-        }),
-      );
+      const response = await this.axiosInstance.post(url, metaPayload, {
+        params: { access_token: permanentAccessToken },
+        timeout: 15000,
+      });
 
       this.logger.log(`Template ${templateId} updated successfully`);
       return response.data;
@@ -1095,9 +1094,10 @@ export class WhatsappService {
     );
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.delete(url, { params }),
-      );
+      const response = await this.axiosInstance.delete(url, { 
+        params,
+        timeout: 15000,
+      });
 
       this.logger.log(`Template deleted successfully`);
       return response.data;
@@ -1126,15 +1126,14 @@ export class WhatsappService {
     const url = `https://graph.facebook.com/${apiVersion}/${templateId}`;
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.get(url, {
-          params: {
-            access_token: permanentAccessToken,
-            fields:
-              'name,status,category,language,components,quality_score,rejected_reason',
-          },
-        }),
-      );
+      const response = await this.axiosInstance.get(url, {
+        params: {
+          access_token: permanentAccessToken,
+          fields:
+            'name,status,category,language,components,quality_score,rejected_reason',
+        },
+        timeout: 15000,
+      });
       return response.data;
     } catch (error) {
       this.logger.error(
@@ -1557,9 +1556,10 @@ export class WhatsappService {
     this.logger.log(`Fetching WABA details from URL: ${url}`);
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.get(url, { params }),
-      );
+      const response = await this.axiosInstance.get(url, { 
+        params,
+        timeout: 15000,
+      });
       return response.data;
     } catch (error) {
       this.logger.error(
@@ -1579,14 +1579,13 @@ export class WhatsappService {
     const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/message_templates`;
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.get(url, {
-          params: {
-            access_token: accessToken,
-            fields: 'name,status,category,language,components',
-          },
-        }),
-      );
+      const response = await this.axiosInstance.get(url, {
+        params: {
+          access_token: accessToken,
+          fields: 'name,status,category,language,components',
+        },
+        timeout: 15000,
+      });
       return response.data.data; // The templates are in the 'data' array
     } catch (error) {
       this.logger.error(
@@ -1624,14 +1623,13 @@ export class WhatsappService {
     );
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(url, payload, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
+      const response = await this.axiosInstance.post(url, payload, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+      });
 
       this.logger.log(`Phone number ${phoneNumberId} registered successfully`);
       return response.data;
@@ -1714,17 +1712,16 @@ export class WhatsappService {
     this.logger.log(`Subscribing app to WABA ${wabaId}`);
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(
-          url,
-          {},
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
+      const response = await this.axiosInstance.post(
+        url,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
           },
-        ),
+          timeout: 15000,
+        },
       );
 
       this.logger.log(`App successfully subscribed to WABA ${wabaId}`);
@@ -1841,11 +1838,10 @@ export class WhatsappService {
         `Creating upload session: ${originalName} (${fileBuffer.length} bytes, ${mimeType})`,
       );
 
-      const sessionResponse = await firstValueFrom(
-        this.httpService.post(createSessionUrl, null, {
-          params: sessionParams,
-        }),
-      );
+      const sessionResponse = await this.axiosInstance.post(createSessionUrl, null, {
+        params: sessionParams,
+        timeout: 15000,
+      });
 
       this.logger.log(
         `Upload session created: ${JSON.stringify(sessionResponse.data, null, 2)}`,
@@ -1861,15 +1857,14 @@ export class WhatsappService {
 
       this.logger.log(`Uploading file data to session: ${uploadSessionId}`);
 
-      const uploadResponse = await firstValueFrom(
-        this.httpService.post(uploadUrl, fileBuffer, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            file_offset: '0',
-            'Content-Type': mimeType,
-          },
-        }),
-      );
+      const uploadResponse = await this.axiosInstance.post(uploadUrl, fileBuffer, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          file_offset: '0',
+          'Content-Type': mimeType,
+        },
+        timeout: 15000,
+      });
 
       this.logger.log(
         `File upload completed: ${JSON.stringify(uploadResponse.data, null, 2)}`,
