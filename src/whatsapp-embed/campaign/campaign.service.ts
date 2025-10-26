@@ -3,15 +3,10 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
-  InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model, Types } from 'mongoose';
-import { HttpService } from '@nestjs/axios';
-import { ConfigService } from '@nestjs/config';
-import { firstValueFrom } from 'rxjs';
-import { AxiosError } from 'axios';
+import  { Model, Types } from 'mongoose';
 import {
   Campaign,
   CampaignContactType,
@@ -37,8 +32,6 @@ export class CampaignService {
 
   constructor(
     @InjectModel(Campaign.name) private campaignModel: Model<CampaignDocument>,
-    private readonly httpService: HttpService,
-    private readonly configService: ConfigService,
     private readonly wabaMessageService: WabaMessageService,
     private readonly projectService: ProjectsService,
     private readonly whatsappService: WhatsappService,
@@ -732,108 +725,6 @@ export class CampaignService {
     };
   }
 
-  /**
-   * Send template message to a single contact
-   * Similar to WhatsApp service's sendTemplateMessage method
-   */
-  private async sendTemplateMessageToContact(
-    project: any,
-    contact: any,
-    templateName: string,
-    bodyVariables?: string[],
-    language?: string,
-    headerMediaAssetId?: string,
-    adminId?: string,
-  ): Promise<any> {
-    const { permanentAccessToken, phoneNumberId } = project;
-    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
-    const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
-
-    // Construct the Meta payload
-    const metaPayload: any = {
-      messaging_product: 'whatsapp',
-      to: contact.phoneNumber,
-      type: 'template',
-      template: {
-        name: templateName,
-        language: {
-          code: language || 'en_US',
-        },
-        components: [],
-      },
-    };
-
-    // Add header component if media asset ID is provided
-    if (headerMediaAssetId) {
-      // Use WhatsApp service to handle media asset and template logic
-      const headerComponent = await this.getHeaderComponentForMedia(
-        headerMediaAssetId,
-        templateName,
-        adminId,
-        project._id,
-      );
-
-      if (headerComponent) {
-        metaPayload.template.components.push(headerComponent);
-      }
-    }
-
-    // Add body component if variables are provided
-    if (bodyVariables && bodyVariables.length > 0) {
-      metaPayload.template.components.push({
-        type: 'body',
-        parameters: bodyVariables.map((variable) => ({
-          type: 'text',
-          text: variable,
-        })),
-      });
-    }
-
-    // Remove components array if empty
-    if (metaPayload.template.components.length === 0) {
-      delete metaPayload.template.components;
-    }
-
-    try {
-      const response = await firstValueFrom(
-        this.httpService.post(url, metaPayload, {
-          headers: { Authorization: `Bearer ${permanentAccessToken}` },
-        }),
-      );
-
-      return response.data;
-    } catch (error) {
-      const axiosError = error as AxiosError;
-      this.logger.error(
-        `Failed to send template message to ${contact.phoneNumber}`,
-        {
-          status: axiosError.response?.status,
-          data: axiosError.response?.data,
-          message: axiosError.message,
-        },
-      );
-
-      // Provide more specific error messages
-      if (axiosError.response?.status === 401) {
-        throw new UnauthorizedException(
-          'Invalid WhatsApp access token. Please reconfigure your WhatsApp Business Account.',
-        );
-      } else if (axiosError.response?.status === 403) {
-        throw new UnauthorizedException(
-          'Access denied. Please check your WhatsApp Business Account permissions.',
-        );
-      } else if (axiosError.response?.status === 404) {
-        throw new NotFoundException(
-          'WhatsApp Business Account not found. Please check your configuration.',
-        );
-      }
-
-      throw new InternalServerErrorException(
-        (axiosError.response?.data as any)?.error?.message ||
-        'Could not send template message.',
-      );
-    }
-  }
 
   /**
    * Process webhook payload for message status updates

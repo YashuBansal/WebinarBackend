@@ -6,10 +6,11 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { firstValueFrom } from 'rxjs';
-import { AxiosError } from 'axios';
+import { AxiosError, AxiosInstance } from 'axios';
+import axios from 'axios';
+import * as http from 'http';
+import axiosRetry from 'axios-retry';
 import { ProjectsService } from 'src/projects/projects.service';
 import { Types } from 'mongoose';
 import {
@@ -22,12 +23,30 @@ import {
 @Injectable()
 export class ProfileService {
   private readonly logger = new Logger(ProfileService.name);
+  private readonly axiosInstance: AxiosInstance;
 
   constructor(
-    private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly projectService: ProjectsService,
-  ) {}
+  ) {
+    // Initialize robust axios instance with IPv4 agent and retry logic
+    const httpAgent = new http.Agent({ family: 4 });
+    this.axiosInstance = axios.create({
+      httpAgent: httpAgent,
+    });
+
+    // Apply automatic retry mechanism
+    axiosRetry(this.axiosInstance, {
+      retries: 3,
+      retryDelay: (retryCount) => {
+        this.logger.warn(`Request failed. Retrying in ${retryCount * 2}s... (Attempt ${retryCount})`);
+        return retryCount * 2000;
+      },
+      retryCondition: (error) => {
+        return axiosRetry.isNetworkOrIdempotentRequestError(error) || error.code === 'ETIMEDOUT';
+      },
+    });
+  }
 
   /**
    * Get business profile information for a specific project
@@ -64,9 +83,10 @@ export class ProfileService {
     );
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.get(url, { params }),
-      );
+      const response = await this.axiosInstance.get(url, { 
+        params,
+        timeout: 15000,
+      });
 
       this.logger.log(
         `Successfully fetched business profile for phone number ${phoneNumberId}`,
@@ -164,14 +184,13 @@ export class ProfileService {
     );
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.post(url, metaPayload, {
-          headers: {
-            Authorization: `Bearer ${permanentAccessToken}`,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
+      const response = await this.axiosInstance.post(url, metaPayload, {
+        headers: {
+          Authorization: `Bearer ${permanentAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+      });
 
       this.logger.log(
         `Business profile updated successfully for phone number ${phoneNumberId}`,
@@ -247,9 +266,10 @@ export class ProfileService {
     );
 
     try {
-      const response = await firstValueFrom(
-        this.httpService.get(url, { params }),
-      );
+      const response = await this.axiosInstance.get(url, { 
+        params,
+        timeout: 15000,
+      });
 
       console.log('responsesdsdssssssssssss.data ------------------------- > ', response.data);
 
@@ -354,11 +374,10 @@ export class ProfileService {
         `Creating upload session: ${originalName} (${fileBuffer.length} bytes, ${mimeType})`,
       );
 
-      const sessionResponse = await firstValueFrom(
-        this.httpService.post(createSessionUrl, null, {
-          params: sessionParams,
-        }),
-      );
+      const sessionResponse = await this.axiosInstance.post(createSessionUrl, null, {
+        params: sessionParams,
+        timeout: 15000,
+      });
 
       const uploadSessionId = sessionResponse.data.id;
       if (!uploadSessionId || !uploadSessionId.startsWith('upload:')) {
@@ -370,15 +389,14 @@ export class ProfileService {
 
       this.logger.log(`Uploading file data to session: ${uploadSessionId}`);
 
-      const uploadResponse = await firstValueFrom(
-        this.httpService.post(uploadUrl, fileBuffer, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'file_offset': '0',
-            'Content-Type': mimeType,
-          },
-        }),
-      );
+      const uploadResponse = await this.axiosInstance.post(uploadUrl, fileBuffer, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'file_offset': '0',
+          'Content-Type': mimeType,
+        },
+        timeout: 15000,
+      });
 
       const fileHandle = uploadResponse.data.h;
       if (!fileHandle) {
