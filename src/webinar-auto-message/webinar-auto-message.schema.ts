@@ -1,5 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { Project } from 'src/schemas/project.schema';
+import { User } from 'src/schemas/User.schema';
+import { Webinar } from 'src/schemas/Webinar.schema';
 
 export type WebinarAutoMessageDocument = WebinarAutoMessage & Document;
 
@@ -22,13 +25,13 @@ export class VariableMapping {
 
 @Schema({ timestamps: true })
 export class WebinarAutoMessage extends Document {
-  @Prop({ type: Types.ObjectId, required: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: User.name, required: true, index: true })
   adminId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, required: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: Project.name, required: true, index: true })
   projectId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, required: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: Webinar.name, required: true, index: true })
   webinarId: Types.ObjectId;
 
   @Prop({ type: Boolean, default: false })
@@ -61,4 +64,3 @@ export class WebinarAutoMessage extends Document {
 
 export const WebinarAutoMessageSchema = SchemaFactory.createForClass(WebinarAutoMessage);
 WebinarAutoMessageSchema.index({ adminId: 1, webinarId: 1 }, { unique: true });
-

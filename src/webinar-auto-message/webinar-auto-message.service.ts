@@ -42,14 +42,29 @@ export class WebinarAutoMessageService {
   }
 
   async list(adminId: string, projectId?: string) {
-    const filter: any = { adminId: new Types.ObjectId(adminId) };
+    const filter: any = { };
     if (projectId) filter.projectId = new Types.ObjectId(projectId);
-    console.log(filter);
+    console.log(' fetch fitler',filter);
+
     const docs = await this.model
       .find(filter)
+      .populate('webinarId', 'webinarName webinarDate')
       .sort({ updatedAt: -1 })
       .lean();
-    return docs;
+
+    // Transform _id fields to id and extract webinar data
+    return docs.map((doc: any) => {
+      const webinar = doc.webinarId;
+      return {
+        ...doc,
+        id: doc._id.toString(),
+        adminId: doc.adminId.toString(),
+        webinarId: doc.webinarId._id ? doc.webinarId._id.toString() : doc.webinarId.toString(),
+        projectId: doc.projectId.toString(),
+        webinarName: webinar?.webinarName || 'Unknown Webinar',
+        webinarDate: webinar?.webinarDate || null,
+      };
+    });
   }
 
   private resolveVariables(mappings: VariableMappingDto[], contact: any): { values: string[]; dynamic: boolean[] } {
@@ -119,6 +134,22 @@ export class WebinarAutoMessageService {
       await this.model.updateOne({ _id: cfg._id }, { $inc: { failed: 1 }, $set: { lastError: e?.message || 'send failed' } });
       throw e;
     }
+  }
+
+  async delete(adminId: string, webinarId: string, projectId: string) {
+    const filter = {
+      adminId: new Types.ObjectId(adminId),
+      webinarId: new Types.ObjectId(webinarId),
+      projectId: new Types.ObjectId(projectId),
+    };
+
+    const result = await this.model.findOneAndDelete(filter);
+    
+    if (!result) {
+      throw new NotFoundException('Auto message configuration not found');
+    }
+
+    return { message: 'Configuration deleted successfully' };
   }
 }
 

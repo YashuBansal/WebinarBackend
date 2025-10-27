@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Post, Query, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UsePipes, ValidationPipe } from '@nestjs/common';
 import { WebinarAutoMessageService } from './webinar-auto-message.service';
-import { UpsertAutoMessageDto, GetConfigQueryDto, TestSendDto } from './dto';
+import { UpsertAutoMessageDto, GetConfigQueryDto, TestSendDto, DeleteAutoMessageDto } from './dto';
 import { Id } from '../decorators/custom.decorator';
 
 @Controller('webinar-auto-message')
@@ -32,6 +32,13 @@ export class WebinarAutoMessageController {
   async testSend(@Body() dto: TestSendDto, @Id() adminId: string) {
     const data = await this.svc.sendTest(adminId, dto);
     return { statusCode: 200, message: 'sent', data };
+  }
+
+  @Delete()
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async delete(@Query() q: DeleteAutoMessageDto, @Id() adminId: string) {
+    const data = await this.svc.delete(adminId, q.webinarId, q.projectId);
+    return { statusCode: 200, message: 'deleted', data };
   }
 }
 

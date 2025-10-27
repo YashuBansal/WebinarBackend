@@ -93,4 +93,14 @@ export class TestSendDto {
   variableMappings: VariableMappingDto[];
 }
 
+export class DeleteAutoMessageDto {
+  @IsMongoId()
+  @IsNotEmpty()
+  webinarId: string;
+
+  @IsMongoId()
+  @IsNotEmpty()
+  projectId: string;
+}
+
 
