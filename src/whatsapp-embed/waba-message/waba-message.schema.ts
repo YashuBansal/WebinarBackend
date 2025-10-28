@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Contact } from '../../contacts/Contact.schema';
 import { Project } from 'src/schemas/project.schema';
-import { User } from 'src/schemas/user.schema';
+import { User } from 'src/schemas/User.schema';
 import { Attendee } from 'src/schemas/Attendee.schema';
 import { Campaign } from 'src/schemas/whatsapp-embed/campaign.schema';
 
