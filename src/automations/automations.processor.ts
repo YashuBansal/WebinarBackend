@@ -5,7 +5,7 @@ import { Model, Types } from 'mongoose';
 import { AutomationExecution, AutomationExecutionDocument } from './schemas/automation-execution.schema';
 import { AutomationFlow, AutomationFlowDocument } from './schemas/automation-flow.schema';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
-import { WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
+import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
 type FlowGraph = { nodes: Array<any>; edges: Array<any> };
 

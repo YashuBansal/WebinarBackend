@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, BadRequestException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { Id } from 'src/decorators/custom.decorator';
 import { WabaMessageService } from './waba-message.service';
@@ -28,5 +28,46 @@ export class WabaMessageController {
     if (meetingId) query.meetingId = meetingId;
 
     return this.wabaMessageService.findPaginatedAll(query, { page, limit });
+  }
+
+  @Get('unique-phone-numbers')
+  async getUniquePhoneNumbers(
+    @Id() adminId: string,
+    @Query('projectId') projectId: string,
+  ) {
+    if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+      throw new BadRequestException('Valid projectId is required');
+    }
+
+    const phoneNumbers = await this.wabaMessageService.getUniquePhoneNumbers(
+      adminId,
+      projectId,
+    );
+
+    return {
+      phoneNumbers,
+      count: phoneNumbers.length,
+    };
+  }
+
+  @Get('eligible-session-contacts')
+  async getEligibleSessionMessageContacts(
+    @Id() adminId: string,
+    @Query('projectId') projectId: string,
+  ) {
+    if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+      throw new BadRequestException('Valid projectId is required');
+    }
+
+    const eligibleContacts =
+      await this.wabaMessageService.getEligibleSessionMessageContacts(
+        adminId,
+        projectId,
+      );
+
+    return {
+      eligibleContacts,
+      count: eligibleContacts.length,
+    };
   }
 }

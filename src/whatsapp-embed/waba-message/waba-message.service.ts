@@ -5,7 +5,7 @@ import {
   WabaMessage,
   WabaMessageDocument,
   WabaMessageType,
-} from '../../schemas/whatsapp-embed/waba-message.schema';
+} from './waba-message.schema';
 
 @Injectable()
 export class WabaMessageService {
@@ -291,5 +291,81 @@ export class WabaMessageService {
     }
 
     return this.wabaMessageModel.find(filter).sort({ createdAt: -1 }).exec();
+  }
+
+  async getUniquePhoneNumbers(
+    adminId: string,
+    projectId: string,
+  ): Promise<string[]> {
+    return this.wabaMessageModel.distinct('phoneNumber', {
+      adminId: new Types.ObjectId(adminId),
+      projectId: new Types.ObjectId(projectId),
+      isDeleted: false,
+    });
+  }
+
+  async getEligibleSessionMessageContacts(
+    adminId: string,
+    projectId: string,
+  ): Promise<
+    Array<{
+      phoneNumber: string;
+      contactId?: string;
+      lastInboundMessageAt: string;
+      windowExpiresAt: string;
+      timeRemaining: number;
+    }>
+  > {
+    // Calculate timestamp for 23 hours ago
+    const twentyFourHoursAgo = new Date(Date.now() - 23 * 60 * 60 * 1000);
+
+    const result = await this.wabaMessageModel.aggregate([
+      {
+        $match: {
+          adminId: new Types.ObjectId(adminId),
+          projectId: new Types.ObjectId(projectId),
+          direction: 'inbound',
+          isDeleted: false,
+          createdAt: { $gte: twentyFourHoursAgo },
+        },
+      },
+      {
+        $sort: { createdAt: -1 },
+      },
+      {
+        $group: {
+          _id: '$phoneNumber',
+          lastInboundMessageAt: { $first: '$createdAt' },
+          contactId: { $first: '$contactId' },
+          phoneNumber: { $first: '$phoneNumber' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          phoneNumber: 1,
+          contactId: 1,
+          lastInboundMessageAt: 1,
+        },
+      },
+    ]);
+
+    // Calculate window expiry and time remaining for each contact
+    const now = new Date();
+    return result.map((contact) => {
+      const lastMessageDate = new Date(contact.lastInboundMessageAt);
+      const windowExpiresAt = new Date(
+        lastMessageDate.getTime() + 24 * 60 * 60 * 1000,
+      );
+      const timeRemaining = windowExpiresAt.getTime() - now.getTime();
+
+      return {
+        phoneNumber: contact.phoneNumber,
+        contactId: contact.contactId?.toString(),
+        lastInboundMessageAt: contact.lastInboundMessageAt.toISOString(),
+        windowExpiresAt: windowExpiresAt.toISOString(),
+        timeRemaining: Math.max(0, timeRemaining), // Ensure non-negative
+      };
+    });
   }
 }

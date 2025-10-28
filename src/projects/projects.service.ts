@@ -15,7 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { FetchWabaDetailsDto } from './dto/waba.dto';
 import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
-import { WabaMessage, WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
+import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 import { UsersService } from 'src/users/users.service';
 
 @Injectable()

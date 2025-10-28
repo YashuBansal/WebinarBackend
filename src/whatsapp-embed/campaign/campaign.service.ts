@@ -24,7 +24,7 @@ import { WhatsappService } from '../../whatsapp/whatsapp.service';
 import { v4 as uuidv4 } from 'uuid';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { ContactsService } from 'src/contacts/contacts.service';
-import { WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
+import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
 @Injectable()
 export class CampaignService {
@@ -328,7 +328,6 @@ export class CampaignService {
     campaignId: string,
     analyticsData: any,
   ): Promise<Campaign> {
-    console.log('updating --------------- > analyticsData', analyticsData);
     const campaign = await this.campaignModel
       .findByIdAndUpdate(
         campaignId,
@@ -374,7 +373,6 @@ export class CampaignService {
   ): Promise<any> {
     const { contactType, wlhAttendeeFilters, campaignId, contacts, bodyVariables: rawBodyVariables, dynamicVariables: rawDynamicVariables, fallbackValues: rawFallbackValues, headerMediaAssetId, language } =
       executeCampaignDto;
-    console.log('executeCampaignDto ------------------------- > ', executeCampaignDto);
 
     // For scheduled campaigns, bodyVariables and dynamicVariables are already processed
     // For immediate campaigns, we need to process them
@@ -470,7 +468,6 @@ export class CampaignService {
               // Extract field name from variable (e.g., "$firstName" -> "firstName")
               const fieldName = variable.replace('$', '');
               const contactValue = contact[fieldName];
-              console.log('contactValue', contactValue, fieldName, contact);
   
               // Use contact value if available and not empty, otherwise use fallback
               if (contactValue && contactValue.trim() !== '') {
@@ -516,19 +513,6 @@ export class CampaignService {
             error: error.response?.data?.error || error.message,
           });
   
-          const wabaMessageId = uuidv4();
-          await this.wabaMessageService.create({
-            projectId: project._id.toString(),
-            adminId: adminId,
-              campaignId: campaignId,
-              phoneNumber: contact.phone,
-            contactId: contact._id.toString(),
-            wabaMessageId: wabaMessageId, //
-            messageType: 'campaign',
-            templateName: campaign.messageTemplate.templateName,
-            failureReason: error.response?.data?.error || error.message,
-            status: CampaignStatus.FAILED,
-          });
   
   
           this.logger.error(
@@ -578,7 +562,6 @@ export class CampaignService {
 
 
       for (const contact of attendeeResults) {
-        console.log('contact', contact);
         try {
           // Process variables with fallback values for this specific contact
           const processedBodyVariables = bodyVariables.map((variable, index) => {
@@ -589,7 +572,6 @@ export class CampaignService {
               // Extract field name from variable (e.g., "$firstName" -> "firstName")
               const fieldName = variable.replace('$', '');
               const contactValue = contact[fieldName];
-              console.log('attendee contactValue', contactValue, fieldName, contact);
   
               // Use contact value if available and not empty, otherwise use fallback
               if (contactValue && (typeof contactValue === 'string' && contactValue.trim() !== '' || typeof contactValue === 'number')) {
@@ -635,19 +617,7 @@ export class CampaignService {
             error: error.response?.data?.error || error.message,
           });
   
-          const wabaMessageId = uuidv4();
-          await this.wabaMessageService.create({
-            projectId: project._id.toString(),
-            adminId: adminId,
-            campaignId: campaignId,
-            phoneNumber: contact.phone,
-            contactId: contact._id,
-            wabaMessageId: wabaMessageId, //
-            messageType: 'campaign',
-            templateName: campaign.messageTemplate.templateName,
-            failureReason: error.response?.data?.error || error.message,
-            status: CampaignStatus.FAILED,
-          });
+
   
   
           this.logger.error(

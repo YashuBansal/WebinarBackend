@@ -9,7 +9,7 @@ import {
   IsMongoId,
   IsEnum,
 } from 'class-validator';
-import { WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
+import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
 export class CreateProjectDto {
   @IsString()

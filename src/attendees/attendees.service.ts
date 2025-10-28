@@ -86,12 +86,23 @@ export class AttendeesService {
   }
 
   async getAttendeesCountMultipleWebinars(webinarIds: Types.ObjectId[], tags: string[], adminId: Types.ObjectId): Promise<number> {
-    const attendees = await this.attendeeModel.countDocuments({
+    
+    console.log(webinarIds, tags, adminId);
+    
+    // Build the query object
+    const query: any = {
       webinar: { $in: webinarIds },
       adminId: adminId,
-      ...(tags?.length > 0 && { tags: { $in: tags } }),
       isAttended: false,
-    })
+    };
+    
+    // If tags are provided, filter attendees that have ANY of these tags
+    // MongoDB's $in with array fields checks if the array contains any of the specified values
+    if (tags?.length > 0) {
+      query.tags = { $in: tags };
+    }
+    
+    const attendees = await this.attendeeModel.countDocuments(query);
     return attendees
   }
 

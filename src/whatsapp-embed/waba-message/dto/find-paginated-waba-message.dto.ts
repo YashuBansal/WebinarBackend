@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsMongoId, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
-import { WabaMessageType } from '../../../schemas/whatsapp-embed/waba-message.schema';
+import { WabaMessageType } from '../waba-message.schema';
 
 export class FindPaginatedWabaMessageDto {
   @Type(() => Number)

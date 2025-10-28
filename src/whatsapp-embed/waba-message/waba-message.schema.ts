@@ -1,10 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { Campaign } from './campaign.schema';
 import { Contact } from '../../contacts/Contact.schema';
-import { Project } from '../project.schema';
-import { User } from '../User.schema';
-import { Attendee } from '../Attendee.schema';
+import { Project } from 'src/schemas/project.schema';
+import { User } from 'src/schemas/user.schema';
+import { Attendee } from 'src/schemas/Attendee.schema';
+import { Campaign } from 'src/schemas/whatsapp-embed/campaign.schema';
 
 export type WabaMessageDocument = WabaMessage & Document;
 
@@ -14,6 +14,11 @@ export enum WabaMessageType {
   TEMPLATE = 'template',
   AUTO_MESSAGE = 'auto-message',
   ZOOM_EVENT = 'zoom-event',
+}
+
+export enum WabaMessageDirection {
+  INBOUND = 'inbound',
+  OUTBOUND = 'outbound',
 }
 
 // Status History sub-schema
@@ -119,11 +124,11 @@ export class WabaMessage extends Document {
 
   @Prop({
     type: String,
-    enum: ['inbound', 'outbound'],
-    default: 'outbound',
+    enum: Object.values(WabaMessageDirection),
+    default: WabaMessageDirection.OUTBOUND,
     index: true,
   })
-  direction: 'inbound' | 'outbound';
+  direction: WabaMessageDirection;
 
   @Prop({
     type: String,

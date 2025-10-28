@@ -5,8 +5,7 @@ import { WebinarAutoMessage, WebinarAutoMessageDocument } from './webinar-auto-m
 import { UpsertAutoMessageDto, TestSendDto, VariableMappingDto } from './dto';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { ProjectsService } from 'src/projects/projects.service';
-import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
-import { WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
+import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
 @Injectable()
 export class WebinarAutoMessageService {

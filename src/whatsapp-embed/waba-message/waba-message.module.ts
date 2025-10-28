@@ -4,7 +4,7 @@ import { WabaMessageService } from './waba-message.service';
 import {
   WabaMessage,
   WabaMessageSchema,
-} from '../../schemas/whatsapp-embed/waba-message.schema';
+} from './waba-message.schema';
 import { WabaMessageController } from './waba-message.controller';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { UsersModule } from 'src/users/users.module';

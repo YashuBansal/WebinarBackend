@@ -41,7 +41,8 @@ import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { ContactsService } from 'src/contacts/contacts.service';
 import { FileStorageService } from 'src/file-storage/file-storage.service';
 import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-template.schema';
-import { WabaMessageType } from 'src/schemas/whatsapp-embed/waba-message.schema';
+import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
+import { CampaignStatus } from 'src/schemas/whatsapp-embed/campaign.schema';
 
 @Injectable()
 export class WhatsappService {
@@ -66,7 +67,6 @@ export class WhatsappService {
       'META_WEBHOOK_VERIFY_TOKEN',
     );
     const key = this.configService.get<string>('ENCRYPTION_KEY');
-    console.log('encyption key ============ >>', key);
     // Check if the encryption key is configured.
     if (!key || key.length !== 32) {
       throw new Error(
@@ -83,7 +83,6 @@ export class WhatsappService {
       api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
     });
 
-
     // Initialize robust axios instance with IPv4 agent and retry logic
     const httpAgent = new http.Agent({ family: 4 });
     this.axiosInstance = axios.create({
@@ -94,11 +93,16 @@ export class WhatsappService {
     axiosRetry(this.axiosInstance, {
       retries: 3,
       retryDelay: (retryCount) => {
-        this.logger.warn(`Request failed. Retrying in ${retryCount * 2}s... (Attempt ${retryCount})`);
+        this.logger.warn(
+          `Request failed. Retrying in ${retryCount * 2}s... (Attempt ${retryCount})`,
+        );
         return retryCount * 2000;
       },
       retryCondition: (error) => {
-        return axiosRetry.isNetworkOrIdempotentRequestError(error) || error.code === 'ETIMEDOUT';
+        return (
+          axiosRetry.isNetworkOrIdempotentRequestError(error) ||
+          error.code === 'ETIMEDOUT'
+        );
       },
     });
   }
@@ -124,7 +128,7 @@ export class WhatsappService {
   verifyWebhookToken(mode: string, token: string): void {
     // Check if the mode and token are present and correct
     if (mode === 'subscribe' && token === this.webhookVerifyToken) {
-      console.log('Webhook token verified successfully.');
+      this.logger.log('Webhook token verified successfully.');
       return;
     } else {
       // If they don't match, throw an error. Meta will see this as a failed verification.
@@ -142,6 +146,11 @@ export class WhatsappService {
   async processWebhookPayload(payload: any): Promise<void> {
     this.logger.log('Processing webhook payload for WhatsApp messages');
 
+    // axios.post('http://localhost:3002/api/v1/whatsapp/webhook', payload).then((response) => {
+    //   // console.log('response', response);
+    // }).catch((error) => {
+    //   console.log('error', error);
+    // });
 
     try {
       // Process status updates
@@ -239,23 +248,25 @@ export class WhatsappService {
     } as any);
 
     // Optionally emit websocket event to admin
-    try {
-      const { WebsocketGateway } = await import('../websocket/websocket.gateway');
-      const { SocketEvents } = await import('../websocket/dto/socket.dto');
-      const gateway = (global as any).app?.get?.(WebsocketGateway);
-      if (gateway?.emitSocketEvent) {
-        gateway.emitSocketEvent(String(adminId), SocketEvents.CHAT_MESSAGE, {
-          phoneNumber: from,
-          textBody,
-          wabaMessageId,
-          direction: 'inbound',
-          projectId,
-          createdAt: new Date().toISOString(),
-        });
-      }
-    } catch (e) {
-      this.logger.warn('Websocket emit failed (non-blocking)');
-    }
+    // try {
+    //   const { WebsocketGateway } = await import(
+    //     '../websocket/websocket.gateway'
+    //   );
+    //   const { SocketEvents } = await import('../websocket/dto/socket.dto');
+    //   const gateway = (global as any).app?.get?.(WebsocketGateway);
+    //   if (gateway?.emitSocketEvent) {
+    //     gateway.emitSocketEvent(String(adminId), SocketEvents.CHAT_MESSAGE, {
+    //       phoneNumber: from,
+    //       textBody,
+    //       wabaMessageId,
+    //       direction: 'inbound',
+    //       projectId,
+    //       createdAt: new Date().toISOString(),
+    //     });
+    //   }
+    // } catch (e) {
+    //   this.logger.warn('Websocket emit failed (non-blocking)');
+    // }
   }
 
   async getChatMessages(
@@ -272,7 +283,6 @@ export class WhatsappService {
       phoneNumber: phoneNumber.replace('+', ''),
       isDeleted: false,
     };
-    console.log('filter', filter);
     const [total, messages] = await Promise.all([
       this.wabaMessageService['wabaMessageModel'].countDocuments(filter),
       this.wabaMessageService['wabaMessageModel']
@@ -310,9 +320,17 @@ export class WhatsappService {
       Authorization: `Bearer ${project.permanentAccessToken}`,
       'Content-Type': 'application/json',
     };
+
+    const formatted = this.formatIndianRecipient(recipientPhoneNumber);
+    if (!formatted.isValid) {
+      throw new BadRequestException(
+        'Invalid recipient phone number. Expected format: +91XXXXXXXXXX',
+      );
+    }
+    const normalizedRecipientPhoneNumber = formatted.phoneNumber;
     const payload = {
       messaging_product: 'whatsapp',
-      to: recipientPhoneNumber,
+      to: normalizedRecipientPhoneNumber,
       type: 'text',
       text: { body: text },
     };
@@ -326,7 +344,7 @@ export class WhatsappService {
     await this.wabaMessageService.create({
       projectId: String(projectId),
       adminId: String(adminId),
-      phoneNumber: recipientPhoneNumber,
+      phoneNumber: normalizedRecipientPhoneNumber,
       contactId: contactId ? String(contactId) : undefined,
       wabaMessageId: sentId,
       messageType: 'individual',
@@ -339,21 +357,23 @@ export class WhatsappService {
     } as any);
 
     // Emit websocket event to admin
-    try {
-      const { WebsocketGateway } = await import('../websocket/websocket.gateway');
-      const { SocketEvents } = await import('../websocket/dto/socket.dto');
-      const gateway = (global as any).app?.get?.(WebsocketGateway);
-      if (gateway?.emitSocketEvent) {
-        gateway.emitSocketEvent(String(adminId), SocketEvents.CHAT_MESSAGE, {
-          phoneNumber: recipientPhoneNumber,
-          textBody: text,
-          wabaMessageId: sentId,
-          direction: 'outbound',
-          projectId,
-          createdAt: new Date().toISOString(),
-        });
-      }
-    } catch {}
+    // try {
+    //   const { WebsocketGateway } = await import(
+    //     '../websocket/websocket.gateway'
+    //   );
+    //   const { SocketEvents } = await import('../websocket/dto/socket.dto');
+    //   const gateway = (global as any).app?.get?.(WebsocketGateway);
+    //   if (gateway?.emitSocketEvent) {
+    //     gateway.emitSocketEvent(String(adminId), SocketEvents.CHAT_MESSAGE, {
+    //       phoneNumber: recipientPhoneNumber,
+    //       textBody: text,
+    //       wabaMessageId: sentId,
+    //       direction: 'outbound',
+    //       projectId,
+    //       createdAt: new Date().toISOString(),
+    //     });
+    //   }
+    // } catch {}
 
     return { id: sentId };
   }
@@ -365,7 +385,11 @@ export class WhatsappService {
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
     phoneNumber: string,
-  ): Promise<{ canSend: boolean; reason?: string; lastInboundMessageTime?: Date }> {
+  ): Promise<{
+    canSend: boolean;
+    reason?: string;
+    lastInboundMessageTime?: Date;
+  }> {
     try {
       // Find the last inbound message from this phone number
       const filter = {
@@ -374,7 +398,9 @@ export class WhatsappService {
         direction: 'inbound' as any,
         isDeleted: false,
       };
-      const lastInboundMessage = await this.wabaMessageService['wabaMessageModel']
+      const lastInboundMessage = await this.wabaMessageService[
+        'wabaMessageModel'
+      ]
         .find(filter)
         .sort({ createdAt: -1 })
         .limit(1)
@@ -383,19 +409,22 @@ export class WhatsappService {
       if (!lastInboundMessage || lastInboundMessage.length === 0) {
         return {
           canSend: false,
-          reason: 'No previous inbound message from this contact. Use template messages to initiate conversation.',
+          reason:
+            'No previous inbound message from this contact. Use template messages to initiate conversation.',
         };
       }
 
       const lastMessage = lastInboundMessage[0];
       const lastMessageTime = new Date((lastMessage as any).createdAt);
       const now = new Date();
-      const hoursDiff = (now.getTime() - lastMessageTime.getTime()) / (1000 * 60 * 60);
+      const hoursDiff =
+        (now.getTime() - lastMessageTime.getTime()) / (1000 * 60 * 60);
 
       if (hoursDiff > 24) {
         return {
           canSend: false,
-          reason: '24-hour window has expired. Use template messages to continue conversation.',
+          reason:
+            '24-hour window has expired. Use template messages to continue conversation.',
           lastInboundMessageTime: lastMessageTime,
         };
       }
@@ -444,9 +473,9 @@ export class WhatsappService {
    */
   private renderDisplayText(components: any[]): string {
     if (!components || components.length === 0) return '';
-    
+
     const textParts: string[] = [];
-    
+
     for (const component of components) {
       if (component.type === 'body' && component.parameters) {
         // Extract text from body parameters
@@ -464,7 +493,7 @@ export class WhatsappService {
         if (footerTexts) textParts.push(footerTexts);
       }
     }
-    
+
     return textParts.join(' ');
   }
 
@@ -529,18 +558,10 @@ export class WhatsappService {
     this.logger.log(`Starting WABA connection process for admin: ${adminId}`);
     try {
       const accessToken = await this.getAccessTokenFromCode(code);
-      console.log('accesstoken', accessToken);
       const wabaId = await this.getWabaIdFromToken(accessToken);
-      console.log('wabaId', wabaId);
 
       const wabaDetails = await this.getWabaDetails(wabaId, accessToken);
-      console.log(
-        'waba details',
-        wabaDetails?.phone_numbers.data[0]?.id,
-        wabaDetails?.phone_numbers.data[0]?.display_phone_number,
-      );
 
-      console.log(' token', accessToken);
       const phoneNumberId = wabaDetails?.phone_numbers.data[0]?.id;
       const phoneNumber =
         wabaDetails?.phone_numbers.data[0]?.display_phone_number;
@@ -570,14 +591,14 @@ export class WhatsappService {
             accessToken,
             '123456',
           );
-          console.log('Phone number registration data:', registrationData);
+          this.logger.log('Phone number registration data:', registrationData);
 
           // Subscribe the app to the WABA for webhook notifications
           const subscriptionData = await this.subscribeAppToWaba(
             wabaId,
             accessToken,
           );
-          console.log('App subscription data:', subscriptionData);
+          this.logger.log('App subscription data:', subscriptionData);
 
           this.logger.log(
             `Successfully completed WABA setup: registration and app subscription for WABA ${wabaId}`,
@@ -619,12 +640,14 @@ export class WhatsappService {
       code: code,
       redirect_uri: '',
     };
-    console.log(url, params);
 
-    const response = await this.axiosInstance.get<{ access_token: string }>(url, { 
-      params,
-      timeout: 15000,
-    });
+    const response = await this.axiosInstance.get<{ access_token: string }>(
+      url,
+      {
+        params,
+        timeout: 15000,
+      },
+    );
     return response.data.access_token;
   }
 
@@ -642,10 +665,13 @@ export class WhatsappService {
     };
 
     try {
-      const response = await this.axiosInstance.get<{ access_token: string }>(url, { 
-        params,
-        timeout: 15000,
-      });
+      const response = await this.axiosInstance.get<{ access_token: string }>(
+        url,
+        {
+          params,
+          timeout: 15000,
+        },
+      );
       return response.data.access_token;
     } catch (error) {
       this.logger.error(
@@ -672,7 +698,7 @@ export class WhatsappService {
       access_token: appAccessToken, // Your App Token to authorize the inspection.
     };
 
-    const response = await this.axiosInstance.get(url, { 
+    const response = await this.axiosInstance.get(url, {
       params,
       timeout: 15000,
     });
@@ -718,7 +744,7 @@ export class WhatsappService {
     this.logger.log(`Fetching WABA details from URL: ${url}`);
 
     try {
-      const response = await this.axiosInstance.get(url, { 
+      const response = await this.axiosInstance.get(url, {
         params,
         timeout: 15000,
       });
@@ -783,7 +809,7 @@ export class WhatsappService {
     );
 
     try {
-      const response = await this.axiosInstance.get(url, { 
+      const response = await this.axiosInstance.get(url, {
         params,
         timeout: 15000,
       });
@@ -834,11 +860,7 @@ export class WhatsappService {
     createTemplateDto: CreateTemplateDto,
   ): Promise<TemplateResponseDto> {
     const account = await this.projectService.findOne(adminId, projectId);
-    console.log(
-      'account info',
-      account,
-      JSON.stringify(createTemplateDto, null, 2),
-    );
+  
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this project.',
@@ -891,7 +913,6 @@ export class WhatsappService {
               handle && typeof handle === 'string' && handle.trim().length > 0,
           );
 
-          console.log('validHandles', validHandles);
 
           if (validHandles.length === 0) {
             throw new BadRequestException(
@@ -969,7 +990,7 @@ export class WhatsappService {
 
     try {
       // CORRECTED API CALL
-      console.log('metaPayload', JSON.stringify(metaPayload, null, 2));
+      this.logger.log('metaPayload', JSON.stringify(metaPayload, null, 2));
       const response = await this.axiosInstance.post(url, metaPayload, {
         headers: {
           // <-- Use headers instead of params
@@ -1065,7 +1086,6 @@ export class WhatsappService {
     projectId: Types.ObjectId,
     deleteTemplateDto: DeleteTemplateDto,
   ): Promise<{ success: boolean }> {
-    console.log('deleteTemplateDto', deleteTemplateDto);
     const account = await this.projectService.findOne(adminId, projectId);
     if (!account) {
       throw new UnauthorizedException(
@@ -1094,7 +1114,7 @@ export class WhatsappService {
     );
 
     try {
-      const response = await this.axiosInstance.delete(url, { 
+      const response = await this.axiosInstance.delete(url, {
         params,
         timeout: 15000,
       });
@@ -1201,7 +1221,7 @@ export class WhatsappService {
     attendeeId?: Types.ObjectId;
     meetingId?: string;
   }): Promise<any> {
-    console.log('payload', payload);
+    this.logger.log('payload', payload);
 
     const {
       adminId,
@@ -1214,11 +1234,16 @@ export class WhatsappService {
       language,
       contactId,
       attendeeId,
-      messageType = 'individual',
+      messageType = WabaMessageType.INDIVIDUAL,
       campaignId,
     } = payload;
+
+    // Normalize and validate recipient phone number per India format rules
+    const formatted = this.formatIndianRecipient(recipientPhoneNumber);
+
+    const normalizedRecipientPhoneNumber = formatted.phoneNumber;
     this.logger.log(
-      `Attempting to send template '${templateName}' from WABA ${projectId} to ${recipientPhoneNumber}`,
+      `Attempting to send template '${templateName}' from WABA ${projectId} to ${normalizedRecipientPhoneNumber}`,
     );
 
     const account = await this.projectService.findOne(
@@ -1275,7 +1300,14 @@ export class WhatsappService {
       }
 
       // Get template details to determine header format
-      this.logger.log('templateName', templateName, 'projectId', projectId, 'adminId', adminId);
+      this.logger.log(
+        'templateName',
+        templateName,
+        'projectId',
+        projectId,
+        'adminId',
+        adminId,
+      );
       const templates = await this.getTemplatesForWaba(
         adminId,
         new Types.ObjectId(projectId),
@@ -1339,25 +1371,24 @@ export class WhatsappService {
       }
     }
 
-    templateStructure.components.map((component: any) => {
-      console.log(JSON.stringify(component, null, 2))
-    })
     // Remove components if empty
     if (templateStructure.components.length === 0) {
       delete templateStructure.components;
     }
 
-
-
     const metaPayload = {
       messaging_product: 'whatsapp',
-      to: recipientPhoneNumber,
+      to: normalizedRecipientPhoneNumber,
       type: 'template',
       template: templateStructure,
     };
-    console.log(metaPayload)
+    this.logger.log('metaPayload', metaPayload);
 
     try {
+
+      if(!formatted.isValid) {
+        throw new BadRequestException('Invalid recipient phone number. Expected format: +91XXXXXXXXXX');
+      }
       this.logger.log('Sending template message to Meta', metaPayload);
       const response = await this.axiosInstance.post(url, metaPayload, {
         headers: {
@@ -1366,10 +1397,8 @@ export class WhatsappService {
         timeout: 15000, // 15 second timeout
       });
 
-      
-
       this.logger.log(
-        `Message sent successfully to ${recipientPhoneNumber}. Message ID: ${response.data.messages[0].id}`,
+        `Message sent successfully to ${normalizedRecipientPhoneNumber}. Message ID: ${response.data.messages[0].id}`,
       );
 
       // Create WABA message record
@@ -1378,7 +1407,7 @@ export class WhatsappService {
           await this.wabaMessageService.create({
             projectId: projectId,
             adminId: adminId.toString(),
-            phoneNumber: recipientPhoneNumber,
+            phoneNumber: normalizedRecipientPhoneNumber,
             contactId: contactId,
             wabaMessageId: response.data.messages[0].id,
             messageType,
@@ -1386,7 +1415,9 @@ export class WhatsappService {
             templateLanguage: language || 'en_US',
             messageFormat: 'template',
             templateComponents: templateStructure.components || [],
-            displayText: this.renderDisplayText(templateStructure.components || []),
+            displayText: this.renderDisplayText(
+              templateStructure.components || [],
+            ),
             campaignId,
             attendeeId: attendeeId?.toString(),
             meetingId,
@@ -1400,6 +1431,21 @@ export class WhatsappService {
 
       return response.data;
     } catch (error) {
+      this.createErrorMessage({
+        projectId: projectId,
+        adminId: adminId.toString(),
+        normalizedRecipientPhoneNumber,
+        contactId: contactId,
+        messageType,
+        templateName: templateName,
+        language: language || 'en_US',
+        messageFormat: 'template',
+        templateStructure: templateStructure.components || [],
+        campaignId,
+        attendeeId: attendeeId?.toString(),
+        meetingId,
+        error: error,
+      });
       // Enhanced error handling for axios errors
       if (axios.isAxiosError(error)) {
         this.logger.error(`Axios request failed: ${error.message}`, {
@@ -1409,28 +1455,111 @@ export class WhatsappService {
           url: error.config?.url,
           method: error.config?.method,
         });
-        
+
         // Provide more specific error messages based on status codes
         if (error.response?.status === 401) {
-          throw new UnauthorizedException('Invalid access token or expired credentials');
+          throw new UnauthorizedException(
+            'Invalid access token or expired credentials',
+          );
         } else if (error.response?.status === 400) {
           throw new BadRequestException(
-            error.response?.data?.error?.message || 'Invalid request parameters'
+            error.response?.data?.error?.message ||
+              'Invalid request parameters',
           );
         } else if (error.response?.status === 429) {
-          throw new InternalServerErrorException('Rate limit exceeded. Please try again later');
+          throw new InternalServerErrorException(
+            'Rate limit exceeded. Please try again later',
+          );
         } else if (error.code === 'ETIMEDOUT') {
-          throw new InternalServerErrorException('Request timeout. Please try again');
+          throw new InternalServerErrorException(
+            'Request timeout. Please try again',
+          );
         }
       } else {
-        this.logger.error('An unexpected error occurred while sending message', error);
+        this.logger.error(
+          'An unexpected error occurred while sending message',
+          error,
+        );
       }
-      
-      throw new InternalServerErrorException(
-        error.response?.data?.error?.message ||
-          'Could not send template message.',
-      );
     }
+  }
+
+  async createErrorMessage({
+    projectId,
+    adminId,
+    campaignId,
+    normalizedRecipientPhoneNumber,
+    contactId,
+    templateName,
+    error,
+    language,
+    templateStructure,
+    attendeeId,
+    meetingId,
+    messageType,
+    messageFormat,
+  }: {
+    projectId: string;
+    adminId: string;
+    campaignId?: string;
+    normalizedRecipientPhoneNumber: string;
+    contactId: string;
+    templateName: string;
+    error: any;
+    language: string;
+    templateStructure: any;
+    attendeeId?: string;
+    meetingId?: string;
+    messageType: WabaMessageType;
+    messageFormat: 'text' | 'template' | 'media';
+  }) {
+    try {
+      const wabaMessageId = uuidv4();
+      await this.wabaMessageService.create({
+        projectId,
+        adminId,
+        campaignId,
+        phoneNumber: normalizedRecipientPhoneNumber,
+        contactId,
+        wabaMessageId, //
+        messageType,
+        templateName,
+        failureReason: error.response?.data?.error || error.message,
+        status: CampaignStatus.FAILED,
+        direction: 'outbound' as any,
+
+        templateLanguage: language || 'en_US',
+        messageFormat,
+        templateComponents: templateStructure.components || [],
+        displayText: this.renderDisplayText(templateStructure.components || []),
+        attendeeId: attendeeId?.toString(),
+        meetingId,
+      });
+    } catch (error) {
+      this.logger.error('Failed to create error message:', error);
+    }
+  }
+
+  private formatIndianRecipient(input: string): {
+    phoneNumber: string;
+    isValid: boolean;
+  } {
+    const raw = `${input || ''}`.trim();
+    const digitsOnly = raw.replace(/\D/g, '');
+    let candidate = '';
+
+    if (/^0\d{10}$/.test(digitsOnly)) {
+      candidate = `+91${digitsOnly.slice(1)}`;
+    } else if (/^\d{10}$/.test(digitsOnly)) {
+      candidate = `+91${digitsOnly}`;
+    } else if (/^91\d{10}$/.test(digitsOnly)) {
+      candidate = `+${digitsOnly}`;
+    } else if (/^\+91\d{10}$/.test(raw)) {
+      candidate = raw;
+    }
+
+    const isValid = /^\+91\d{10}$/.test(candidate);
+    return { phoneNumber: isValid ? candidate : input, isValid };
   }
 
   async sendTemplateMessage(
@@ -1556,7 +1685,7 @@ export class WhatsappService {
     this.logger.log(`Fetching WABA details from URL: ${url}`);
 
     try {
-      const response = await this.axiosInstance.get(url, { 
+      const response = await this.axiosInstance.get(url, {
         params,
         timeout: 15000,
       });
@@ -1810,7 +1939,6 @@ export class WhatsappService {
       );
 
       const project = await this.projectService.findOne(adminId, projectId);
-      console.log('project info', project);
 
       // Get WABA credentials from your configuration
       const apiVersion = this.configService.get('GRAPH_API_VERSION', 'v23.0');
@@ -1838,10 +1966,14 @@ export class WhatsappService {
         `Creating upload session: ${originalName} (${fileBuffer.length} bytes, ${mimeType})`,
       );
 
-      const sessionResponse = await this.axiosInstance.post(createSessionUrl, null, {
-        params: sessionParams,
-        timeout: 15000,
-      });
+      const sessionResponse = await this.axiosInstance.post(
+        createSessionUrl,
+        null,
+        {
+          params: sessionParams,
+          timeout: 15000,
+        },
+      );
 
       this.logger.log(
         `Upload session created: ${JSON.stringify(sessionResponse.data, null, 2)}`,
@@ -1857,14 +1989,18 @@ export class WhatsappService {
 
       this.logger.log(`Uploading file data to session: ${uploadSessionId}`);
 
-      const uploadResponse = await this.axiosInstance.post(uploadUrl, fileBuffer, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          file_offset: '0',
-          'Content-Type': mimeType,
+      const uploadResponse = await this.axiosInstance.post(
+        uploadUrl,
+        fileBuffer,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            file_offset: '0',
+            'Content-Type': mimeType,
+          },
+          timeout: 15000,
         },
-        timeout: 15000,
-      });
+      );
 
       this.logger.log(
         `File upload completed: ${JSON.stringify(uploadResponse.data, null, 2)}`,
@@ -2219,6 +2355,21 @@ export class WhatsappService {
 
     try {
       for (const contact of fetchedContacts) {
+        // Validate phone number format
+        const validatedPhone = this.formatIndianRecipient(contact.phone);
+        if (!validatedPhone.isValid) {
+          this.logger.warn(
+            `Invalid phone number for contact ${contact._id}: ${contact.phone}`,
+          );
+          results.failed++;
+          results.errors.push({
+            contactId: contact._id?.toString() || 'unknown',
+            phone: contact.phone,
+            error: 'Invalid phone number format',
+          });
+          continue;
+        }
+
         try {
           // Validate contact data
           if (!contact) {
@@ -2236,23 +2387,6 @@ export class WhatsappService {
               contactId: contact._id?.toString() || 'unknown',
               phone: 'N/A',
               error: 'Missing phone number',
-            });
-            continue;
-          }
-
-          // Validate phone number format
-          let validatedPhone: string;
-          try {
-            validatedPhone = ValidationUtil.validatePhoneNumber(contact.phone);
-          } catch (validationError) {
-            this.logger.warn(
-              `Invalid phone number for contact ${contact._id}: ${contact.phone}`,
-            );
-            results.failed++;
-            results.errors.push({
-              contactId: contact._id?.toString() || 'unknown',
-              phone: contact.phone,
-              error: 'Invalid phone number format',
             });
             continue;
           }
@@ -2309,7 +2443,7 @@ export class WhatsappService {
           const messageResult = await this.sendSingleTemplateMessage({
             adminId: template.adminId,
             projectId: template.project.toString(),
-            recipientPhoneNumber: validatedPhone,
+            recipientPhoneNumber: validatedPhone.phoneNumber,
             templateName: template.templateName,
             bodyVariables: processedBodyVariables,
             headerMediaAssetId: template.headerMediaAssetId?.toString(),
@@ -2340,24 +2474,6 @@ export class WhatsappService {
             phone: contact.phone || 'N/A',
             error: errorMessage,
           });
-
-          // Create failed message record
-          try {
-            const wabaMessageId = uuidv4();
-            await this.wabaMessageService.create({
-              projectId: template.project.toString(),
-              adminId: template.adminId.toString(),
-              phoneNumber: contact.phone || 'N/A',
-              contactId: contact._id?.toString() || 'unknown',
-              wabaMessageId: wabaMessageId,
-              messageType: 'individual',
-              templateName: template.templateName,
-              failureReason: errorMessage,
-              status: 'failed',
-            });
-          } catch (dbError) {
-            this.logger.error('Failed to create WABA message record:', dbError);
-          }
 
           this.logger.error(
             `Failed to send message to ${contact.phone || 'N/A'} (Contact ID: ${contact._id?.toString() || 'unknown'})`,
