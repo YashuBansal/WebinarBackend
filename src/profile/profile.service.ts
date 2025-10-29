@@ -271,7 +271,6 @@ export class ProfileService {
         timeout: 15000,
       });
 
-      console.log('responsesdsdssssssssssss.data ------------------------- > ', response.data);
 
       this.logger.log(
         `Successfully fetched display name status for phone number ${phoneNumberId}`,

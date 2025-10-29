@@ -10,7 +10,6 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-// RxJS imports removed as axiosInstance is now used throughout
 import { UsersService } from 'src/users/users.service';
 import axios, { AxiosError, AxiosInstance } from 'axios';
 import * as http from 'http';
@@ -42,6 +41,7 @@ import { ContactsService } from 'src/contacts/contacts.service';
 import { FileStorageService } from 'src/file-storage/file-storage.service';
 import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-template.schema';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
+import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { CampaignStatus } from 'src/schemas/whatsapp-embed/campaign.schema';
 
 @Injectable()
@@ -62,6 +62,7 @@ export class WhatsappService {
     private readonly cloudinaryService: CloudinaryService,
     private readonly wabaMessageService: WabaMessageService,
     private readonly fileStorageService: FileStorageService,
+    private readonly whatsAppGateway: WhatsAppGateway,
   ) {
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
@@ -189,7 +190,10 @@ export class WhatsappService {
             const msgId = msg.id;
 
             if (!from || !msgId) continue;
-
+console.log('from ------------------------- > ', from);
+console.log('fromPhoneNumberId ------------------------- > ', fromPhoneNumberId);
+console.log('textBody ------------------------- > ', textBody);
+console.log('wabaMessageId ------------------------- > ', msgId);
             await this.handleInboundTextMessage({
               from,
               fromPhoneNumberId,
@@ -233,40 +237,14 @@ export class WhatsappService {
     const adminId = project.adminId as any as Types.ObjectId;
     const projectId = project._id as any as Types.ObjectId;
 
-    await this.wabaMessageService.create({
-      projectId: String(projectId),
-      adminId: String(adminId),
-      phoneNumber: from,
-      wabaMessageId,
-      messageType: 'individual',
-      templateName: '',
-      status: 'delivered',
-      direction: 'inbound' as any,
-      messageFormat: 'text',
-      textBody,
-      displayText: textBody,
-    } as any);
 
-    // Optionally emit websocket event to admin
-    // try {
-    //   const { WebsocketGateway } = await import(
-    //     '../websocket/websocket.gateway'
-    //   );
-    //   const { SocketEvents } = await import('../websocket/dto/socket.dto');
-    //   const gateway = (global as any).app?.get?.(WebsocketGateway);
-    //   if (gateway?.emitSocketEvent) {
-    //     gateway.emitSocketEvent(String(adminId), SocketEvents.CHAT_MESSAGE, {
-    //       phoneNumber: from,
-    //       textBody,
-    //       wabaMessageId,
-    //       direction: 'inbound',
-    //       projectId,
-    //       createdAt: new Date().toISOString(),
-    //     });
-    //   }
-    // } catch (e) {
-    //   this.logger.warn('Websocket emit failed (non-blocking)');
-    // }
+    // Emit websocket event to admin (WhatsApp chat-message) via gateway
+    this.whatsAppGateway.emitToUser(String(adminId), {
+      phoneNumber: from,
+      textBody,
+      direction: 'inbound',
+      createdAt: new Date().toISOString(),
+    });
   }
 
   async getChatMessages(
@@ -356,24 +334,13 @@ export class WhatsappService {
       displayText: text,
     } as any);
 
-    // Emit websocket event to admin
-    // try {
-    //   const { WebsocketGateway } = await import(
-    //     '../websocket/websocket.gateway'
-    //   );
-    //   const { SocketEvents } = await import('../websocket/dto/socket.dto');
-    //   const gateway = (global as any).app?.get?.(WebsocketGateway);
-    //   if (gateway?.emitSocketEvent) {
-    //     gateway.emitSocketEvent(String(adminId), SocketEvents.CHAT_MESSAGE, {
-    //       phoneNumber: recipientPhoneNumber,
-    //       textBody: text,
-    //       wabaMessageId: sentId,
-    //       direction: 'outbound',
-    //       projectId,
-    //       createdAt: new Date().toISOString(),
-    //     });
-    //   }
-    // } catch {}
+    // Emit websocket event to admin via gateway
+    this.whatsAppGateway.emitToUser(String(adminId), {
+      phoneNumber: recipientPhoneNumber,
+      textBody: text,
+      direction: 'outbound',
+      createdAt: new Date().toISOString(),
+    });
 
     return { id: sentId };
   }

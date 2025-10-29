@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
 import {
@@ -9,6 +14,7 @@ import {
 
 @Injectable()
 export class WabaMessageService {
+  private readonly logger = new Logger(WabaMessageService.name);
   constructor(
     @InjectModel(WabaMessage.name)
     private wabaMessageModel: Model<WabaMessageDocument>,
@@ -34,10 +40,11 @@ export class WabaMessageService {
     textBody?: string;
     displayText?: string;
   }): Promise<WabaMessage> {
+    console.log('wabaMessageData ------------------------- > ', wabaMessageData);
     const wabaMessage = new this.wabaMessageModel({
       ...wabaMessageData,
       projectId: new Types.ObjectId(wabaMessageData.projectId),
-      phoneNumber: wabaMessageData.phoneNumber.replace('+', ''),// remove + from phone number
+      phoneNumber: wabaMessageData.phoneNumber.replace('+', ''), // remove + from phone number
       adminId: new Types.ObjectId(wabaMessageData.adminId),
       campaignId: mongoose.isValidObjectId(wabaMessageData.campaignId)
         ? new Types.ObjectId(wabaMessageData.campaignId)
@@ -51,8 +58,14 @@ export class WabaMessageService {
       messageType: wabaMessageData.messageType || 'individual',
       meetingId: wabaMessageData.meetingId || undefined,
     });
-
-    return wabaMessage.save();
+    try {
+      await wabaMessage.save();
+      return wabaMessage;
+    } catch (error) {
+      this.logger.error('Error saving waba message', error);
+      console.log('error ------------------------- > ', error);
+      throw new InternalServerErrorException('Error saving waba message');
+    }
   }
 
   async findPaginatedAll(

@@ -17,6 +17,7 @@ import { WabaMessageModule } from 'src/whatsapp-embed/waba-message/waba-message.
 import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
 import { ContactsModule } from 'src/contacts/contacts.module';
 import { FileStorageService } from 'src/file-storage/file-storage.service';
+import { WebsocketModule } from 'src/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { FileStorageService } from 'src/file-storage/file-storage.service';
     ProjectsModule,
     WabaMessageModule,
     ContactsModule,
+    WebsocketModule,
     MongooseModule.forFeature([
       { name: MediaAsset.name, schema: MediaAssetSchema },
     ]),
