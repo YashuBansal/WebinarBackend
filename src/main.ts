@@ -15,7 +15,24 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin, callback) => {
       const allowedOrigins = [
-
+        'http://domain1.local:5173',
+        'http://domain2.local:5174',
+        'http://localhost:5173',
+        'http://127.0.0.1:5174',
+        'http://127.0.0.1:5173',
+        'http://localhost:5174',
+        'http://localhost:5175',
+        'https://localhost:5174',
+        'https://localhost:5173',
+        'http://localhost:3000',                                                                                                                                                            
+        'http://localhost:3002',                                                                                                                                                            
+        'https://da5f61e2268f.ngrok-free.app', 
+        'https://dashboard.webinarleadshub.com',
+        'https://msg.webinarleadshub.com',
+        'https://livezoom.webinarleadshub.com',
+        'https://dashboard.ajaybansal.com',
+        'https://msg.ajaybansal.com',
+        'https://livezoom.ajaybansal.com',
       ];
 
       // allow requests with no origin (e.g., Postman)
