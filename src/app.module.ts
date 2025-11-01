@@ -67,6 +67,7 @@ import { ZoomEventModule } from './zoom/zoom-event/zoom-event.module';
 import { ConfiguredTemplatesModule } from './configured-templates/configured-templates.module';
 import { MeetingEventConfigModule } from './meeting-event-config/meeting-event-config.module';
 import { WinstonModule } from 'nest-winston';
+import { WebinarWebhookModule } from './webinar-webhook/webinar-webhook.module';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
 
@@ -195,6 +196,7 @@ import 'winston-daily-rotate-file';
     ZoomEventModule,
     ConfiguredTemplatesModule,
     MeetingEventConfigModule,
+    WebinarWebhookModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService, FileStorageService],
