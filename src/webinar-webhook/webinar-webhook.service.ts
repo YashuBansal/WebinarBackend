@@ -24,6 +24,7 @@ import { PreWebinarPostAttendeeDTO } from 'src/attendees/dto/attendees.dto';
 @Injectable()
 export class WebinarWebhookService {
   private readonly logger = new Logger(WebinarWebhookService.name);
+  private readonly baseUrl: string;
 
   constructor(
     @InjectModel(WebinarWebhook.name)
@@ -31,7 +32,12 @@ export class WebinarWebhookService {
     private configService: ConfigService,
     @Inject(forwardRef(() => AssignmentService))
     private assignmentService: AssignmentService,
-  ) {}
+  ) {
+    this.baseUrl = this.configService.get<string>('API_BASE_URL');
+    if (!this.baseUrl) {
+      throw new Error('API_BASE_URL is not set');
+    }
+  }
 
   async create(
     createWebinarWebhookDto: CreateWebinarWebhookDto,
@@ -49,10 +55,7 @@ export class WebinarWebhookService {
     const webhookToken = randomBytes(32).toString('hex');
     
     // Generate webhook URL
-    const baseUrl = this.configService.get<string>('BASE_URL') || 
-                   this.configService.get<string>('API_BASE_URL') ||
-                   'http://localhost:3000';
-    const webhookUrl = `${baseUrl}/api/v1/webinar-webhook/receive/${webhookToken}`;
+    const webhookUrl = `${this.baseUrl}/api/v1/webinar-webhook/receive/${webhookToken}`;
 
     const webinarWebhook = new this.webinarWebhookModel({
       webinarId: new Types.ObjectId(webinarId),
