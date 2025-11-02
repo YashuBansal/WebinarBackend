@@ -42,7 +42,19 @@ export class UpdateWebinarWebhookDto {
   @IsOptional()
   @IsObject()
   fieldMapping?: {
-    email: string; // Required when fieldMapping is provided
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    location?: string;
+    gender?: string;
+    tags?: string;
+    source?: string;
+  };
+
+  @IsOptional()
+  @IsObject()
+  staticValues?: {
     firstName?: string;
     lastName?: string;
     phone?: string;

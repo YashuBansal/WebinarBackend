@@ -36,7 +36,18 @@ export class WebinarWebhook {
 
   @Prop({required: false, type: Object})
   fieldMapping?: {
-    email: string; // Required field
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    location?: string;
+    gender?: string;
+    tags?: string;
+    source?: string;
+  };
+
+  @Prop({required: false, type: Object})
+  staticValues?: {
     firstName?: string;
     lastName?: string;
     phone?: string;

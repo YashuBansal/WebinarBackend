@@ -43,8 +43,7 @@ export class WebinarWebhookService {
     createWebinarWebhookDto: CreateWebinarWebhookDto,
     adminId: Types.ObjectId,
   ): Promise<WebinarWebhookDocument> {
-    const { webinarId, webhookName } =
-      createWebinarWebhookDto;
+    const { webinarId, webhookName } = createWebinarWebhookDto;
 
     // Validate webinarId
     if (!Types.ObjectId.isValid(webinarId)) {
@@ -53,7 +52,7 @@ export class WebinarWebhookService {
 
     // Generate unique webhook token
     const webhookToken = randomBytes(32).toString('hex');
-    
+
     // Generate webhook URL
     const webhookUrl = `${this.baseUrl}/api/v1/webinar-webhook/receive/${webhookToken}`;
 
@@ -144,13 +143,37 @@ export class WebinarWebhookService {
       webhook.isResponseCaptured = updateWebinarWebhookDto.isResponseCaptured;
     }
     if (updateWebinarWebhookDto.fieldMapping !== undefined) {
-      // Validate that email is provided when fieldMapping is set
-      if (!updateWebinarWebhookDto.fieldMapping.email || !updateWebinarWebhookDto.fieldMapping.email.trim()) {
-        throw new BadRequestException('Email field mapping is required when fieldMapping is provided');
+      // Set isActive to true when fieldMapping is provided with values
+      const hasMappings =
+        updateWebinarWebhookDto.fieldMapping &&
+        Object.keys(updateWebinarWebhookDto.fieldMapping).length > 0;
+
+      if (hasMappings) {
+        webhook.isActive = true;
       }
-      webhook.fieldMapping = updateWebinarWebhookDto.fieldMapping;
-      // Set isActive to true when fieldMapping is provided
-      webhook.isActive = true;
+      webhook.fieldMapping = updateWebinarWebhookDto.fieldMapping as any;
+    }
+
+    if (updateWebinarWebhookDto.staticValues !== undefined) {
+      // Validate that email is not in staticValues (email must always come from fieldMapping)
+      if (
+        updateWebinarWebhookDto.staticValues &&
+        'email' in updateWebinarWebhookDto.staticValues
+      ) {
+        throw new BadRequestException(
+          'Email cannot be set as a static value. Email must be mapped from webhook data.',
+        );
+      }
+      
+      // Set isActive to true when staticValues is provided with values
+      const hasStaticValues =
+        updateWebinarWebhookDto.staticValues &&
+        Object.keys(updateWebinarWebhookDto.staticValues).length > 0;
+
+      if (hasStaticValues) {
+        webhook.isActive = true;
+      }
+      webhook.staticValues = updateWebinarWebhookDto.staticValues as any;
     }
 
     return await webhook.save();
@@ -173,7 +196,15 @@ export class WebinarWebhookService {
     }
   }
 
-  async receiveWebhookData(token: string, data: any): Promise<WebinarWebhookDocument> {
+  async receiveWebhookData(
+    token: string,
+    data: any,
+  ): Promise<{
+    action: 'data_captured' | 'attendee_creation_triggered' | 'no_action';
+    dataCaptured: boolean;
+    attendeeCreationTriggered: boolean;
+    webhookId: string;
+  }> {
     // Find webhook by token
     const webhook = await this.webinarWebhookModel
       .findOne({
@@ -186,21 +217,43 @@ export class WebinarWebhookService {
       throw new NotFoundException('Webhook not found or inactive');
     }
 
+    let dataCaptured = false;
+    let attendeeCreationTriggered = false;
+
     // Only update lastCapturedData if isResponseCaptured is false
     const isNewData = !webhook.isResponseCaptured;
     if (isNewData) {
-      webhook.lastCapturedData = data;
-      webhook.lastCapturedAt = new Date();
-      webhook.isResponseCaptured = true;
+      await this.webinarWebhookModel
+        .findByIdAndUpdate(webhook._id, {
+          $set: {
+            lastCapturedData: data,
+            lastCapturedAt: new Date(),
+            isResponseCaptured: true,
+          },
+        })
+        .exec()
+        .catch((error) => {
+          this.logger.error(
+            `Failed to update webhook ${webhook._id}: ${error.message}`,
+            error.stack,
+          );
+        });
+      dataCaptured = true;
     }
 
-    const savedWebhook = await webhook.save();
-    console.log(isNewData, webhook.fieldMapping, Object.keys(webhook.fieldMapping).length);
-
     // Automatically create attendee if fieldMapping is configured and new data was captured
-    if (!isNewData && webhook.fieldMapping && Object.keys(webhook.fieldMapping).length > 0 && webhook.isResponseCaptured && webhook.isActive) {
+    if (
+      !isNewData &&
+      webhook.fieldMapping &&
+      Object.keys(webhook.fieldMapping).length > 0 &&
+      webhook.isResponseCaptured &&
+      webhook.isActive
+    ) {
       // Fire-and-forget: process attendee creation asynchronously without blocking webhook response
-      console.log('Processing attendee creation for webhook:', webhook._id);
+      this.logger.log(
+        `Processing attendee creation for webhook: ${webhook._id}`,
+      );
+      attendeeCreationTriggered = true;
       this.processAttendeeCreation(webhook, data).catch((error) => {
         this.logger.error(
           `Failed to create attendee from webhook ${webhook._id}: ${error.message}`,
@@ -209,7 +262,22 @@ export class WebinarWebhookService {
       });
     }
 
-    return savedWebhook;
+    // Determine action type
+    let action: 'data_captured' | 'attendee_creation_triggered' | 'no_action';
+    if (dataCaptured) {
+      action = 'data_captured';
+    } else if (attendeeCreationTriggered) {
+      action = 'attendee_creation_triggered';
+    } else {
+      action = 'no_action';
+    }
+
+    return {
+      action,
+      dataCaptured,
+      attendeeCreationTriggered,
+      webhookId: webhook._id.toString(),
+    };
   }
 
   /**
@@ -225,8 +293,12 @@ export class WebinarWebhookService {
       // Extract body from webhook data (we store {body, headers, timestamp})
       const bodyData = webhookData.body || webhookData;
 
-      // Map webhook data to attendee DTO using fieldMapping
-      const attendeeDTO = this.mapWebhookDataToAttendee(bodyData, webhook.fieldMapping);
+      // Map webhook data to attendee DTO using fieldMapping and staticValues
+      const attendeeDTO = this.mapWebhookDataToAttendee(
+        bodyData,
+        webhook.fieldMapping as any,
+        webhook.staticValues as any,
+      );
 
       if (!attendeeDTO) {
         this.logger.warn(
@@ -245,6 +317,8 @@ export class WebinarWebhookService {
         webhook.webinarId.toString(),
         attendeeDTO,
       );
+
+      console.log('result', attendeeDTO);
 
       this.logger.log(
         `Successfully created attendee from webhook ${webhook._id} for email: ${attendeeDTO.email}`,
@@ -291,15 +365,26 @@ export class WebinarWebhookService {
   }
 
   /**
-   * Map webhook data to PreWebinarPostAttendeeDTO using fieldMapping
+   * Map webhook data to PreWebinarPostAttendeeDTO using fieldMapping and staticValues
+   * Priority: Email always from fieldMapping, other fields: staticValues > fieldMapping > default
    * @param webhookData - The captured webhook data
-   * @param fieldMapping - The field mapping configuration
+   * @param fieldMapping - The field mapping configuration (paths to webhook data)
+   * @param staticValues - Static values to use (overrides fieldMapping for non-email fields)
    * @returns PreWebinarPostAttendeeDTO or null if email is missing
    */
   private mapWebhookDataToAttendee(
     webhookData: any,
     fieldMapping: {
-      email: string; // Required
+      email?: string;
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      location?: string;
+      gender?: string;
+      tags?: string;
+      source?: string;
+    },
+    staticValues?: {
       firstName?: string;
       lastName?: string;
       phone?: string;
@@ -328,7 +413,7 @@ export class WebinarWebhookService {
       source: 'webhook', // Default source
     };
 
-    // Extract email (required field)
+    // Extract email (required field) - ALWAYS from fieldMapping, never from staticValues
     const email = this.getNestedValue(webhookData, fieldMapping.email);
     if (email && typeof email === 'string' && email.trim()) {
       attendee.email = email.trim().toLowerCase();
@@ -340,36 +425,61 @@ export class WebinarWebhookService {
       return null;
     }
 
-    // Extract optional fields
-    if (fieldMapping.firstName) {
-      const firstName = this.getNestedValue(webhookData, fieldMapping.firstName);
+    // Extract optional fields - priority: staticValues > fieldMapping > default
+    // firstName
+    if (staticValues?.firstName) {
+      attendee.firstName = staticValues.firstName.trim() || null;
+    } else if (fieldMapping.firstName) {
+      const firstName = this.getNestedValue(
+        webhookData,
+        fieldMapping.firstName,
+      );
       if (firstName && typeof firstName === 'string') {
         attendee.firstName = firstName.trim() || null;
       }
     }
 
-    if (fieldMapping.lastName) {
+    // lastName
+    if (staticValues?.lastName) {
+      attendee.lastName = staticValues.lastName.trim() || null;
+    } else if (fieldMapping.lastName) {
       const lastName = this.getNestedValue(webhookData, fieldMapping.lastName);
       if (lastName && typeof lastName === 'string') {
         attendee.lastName = lastName.trim() || null;
       }
     }
 
-    if (fieldMapping.phone) {
+    // phone
+    if (staticValues?.phone) {
+      attendee.phone =
+        typeof staticValues.phone === 'string'
+          ? staticValues.phone.trim()
+          : String(staticValues.phone);
+    } else if (fieldMapping.phone) {
       const phone = this.getNestedValue(webhookData, fieldMapping.phone);
       if (phone) {
-        attendee.phone = typeof phone === 'string' ? phone.trim() : String(phone);
+        attendee.phone =
+          typeof phone === 'string' ? phone.trim() : String(phone);
       }
     }
 
-    if (fieldMapping.location) {
+    // location
+    if (staticValues?.location) {
+      attendee.location = staticValues.location.trim() || null;
+    } else if (fieldMapping.location) {
       const location = this.getNestedValue(webhookData, fieldMapping.location);
       if (location && typeof location === 'string') {
         attendee.location = location.trim() || null;
       }
     }
 
-    if (fieldMapping.gender) {
+    // gender
+    if (staticValues?.gender) {
+      const lowerGender = staticValues.gender.trim().toLowerCase();
+      if (['male', 'female', 'others'].includes(lowerGender)) {
+        attendee.gender = lowerGender;
+      }
+    } else if (fieldMapping.gender) {
       const gender = this.getNestedValue(webhookData, fieldMapping.gender);
       if (gender && typeof gender === 'string') {
         const lowerGender = gender.trim().toLowerCase();
@@ -379,7 +489,21 @@ export class WebinarWebhookService {
       }
     }
 
-    if (fieldMapping.tags) {
+    // tags
+    if (staticValues?.tags) {
+      if (Array.isArray(staticValues.tags)) {
+        attendee.tags = staticValues.tags
+          .filter((tag) => tag && typeof tag === 'string')
+          .map((tag) => tag.trim().toLowerCase())
+          .filter((tag) => tag);
+      } else if (typeof staticValues.tags === 'string') {
+        attendee.tags = staticValues.tags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter((tag) => tag)
+          .map((tag) => tag.toLowerCase());
+      }
+    } else if (fieldMapping.tags) {
       const tags = this.getNestedValue(webhookData, fieldMapping.tags);
       if (tags) {
         if (Array.isArray(tags)) {
@@ -399,8 +523,10 @@ export class WebinarWebhookService {
       }
     }
 
-    // Extract source field if mapped, otherwise use default 'webhook'
-    if (fieldMapping.source) {
+    // source - priority: staticValues > fieldMapping > default 'webhook'
+    if (staticValues?.source) {
+      attendee.source = staticValues.source.trim();
+    } else if (fieldMapping.source) {
       const source = this.getNestedValue(webhookData, fieldMapping.source);
       if (source && typeof source === 'string' && source.trim()) {
         attendee.source = source.trim();
@@ -410,4 +536,3 @@ export class WebinarWebhookService {
     return attendee;
   }
 }
-

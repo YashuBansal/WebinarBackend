@@ -98,7 +98,7 @@ export class WebinarWebhookController {
     @Headers() headers: any,
   ) {
     try {
-      const webhook = await this.webinarWebhookService.receiveWebhookData(
+      const result = await this.webinarWebhookService.receiveWebhookData(
         token,
         {
           body,
@@ -106,11 +106,38 @@ export class WebinarWebhookController {
           timestamp: new Date(),
         },
       );
-      return {
-        success: true,
-        message: 'Webhook data received and saved',
-        webhookId: webhook._id,
-      };
+
+      // Return appropriate response based on the action taken
+      if (result.action === 'data_captured') {
+        return {
+          success: true,
+          event: 'data_captured',
+          message: 'Webhook data received and saved',
+          data: {
+            webhookId: result.webhookId,
+            dataCaptured: result.dataCaptured,
+          },
+        };
+      } else if (result.action === 'attendee_creation_triggered') {
+        return {
+          success: true,
+          event: 'attendee_creation_triggered',
+          message: 'Attendee creation process initiated',
+          data: {
+            webhookId: result.webhookId,
+            attendeeCreationTriggered: result.attendeeCreationTriggered,
+          },
+        };
+      } else {
+        return {
+          success: true,
+          event: 'no_action',
+          message: 'Webhook data received but no action was taken',
+          data: {
+            webhookId: result.webhookId,
+          },
+        };
+      }
     } catch (error) {
       return {
         success: false,
