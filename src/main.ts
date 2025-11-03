@@ -59,7 +59,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe());
 
   // Global HTTP exception filter to prevent crashes and standardize error responses
-  app.useGlobalFilters(new AllExceptionsFilter());
+  // app.useGlobalFilters(new AllExceptionsFilter());
 
   // Always handle preflight gracefully to avoid CORS-related crashes
   const expressInstance = app.getHttpAdapter().getInstance?.();

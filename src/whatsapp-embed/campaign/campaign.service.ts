@@ -213,7 +213,6 @@ export class CampaignService {
   ): Promise<PaginatedCampaignsResponseDto> {
     const filter: any = {
       adminId: new Types.ObjectId(adminId),
-      isDeleted: false,
     };
 
     if (projectId) {
@@ -308,8 +307,24 @@ export class CampaignService {
   }
 
   async remove(id: string, adminId: string): Promise<void> {
-    const result = await this.campaignModel
-      .findOneAndUpdate(
+    const campaign = await this.campaignModel
+      .findOne({
+        _id: new Types.ObjectId(id),
+        adminId: new Types.ObjectId(adminId),
+        isDeleted: false,
+      })
+      .exec();
+
+    if (!campaign) {
+      throw new NotFoundException('Campaign not found');
+    }
+
+    if (campaign.status === CampaignStatus.COMPLETED) {
+      throw new BadRequestException('Completed campaigns cannot be deleted');
+    }
+
+    await this.campaignModel
+      .updateOne(
         {
           _id: new Types.ObjectId(id),
           adminId: new Types.ObjectId(adminId),
@@ -318,10 +333,6 @@ export class CampaignService {
         { isDeleted: true },
       )
       .exec();
-
-    if (!result) {
-      throw new NotFoundException('Campaign not found');
-    }
   }
 
   async updateAnalytics(

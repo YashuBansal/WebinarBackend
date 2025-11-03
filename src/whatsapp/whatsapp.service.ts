@@ -845,6 +845,38 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
     const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/message_templates`;
 
+    // Duplicate name check (case-insensitive) before creation
+    try {
+      const checkParams: any = {
+        access_token: permanentAccessToken,
+        name: createTemplateDto.name,
+        limit: 1,
+        fields: 'name,language,status',
+      };
+      const existing = await this.axiosInstance.get(url, {
+        params: checkParams,
+        timeout: 15000,
+      });
+      const list = Array.isArray(existing.data?.data) ? existing.data.data : [];
+      const hasDuplicate = list.some(
+        (t: any) => String(t?.name || '').toLowerCase() === String(createTemplateDto.name).toLowerCase(),
+      );
+      if (hasDuplicate) {
+        throw new BadRequestException('A template with the same name already exists.');
+      }
+    } catch (err) {
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
+      const axiosError = err as AxiosError;
+      this.logger.error('Failed to verify existing templates before creation', {
+        status: axiosError.response?.status,
+        data: axiosError.response?.data,
+        message: axiosError.message,
+      });
+      throw new InternalServerErrorException('Failed to verify existing templates before creation');
+    }
+
     // Validate that BODY component exists
     const bodyComponent = createTemplateDto.components.find(
       (c) => c.type === 'BODY',
@@ -971,6 +1003,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
       );
       return response.data;
     } catch (error) {
+      console.log('error', error.response?.data);
       const axiosError = error as AxiosError;
       this.logger.error(`Failed to create template for WABA ${wabaId}`, {
         status: axiosError.response?.status,

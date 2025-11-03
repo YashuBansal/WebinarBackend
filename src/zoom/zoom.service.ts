@@ -26,6 +26,7 @@ import { UsersService } from 'src/users/users.service';
 import { MeetingEventConfigService } from 'src/meeting-event-config/meeting-event-config.service';
 import { ConfiguredTemplatesService } from 'src/configured-templates/configured-templates.service';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
+import axios from 'axios';
 
 @Injectable()
 export class ZoomService {
@@ -310,7 +311,7 @@ export class ZoomService {
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
     type: 'scheduled' | 'upcoming' | 'live' | 'past' | 'pending' = 'upcoming',
-    pageSize: number = 30,
+    options?: { pageSize?: number; from?: string; to?: string },
   ) {
     const project = await this.zoomProjectModel.findOne({
       _id: projectId,
@@ -320,6 +321,7 @@ export class ZoomService {
       throw new NotAcceptableException('No access token found');
 
     let data: any;
+    const pageSize = options?.pageSize ?? 30;
     try {
       data = await this.executeWithTokenRetry(project, async (token) => {
         const resp = await firstValueFrom(
@@ -338,19 +340,36 @@ export class ZoomService {
       throw new NotAcceptableException('Failed to fetch meetings from Zoom');
     }
 
-    // Return a light-weight shape expected by frontend
+    // Map to a light-weight shape expected by frontend
+    let meetings = (data?.meetings ?? []).map((m: any) => ({
+      id: String(m.id ?? m.uuid ?? ''),
+      uuid: m.uuid,
+      topic: m.topic,
+      startTime: m.start_time,
+      duration: m.duration,
+      status: m.status,
+      joinUrl: m.join_url,
+      createdAt: m.created_at,
+    }));
+
+    // Optional date-range filter (inclusive) on startTime (fallback to createdAt)
+    if (options?.from || options?.to) {
+      const fromDate = options.from ? new Date(options.from) : undefined;
+      const toDate = options.to ? new Date(options.to) : undefined;
+      meetings = meetings.filter((m: any) => {
+        const basisStr = m.startTime ?? m.createdAt;
+        if (!basisStr) return false;
+        const basis = new Date(basisStr).getTime();
+        if (Number.isNaN(basis)) return false;
+        if (fromDate && basis < fromDate.getTime()) return false;
+        if (toDate && basis > toDate.getTime()) return false;
+        return true;
+      });
+    }
+
     return {
       totalRecords: data?.total_records ?? 0,
-      meetings: (data?.meetings ?? []).map((m: any) => ({
-        id: String(m.id ?? m.uuid ?? ''),
-        uuid: m.uuid,
-        topic: m.topic,
-        startTime: m.start_time,
-        duration: m.duration,
-        status: m.status,
-        joinUrl: m.join_url,
-        createdAt: m.created_at,
-      })),
+      meetings,
     };
   }
 
@@ -483,6 +502,12 @@ export class ZoomService {
         meetingId: payload?.payload?.object?.id || payload?.object?.id,
         timestamp: new Date().toISOString(),
       });
+
+      // axios.post('http://localhost:3002/api/v1/zoom/webhook', payload).then((response) => {
+      //   // console.log('response', response);
+      // }).catch((error) => {
+      //   console.log('error', error);
+      // });
 
       const event: string = payload?.event ?? '';
       const accountId: string | undefined =

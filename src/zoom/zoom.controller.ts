@@ -203,6 +203,8 @@ export class ZoomController {
     @Param('id') id: string,
     @Query('type') type: 'scheduled' | 'upcoming' | 'live' | 'past' | 'pending' = 'upcoming',
     @Query('pageSize') pageSize?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
       return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
@@ -211,7 +213,7 @@ export class ZoomController {
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(`${id}`),
       type,
-      pageSize ? Number(pageSize) : 30,
+      { pageSize: pageSize ? Number(pageSize) : 30, from, to },
     );
     return { statusCode: HttpStatus.OK, message: 'Meetings retrieved', data: result };
   }

@@ -241,7 +241,7 @@ export class WhatsappController {
       throw new NotAcceptableException('Invalid Project ID');
     }
 
-    const result = await this.whatsappService.createTemplateForWaba(
+    await this.whatsappService.createTemplateForWaba(
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(`${projectId}`),
       createTemplateDto,
