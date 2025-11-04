@@ -49,7 +49,7 @@ async function bootstrap() {
     preflightContinue: false,
     optionsSuccessStatus: 204,
   });
-  const PORT = process.env.PORT ?? 3000;
+  const PORT = process.env.PORT ?? 3001;
 
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());

@@ -300,11 +300,6 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     };
 
     const formatted = this.formatIndianRecipient(recipientPhoneNumber);
-    if (!formatted.isValid) {
-      throw new BadRequestException(
-        'Invalid recipient phone number. Expected format: +91XXXXXXXXXX',
-      );
-    }
     const normalizedRecipientPhoneNumber = formatted.phoneNumber;
     const payload = {
       messaging_product: 'whatsapp',
@@ -1386,9 +1381,6 @@ console.log('wabaMessageId ------------------------- > ', msgId);
 
     try {
 
-      if(!formatted.isValid) {
-        throw new BadRequestException('Invalid recipient phone number. Expected format: +91XXXXXXXXXX');
-      }
       this.logger.log('Sending template message to Meta', metaPayload);
       const response = await this.axiosInstance.post(url, metaPayload, {
         headers: {
@@ -2357,18 +2349,6 @@ console.log('wabaMessageId ------------------------- > ', msgId);
       for (const contact of fetchedContacts) {
         // Validate phone number format
         const validatedPhone = this.formatIndianRecipient(contact.phone);
-        if (!validatedPhone.isValid) {
-          this.logger.warn(
-            `Invalid phone number for contact ${contact._id}: ${contact.phone}`,
-          );
-          results.failed++;
-          results.errors.push({
-            contactId: contact._id?.toString() || 'unknown',
-            phone: contact.phone,
-            error: 'Invalid phone number format',
-          });
-          continue;
-        }
 
         try {
           // Validate contact data
