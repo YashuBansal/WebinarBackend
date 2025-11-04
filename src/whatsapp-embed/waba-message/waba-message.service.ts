@@ -30,7 +30,7 @@ export class WabaMessageService {
     wabaMessageId: string;
     messageType?: string;
     templateName: string;
-    failureReason?: string;
+    failureReason?: any;
     status?: string;
     meetingId?: string;
     direction?: 'inbound' | 'outbound';
@@ -40,7 +40,10 @@ export class WabaMessageService {
     textBody?: string;
     displayText?: string;
   }): Promise<WabaMessage> {
-    console.log('wabaMessageData ------------------------- > ', wabaMessageData);
+    this.logger.log(
+      'wabaMessageData ------------------------- > ',
+      wabaMessageData,
+    );
     const wabaMessage = new this.wabaMessageModel({
       ...wabaMessageData,
       projectId: new Types.ObjectId(wabaMessageData.projectId),
@@ -57,6 +60,12 @@ export class WabaMessageService {
         : undefined,
       messageType: wabaMessageData.messageType || 'individual',
       meetingId: wabaMessageData.meetingId || undefined,
+      failureReason:
+        typeof wabaMessageData.failureReason === 'string'
+          ? wabaMessageData.failureReason
+          : typeof wabaMessageData?.failureReason?.message === 'string'
+            ? wabaMessageData.failureReason.message
+            : undefined,
     });
     try {
       await wabaMessage.save();

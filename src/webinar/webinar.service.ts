@@ -50,10 +50,27 @@ export class WebinarService {
   ) {}
 
   async createWebiar(createWebinarDto: CreateWebinarDto): Promise<any> {
-    // Create webinar
-    console.log(createWebinarDto);
+    // Trim and check if a webinar with the same name already exists (case-insensitive)
+    const trimmedWebinarName = createWebinarDto.webinarName.trim();
+    const escapedWebinarName = trimmedWebinarName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const existingWebinar = await this.webinarModel.findOne({
+      webinarName: { $regex: new RegExp(`^\\s*${escapedWebinarName}\\s*$`, 'i') },
+      ...(createWebinarDto.adminId && {
+        adminId: new Types.ObjectId(`${createWebinarDto.adminId}`),
+      }),
+    });
 
-    const result = await this.webinarModel.create(createWebinarDto);
+    if (existingWebinar) {
+      throw new BadRequestException(
+        `A webinar with the name "${trimmedWebinarName}" already exists`,
+      );
+    }
+
+    // Create webinar with trimmed name
+    const result = await this.webinarModel.create({
+      ...createWebinarDto,
+      webinarName: trimmedWebinarName,
+    });
 
     if (result) {
       createWebinarDto.assignedEmployees.forEach(async (employeeId) => {
@@ -61,12 +78,12 @@ export class WebinarService {
         await this.notificationService.createNotification({
           recipient: `${employeeId}`,
           title: 'New Webinar Assigned',
-          message: `You have been assigned to a new webinar: ${createWebinarDto.webinarName}`,
+          message: `You have been assigned to a new webinar: ${trimmedWebinarName}`,
           type: notificationType.INFO,
           actionType: notificationActionType.WEBINAR_ASSIGNMENT,
           metadata: {
             webinarId: result._id,
-            webinarTitle: createWebinarDto.webinarName,
+            webinarTitle: trimmedWebinarName,
           },
         });
       });
