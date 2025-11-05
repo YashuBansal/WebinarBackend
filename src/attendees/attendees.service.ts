@@ -872,6 +872,7 @@ export class AttendeesService {
       sort?: WebinarAttendeesSortObject;
       leadType?: boolean;
       fields?: string;
+      emails?: string[];
     },
     usePagination: boolean = true,
   ): Promise<any> {
@@ -886,6 +887,7 @@ export class AttendeesService {
         sortBy: WebinarAttendeesSortBy.EMAIL,
         sortOrder: SortOrder.ASC,
       },
+      emails,
     } = obj;
 
     const queryFields = fields.split(',').map((a) => a.trim());
@@ -1081,6 +1083,9 @@ export class AttendeesService {
                   ],
                 }
               : { assignedTo: null }),
+          }),
+          ...(emails && Array.isArray(emails) && emails.length > 0 && {
+            email: { $in: emails },
           }),
         },
       },
@@ -2099,6 +2104,9 @@ export class AttendeesService {
           ...(filters.email && {
             email: { $regex: filters.email },
           }),
+          ...(filters.emails && Array.isArray(filters.emails) && filters.emails.length > 0 && {
+            email: { $in: filters.emails },
+          }),
         },
       },
       {
@@ -2207,6 +2215,20 @@ export class AttendeesService {
           },
           sources: {
             $addToSet: '$source',
+          },
+          phones: {
+            $addToSet: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: ['$phone', null] },
+                    { $ne: ['$phone', ''] },
+                  ],
+                },
+                '$phone',
+                '$$REMOVE',
+              ],
+            },
           },
           fullNames: {
             $addToSet: {
@@ -2612,6 +2634,7 @@ export class AttendeesService {
           registeredWebinarCount: 1,
           locations: 1,
           sources: 1,
+          phones: 1,
           fullNames: {
             $filter: {
               input: '$fullNames',

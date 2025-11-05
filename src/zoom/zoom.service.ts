@@ -27,6 +27,7 @@ import { MeetingEventConfigService } from 'src/meeting-event-config/meeting-even
 import { ConfiguredTemplatesService } from 'src/configured-templates/configured-templates.service';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import axios from 'axios';
+import { AttendeesService } from 'src/attendees/attendees.service';
 
 @Injectable()
 export class ZoomService {
@@ -43,6 +44,8 @@ export class ZoomService {
     private readonly whatsappService: WhatsappService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => AttendeesService))
+    private readonly attendeesService: AttendeesService,
   ) {}
 
   // ====== Access Token Utilities ======
@@ -371,6 +374,206 @@ export class ZoomService {
       totalRecords: data?.total_records ?? 0,
       meetings,
     };
+  }
+
+  async getProjectWebinars(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    type: 'upcoming' = 'upcoming',
+    options?: { pageSize?: number; from?: string; to?: string },
+  ) {
+    const project = await this.zoomProjectModel.findOne({
+      _id: projectId,
+      adminId,
+    });
+    if (!project?.accessToken)
+      throw new NotAcceptableException('No access token found');
+
+    let data: any;
+    const pageSize = options?.pageSize ?? 30;
+    try {
+      data = await this.executeWithTokenRetry(project, async (token) => {
+        const resp = await firstValueFrom(
+          this.http.get('https://api.zoom.us/v2/users/me/webinars', {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { type, page_size: pageSize },
+          }),
+        );
+        return resp.data;
+      });
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      console.error('Zoom list webinars failed:', { status, payload });
+      throw new NotAcceptableException('Failed to fetch webinars from Zoom');
+    }
+
+    let webinars = (data?.webinars ?? []).map((w: any) => ({
+      id: String(w.id ?? w.uuid ?? ''),
+      uuid: w.uuid,
+      topic: w.topic,
+      startTime: w.start_time,
+      duration: w.duration,
+      status: w.status,
+      joinUrl: w.join_url,
+      createdAt: w.created_at,
+    }));
+
+    if (options?.from || options?.to) {
+      const fromDate = options.from ? new Date(options.from) : undefined;
+      const toDate = options.to ? new Date(options.to) : undefined;
+      webinars = webinars.filter((w: any) => {
+        const basisStr = w.startTime ?? w.createdAt;
+        if (!basisStr) return false;
+        const basis = new Date(basisStr).getTime();
+        if (Number.isNaN(basis)) return false;
+        if (fromDate && basis < fromDate.getTime()) return false;
+        if (toDate && basis > toDate.getTime()) return false;
+        return true;
+      });
+    }
+
+    return {
+      totalRecords: data?.total_records ?? 0,
+      webinars,
+    };
+  }
+
+  async getWebinarDetails(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    webinarId: string,
+  ) {
+    const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
+    if (!project?.accessToken)
+      throw new NotAcceptableException('No access token found');
+
+    try {
+      const data = await this.executeWithTokenRetry(project, async (token) => {
+        const resp = await firstValueFrom(
+          this.http.get(`https://api.zoom.us/v2/webinars/${encodeURIComponent(webinarId)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        );
+        return resp.data;
+      });
+
+      return {
+        id: String(data?.id ?? data?.uuid ?? ''),
+        uuid: data?.uuid,
+        topic: data?.topic,
+        startTime: data?.start_time,
+        duration: data?.duration,
+        status: data?.status,
+        joinUrl: data?.join_url,
+        createdAt: data?.created_at,
+        hostId: data?.host_id,
+        raw: data,
+      };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      console.error('Zoom webinar details failed:', { status, payload });
+      throw new NotAcceptableException('Failed to fetch webinar details from Zoom');
+    }
+  }
+
+  async getWebinarRegistrants(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    webinarId: string,
+    status: 'pending' | 'approved' | 'denied' = 'approved',
+  ) {
+    const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
+    if (!project?.accessToken)
+      throw new NotAcceptableException('No access token found');
+
+    try {
+      const data = await this.executeWithTokenRetry(project, async (token) => {
+        const resp = await firstValueFrom(
+          this.http.get(`https://api.zoom.us/v2/webinars/${encodeURIComponent(webinarId)}/registrants`, {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { status },
+          }),
+        );
+        return resp.data;
+      });
+      console.log('data', data?.registrants?.length);
+      let registrants = Array.isArray(data?.registrants) ? data?.registrants : [];
+
+      // Match and merge with attendees data
+      if (registrants.length > 0) {
+        const attendeesResult = await this.attendeesService.fetchGroupedAttendees(
+          adminId,
+          1,
+          1000,
+          {
+            emails: registrants.map((r: any) => r.email),
+          },
+        );
+
+        // Create a map of attendees by email (_id is the email after grouping)
+        const attendeesMap = new Map(
+          attendeesResult.data.map((attendee: any) => [attendee._id?.toLowerCase(), attendee]),
+        );
+
+        // Merge registrants with attendees data
+        const mergedRegistrants = registrants.map((registrant: any) => {
+          const email = registrant.email?.toLowerCase();
+          const attendeeData = attendeesMap.get(email);
+
+          return {
+            ...registrant,
+            attendeeData: attendeeData || null,
+          };
+        });
+
+        // Return merged data
+        return {
+          ...data,
+          registrants: mergedRegistrants,
+        };
+      }
+
+      return data;
+
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      console.error('Zoom webinar registrants failed:', { status, payload });
+      throw new NotAcceptableException('Failed to fetch webinar registrants from Zoom');
+    }
+  }
+
+  async addWebinarRegistrant(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    webinarId: string,
+    body: { email: string; first_name?: string; last_name?: string },
+  ) {
+    const project = await this.zoomProjectModel.findOne({ _id: projectId, adminId });
+    if (!project?.accessToken)
+      throw new NotAcceptableException('No access token found');
+
+    try {
+      const data = await this.executeWithTokenRetry(project, async (token) => {
+        const resp = await firstValueFrom(
+          this.http.post(
+            `https://api.zoom.us/v2/webinars/${encodeURIComponent(webinarId)}/registrants`,
+            body,
+            { headers: { Authorization: `Bearer ${token}` } },
+          ),
+        );
+        return resp.data;
+      });
+
+      return data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const payload = error?.response?.data ?? error?.message ?? 'Unknown error';
+      console.error('Zoom add webinar registrant failed:', { status, payload });
+      throw new NotAcceptableException('Failed to add webinar registrant');
+    }
   }
 
   async validateWebhook(payload: any, projectId: Types.ObjectId) {
@@ -1086,7 +1289,44 @@ export class ZoomService {
         );
         return resp.data;
       });
-      this.logger.log('Zoom registrants fetch success:', data);
+      
+      console.log('data', data?.registrants?.length);
+      let registrants = Array.isArray(data?.registrants) ? data?.registrants : [];
+
+      // Match and merge with attendees data
+      if (registrants.length > 0) {
+        const attendeesResult = await this.attendeesService.fetchGroupedAttendees(
+          adminId,
+          1,
+          1000,
+          {
+            emails: registrants.map((r: any) => r.email),
+          },
+        );
+
+        // Create a map of attendees by email (_id is the email after grouping)
+        const attendeesMap = new Map(
+          attendeesResult.data.map((attendee: any) => [attendee._id?.toLowerCase(), attendee]),
+        );
+
+        // Merge registrants with attendees data
+        const mergedRegistrants = registrants.map((registrant: any) => {
+          const email = registrant.email?.toLowerCase();
+          const attendeeData = attendeesMap.get(email);
+
+          return {
+            ...registrant,
+            attendeeData: attendeeData || null,
+          };
+        });
+
+        // Return merged data
+        return {
+          ...data,
+          registrants: mergedRegistrants,
+        };
+      }
+
       return data;
     } catch (error: any) {
       const status = error?.response?.status;

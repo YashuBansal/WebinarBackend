@@ -319,6 +319,11 @@ export class GroupedAttendeesFilterDto {
   email?: string;
 
   @IsOptional()
+  @IsArray()
+  @IsEmail({}, { each: true })
+  emails?: string[];
+
+  @IsOptional()
   @IsObject()
   timeInSession?: RangeNumberDto;
 

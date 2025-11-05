@@ -13,6 +13,7 @@ import { WebinarModule } from '../webinar/webinar.module';
 import { MeetingEventConfigModule } from 'src/meeting-event-config/meeting-event-config.module';
 import { ConfiguredTemplatesModule } from 'src/configured-templates/configured-templates.module';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
+import { AttendeesModule } from 'src/attendees/attendees.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
     forwardRef(() => UsersModule),
     forwardRef(() => ProjectsModule),
     forwardRef(() => WebinarModule),
+    forwardRef(() => AttendeesModule),
     MongooseModule.forFeature([
       { name: ZoomProject.name, schema: ZoomProjectSchema },
     ]),

@@ -218,6 +218,82 @@ export class ZoomController {
     return { statusCode: HttpStatus.OK, message: 'Meetings retrieved', data: result };
   }
 
+  @Get('projects/:id/webinars')
+  async getProjectWebinars(
+    @Id() adminId: string,
+    @Param('id') id: string,
+    @Query('type') type: 'upcoming' = 'upcoming',
+    @Query('pageSize') pageSize?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
+      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    }
+    const result = await this.zoomService.getProjectWebinars(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+      type,
+      { pageSize: pageSize ? Number(pageSize) : 30, from, to },
+    );
+    return { statusCode: HttpStatus.OK, message: 'Webinars retrieved', data: result };
+  }
+
+  @Get('projects/:id/webinars/:webinarId')
+  async getWebinarDetails(
+    @Id() adminId: string,
+    @Param('id') id: string,
+    @Param('webinarId') webinarId: string,
+  ) {
+    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !webinarId) {
+      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    }
+    const result = await this.zoomService.getWebinarDetails(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+      webinarId,
+    );
+    return { statusCode: HttpStatus.OK, message: 'Webinar details retrieved', data: result };
+  }
+
+  @Get('projects/:id/webinars/:webinarId/registrants')
+  async getWebinarRegistrants(
+    @Id() adminId: string,
+    @Param('id') id: string,
+    @Param('webinarId') webinarId: string,
+    @Query('status') status?: 'pending' | 'approved' | 'denied',
+  ) {
+    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !webinarId) {
+      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    }
+    const result = await this.zoomService.getWebinarRegistrants(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+      webinarId,
+      status ?? 'approved',
+    );
+    return { statusCode: HttpStatus.OK, message: 'Webinar registrants retrieved', data: result };
+  }
+
+  @Post('projects/:id/webinars/:webinarId/registrants')
+  async addWebinarRegistrant(
+    @Id() adminId: string,
+    @Param('id') id: string,
+    @Param('webinarId') webinarId: string,
+    @Body() body: { email: string; first_name?: string; last_name?: string },
+  ) {
+    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !webinarId || !body?.email) {
+      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    }
+    const result = await this.zoomService.addWebinarRegistrant(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+      webinarId,
+      body,
+    );
+    return { statusCode: HttpStatus.CREATED, message: 'Registrant added', data: result };
+  }
+
   @Get('projects/:id/meetings/:meetingId')
   async getMeetingDetails(
     @Id() adminId: string,
