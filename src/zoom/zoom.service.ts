@@ -706,8 +706,6 @@ export class ZoomService {
         timestamp: new Date().toISOString(),
       });
 
-      console.log('payload', payload);
-
       // axios.post('http://localhost:3002/api/v1/zoom/webhook', payload).then((response) => {
       //   // console.log('response', response);
       // }).catch((error) => {
