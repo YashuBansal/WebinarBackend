@@ -706,6 +706,8 @@ export class ZoomService {
         timestamp: new Date().toISOString(),
       });
 
+      console.log('payload', payload);
+
       // axios.post('http://localhost:3002/api/v1/zoom/webhook', payload).then((response) => {
       //   // console.log('response', response);
       // }).catch((error) => {
@@ -740,6 +742,14 @@ export class ZoomService {
           eventType = ZoomMeetingEventType.MeetingStarted;
           break;
 
+        case ZoomWebhookEvent.WebinarStarted:
+          const webinarTopic = ValidationUtil.sanitizeText(
+            object?.topic || 'the webinar',
+          );
+          await this.handleMeetingStarted(meetingId, webinarTopic);
+          eventType = ZoomMeetingEventType.MeetingStarted;
+          break;
+
         case ZoomWebhookEvent.MeetingParticipantJoined:
           const participantEmail = participant?.email;
           if (participantEmail) {
@@ -756,9 +766,31 @@ export class ZoomService {
           eventType = ZoomMeetingEventType.ParticipantJoined;
           break;
 
+        case ZoomWebhookEvent.WebinarParticipantJoined:
+          const webinarParticipantEmail = participant?.email;
+          if (webinarParticipantEmail) {
+            try {
+              ValidationUtil.validateEmail(webinarParticipantEmail);
+              await this.handleParticipantJoined(meetingId, webinarParticipantEmail);
+            } catch (emailError) {
+              this.logger.warn(
+                `Invalid webinar participant email in webhook: ${webinarParticipantEmail}`,
+                emailError.message,
+              );
+            }
+          }
+          eventType = ZoomMeetingEventType.ParticipantJoined;
+          break;
+
         case ZoomWebhookEvent.MeetingParticipantLeft:
           const leftParticipant = object?.participant || {};
           await this.handleParticipantLeft(meetingId, leftParticipant);
+          eventType = ZoomMeetingEventType.ParticipantLeft;
+          break;
+
+        case ZoomWebhookEvent.WebinarParticipantLeft:
+          const webinarLeftParticipant = object?.participant || {};
+          await this.handleParticipantLeft(meetingId, webinarLeftParticipant);
           eventType = ZoomMeetingEventType.ParticipantLeft;
           break;
 
@@ -770,7 +802,20 @@ export class ZoomService {
           eventType = ZoomMeetingEventType.MeetingEnded;
           break;
 
+        case ZoomWebhookEvent.WebinarEnded:
+          const webinarEndedTopic = ValidationUtil.sanitizeText(
+            object?.topic || 'the webinar',
+          );
+          await this.handleMeetingEnded(meetingId, webinarEndedTopic);
+          eventType = ZoomMeetingEventType.MeetingEnded;
+          break;
+
         case ZoomWebhookEvent.MeetingRegistrationCreated:
+          await this.handleRegistrationCreated(meetingId, registrant);
+          return;
+
+        case ZoomWebhookEvent.WebinarRegistrationCreated:
+          console.log('Webinar registration created', registrant);
           await this.handleRegistrationCreated(meetingId, registrant);
           return;
 

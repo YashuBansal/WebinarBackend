@@ -1671,7 +1671,7 @@ export class AttendeesService {
     if (!attendeeBeforeUpdate) {
       throw new NotFoundException('Attendee not found.');
     }
-    console.log(attendeeBeforeUpdate , userId);
+    console.log('attendee service ---- > ', attendeeBeforeUpdate , userId);
 
     // Permission check: Allow if userId is the assignedTo, tempAssignedTo, or adminId of the *existing* attendee
     if (

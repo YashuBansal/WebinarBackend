@@ -19,7 +19,12 @@ export class ZoomMeetingEvent {
   @Prop({ type: String, required: true, index: true })
   meetingId: string;
 
-  @Prop({ type: String, enum: Object.values(ZoomMeetingEventType), required: true, index: true })
+  @Prop({
+    type: String,
+    enum: Object.values(ZoomMeetingEventType),
+    required: true,
+    index: true,
+  })
   eventType: ZoomMeetingEventType;
 
   @Prop({ type: String })
@@ -39,7 +44,11 @@ export class ZoomMeetingEvent {
 }
 
 export type ZoomMeetingEventDocument = HydratedDocument<ZoomMeetingEvent>;
-export const ZoomMeetingEventSchema = SchemaFactory.createForClass(ZoomMeetingEvent);
-ZoomMeetingEventSchema.index({ accountId: 1, meetingId: 1, eventType: 1, createdAt: -1 });
-
-
+export const ZoomMeetingEventSchema =
+  SchemaFactory.createForClass(ZoomMeetingEvent);
+ZoomMeetingEventSchema.index({
+  accountId: 1,
+  meetingId: 1,
+  eventType: 1,
+  createdAt: -1,
+});
