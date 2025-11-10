@@ -71,7 +71,7 @@ export class ZoomController {
     return { statusCode: HttpStatus.OK, message: 'Profile', data: profile };
   }
 
-  @Post('webhook')
+  @Post('webhook-v2')
   @HttpCode(HttpStatus.OK)
   async webhook(@Body() body: any, @Query('projectId') projectId: string) {
 
@@ -81,7 +81,7 @@ export class ZoomController {
       return await this.zoomService.validateWebhook(body, new Types.ObjectId(`${projectId}`));
     }
 
-    await this.zoomService.processWebhookPayloadV2(body);
+    await this.zoomService.processWebhookPayloadV2(body, projectId);
     return;
   }
 

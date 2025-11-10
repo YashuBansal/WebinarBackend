@@ -694,9 +694,17 @@ export class ZoomService {
 
   // In zoom.service.ts
 
-  async processWebhookPayloadV2(payload: any) {
+  async processWebhookPayloadV2(payload: any, projectId: string | undefined) {
     const timer = MonitoringUtil.createTimer();
     try {
+
+      const zoomProjectId = mongoose.isValidObjectId(projectId) ? new Types.ObjectId(projectId) : null;
+
+      if (!zoomProjectId) {
+        this.logger.error('Invalid project ID in webhook payload:', payload);
+        return;
+      }
+
       // Validate webhook payload structure
       ValidationUtil.validateWebhookPayload(payload);
 
@@ -706,7 +714,7 @@ export class ZoomService {
         timestamp: new Date().toISOString(),
       });
 
-      // axios.post('http://localhost:3002/api/v1/zoom/webhook', payload).then((response) => {
+      // axios.post('http://localhost:3002/api/v1/zoom/webhook-v2', payload).then((response) => {
       //   // console.log('response', response);
       // }).catch((error) => {
       //   console.log('error', error);

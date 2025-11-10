@@ -117,7 +117,7 @@ export class ProjectsController {
       {
         adminId: new Types.ObjectId(`${adminId}`),
         projectId: new Types.ObjectId(projectId),
-        messageType: messageType || WabaMessageType.INDIVIDUAL,
+        ...(messageType && { messageType }),
         ...(mongoose.isValidObjectId(campaignId) && {
           campaignId: new Types.ObjectId(campaignId),
         }),
