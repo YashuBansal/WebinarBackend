@@ -78,14 +78,20 @@ export class ZoomController {
 
     this.logger.log(` ========================= ${body?.event} ========================= `);
 
+    // Handle validation synchronously (needs to return response)
     if (body.event === 'endpoint.url_validation') {
       if (!mongoose.isValidObjectId(projectId))
         throw new BadRequestException('Invalid projectId');
       return await this.zoomService.validateWebhook(body, new Types.ObjectId(`${projectId}`));
     }
 
-    await this.zoomService.processWebhookPayloadV2(body, projectId);
-    return;
+    // Process webhook asynchronously (fire and forget)
+    // Return 200 OK immediately to prevent Zoom from retrying
+    this.zoomService.processWebhookPayloadV2(body, projectId).catch((error) => {
+      this.logger.error('Error processing webhook payload (async):', error);
+    });
+
+    return { statusCode: HttpStatus.OK, message: 'Webhook received' };
   }
 
   // ========== CRUD APIs for Zoom Projects ==========
