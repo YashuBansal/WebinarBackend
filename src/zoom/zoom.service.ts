@@ -733,7 +733,7 @@ export class ZoomService {
       // Validate webhook payload structure
       ValidationUtil.validateWebhookPayload(payload);
 
-      this.logger.log(`<<<<<<<<<<<<<<< ${payload?.event} >>>>>>>>>>>>>>`);
+      this.logger.log(` ========================= ${payload?.event} ========================= `);
 
       this.logger.log('Processing webhook payload:', {
         event: payload?.event,
