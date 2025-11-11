@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Delete, Put, Query, Headers, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Delete, Put, Query, Headers, BadRequestException, Logger } from '@nestjs/common';
 import mongoose, { Types } from 'mongoose';
 import { Id } from 'src/decorators/custom.decorator';
 import { ZoomService } from './zoom.service';
@@ -9,6 +9,7 @@ import { QueryZoomProjectsDto } from './dto/query-zoom-projects.dto';
 
 @Controller('zoom')
 export class ZoomController {
+  private readonly logger = new Logger(ZoomController.name);
   constructor(private readonly zoomService: ZoomService) { }
 
   @Post('oauth/exchange')
@@ -74,6 +75,8 @@ export class ZoomController {
   @Post('webhook-v2')
   @HttpCode(HttpStatus.OK)
   async webhook(@Body() body: any, @Query('projectId') projectId: string) {
+
+    this.logger.log(` ========================= ${body?.event} ========================= `);
 
     if (body.event === 'endpoint.url_validation') {
       if (!mongoose.isValidObjectId(projectId))
