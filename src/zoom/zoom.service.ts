@@ -739,6 +739,7 @@ export class ZoomService {
         event: payload?.event,
         meetingId: payload?.payload?.object?.id || payload?.object?.id,
         timestamp: new Date().toISOString(),
+        raw: payload,
       });
 
       // axios.post(`http://localhost:3002/api/v1/zoom/webhook-v2?projectId=${projectId}`, payload).then((response) => {
