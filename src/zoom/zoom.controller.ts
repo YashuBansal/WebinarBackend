@@ -325,6 +325,7 @@ export class ZoomController {
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(`${id}`),
       meetingId,
+      false,
       status ?? 'approved',
     );
     return { statusCode: HttpStatus.OK, message: 'Meeting registrants retrieved', data: result };

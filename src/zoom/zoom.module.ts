@@ -38,7 +38,7 @@ export class ZoomModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(AuthAdminTokenMiddleware)
-      .exclude({ path: 'zoom/webhook', method: RequestMethod.ALL })
+      .exclude({ path: 'zoom/webhook-v2', method: RequestMethod.ALL })
       .forRoutes(ZoomController);
   }
 }
