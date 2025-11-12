@@ -6,11 +6,15 @@ import { CreateZoomProjectDto } from './dto/create-zoom-project.dto';
 import { ValidateZoomConfigDto } from './dto/validate-zoom-config.dto';
 import { UpdateZoomProjectDto } from './dto/update-zoom-project.dto';
 import { QueryZoomProjectsDto } from './dto/query-zoom-projects.dto';
+import { WebhookQueueService } from './webhook-queue.service';
 
 @Controller('zoom')
 export class ZoomController {
   private readonly logger = new Logger(ZoomController.name);
-  constructor(private readonly zoomService: ZoomService) { }
+  constructor(
+    private readonly zoomService: ZoomService,
+    private readonly webhookQueueService: WebhookQueueService,
+  ) { }
 
   @Post('oauth/exchange')
   async exchange(
@@ -85,13 +89,32 @@ export class ZoomController {
       return await this.zoomService.validateWebhook(body, new Types.ObjectId(`${projectId}`));
     }
 
-    // Process webhook asynchronously (fire and forget)
+    // Enqueue webhook for processing
     // Return 200 OK immediately to prevent Zoom from retrying
-    this.zoomService.processWebhookPayloadV2(body, projectId).catch((error) => {
-      this.logger.error('Error processing webhook payload (async):', error);
-    });
+    const enqueued = await this.webhookQueueService.enqueue(body, projectId);
+    
+    if (!enqueued) {
+      this.logger.error('Failed to enqueue webhook event - queue is full', {
+        event: body?.event,
+        projectId,
+      });
+      // Still return 200 OK to prevent Zoom from retrying
+      // The event is lost, but we log it for monitoring
+    }
 
     return { statusCode: HttpStatus.OK, message: 'Webhook received' };
+  }
+
+  @Get('webhook-v2/queue/health')
+  @HttpCode(HttpStatus.OK)
+  async getQueueHealth() {
+    const health = this.webhookQueueService.getHealthStatus();
+    const metrics = this.webhookQueueService.getMetrics();
+    return {
+      statusCode: HttpStatus.OK,
+      health,
+      metrics,
+    };
   }
 
   // ========== CRUD APIs for Zoom Projects ==========

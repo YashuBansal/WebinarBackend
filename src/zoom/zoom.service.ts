@@ -6,6 +6,7 @@ import {
   Logger,
   NotAcceptableException,
   BadRequestException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -29,9 +30,10 @@ import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import axios from 'axios';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { BooleanExpression } from 'mongoose';
+import { WebhookQueueService } from './webhook-queue.service';
 
 @Injectable()
-export class ZoomService {
+export class ZoomService implements OnModuleInit {
   private readonly logger = new Logger(ZoomService.name);
   constructor(
     private readonly http: HttpService,
@@ -47,7 +49,16 @@ export class ZoomService {
     private readonly usersService: UsersService,
     @Inject(forwardRef(() => AttendeesService))
     private readonly attendeesService: AttendeesService,
+    private readonly webhookQueueService: WebhookQueueService,
   ) {}
+
+  onModuleInit() {
+    // Set the processing worker for the queue
+    this.webhookQueueService.setProcessingWorker(
+      (payload: any, projectId: string) => this.processWebhookPayloadV2(payload, projectId)
+    );
+    this.logger.log('Webhook queue processing worker registered');
+  }
 
   // ====== Access Token Utilities ======
   private async refreshAccessTokenForProject(project: ZoomProjectDocument) {
@@ -922,7 +933,7 @@ export class ZoomService {
         false,
       );
 
-      // Don't throw the error to avoid webhook retries for validation issues
+      // Don't throw the error for validation issues - these shouldn't be retried
       if (error instanceof BadRequestException) {
         this.logger.warn(
           'Webhook payload validation failed, ignoring:',
@@ -931,6 +942,8 @@ export class ZoomService {
         return;
       }
 
+      // Throw error for queue retry mechanism
+      // The queue will handle retries with exponential backoff
       throw error;
     }
   }

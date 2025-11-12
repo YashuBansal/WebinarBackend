@@ -140,4 +140,48 @@ export class MonitoringUtil {
       timestamp: new Date().toISOString()
     });
   }
+
+  /**
+   * Logs webhook queue metrics
+   */
+  static logWebhookQueueMetrics(metrics: {
+    queueDepth: number;
+    activeWorkers: number;
+    totalProcessed: number;
+    totalFailed: number;
+    totalRetries: number;
+    averageProcessingTimeMs: number;
+  }): void {
+    const failureRate = metrics.totalProcessed > 0
+      ? ((metrics.totalFailed / metrics.totalProcessed) * 100).toFixed(2)
+      : '0';
+
+    this.logger.log('Webhook Queue Metrics', {
+      queueDepth: metrics.queueDepth,
+      activeWorkers: metrics.activeWorkers,
+      totalProcessed: metrics.totalProcessed,
+      totalFailed: metrics.totalFailed,
+      totalRetries: metrics.totalRetries,
+      failureRate: `${failureRate}%`,
+      averageProcessingTimeMs: metrics.averageProcessingTimeMs,
+      timestamp: new Date().toISOString()
+    });
+
+    // Log warnings for high queue depth
+    if (metrics.queueDepth > 1000) {
+      this.logger.warn(`High webhook queue depth detected: ${metrics.queueDepth}`, {
+        queueDepth: metrics.queueDepth,
+        activeWorkers: metrics.activeWorkers
+      });
+    }
+
+    // Log warnings for high failure rate
+    if (metrics.totalFailed > 0 && parseFloat(failureRate) > 5) {
+      this.logger.warn(`High webhook failure rate detected: ${failureRate}%`, {
+        totalFailed: metrics.totalFailed,
+        totalProcessed: metrics.totalProcessed,
+        failureRate: `${failureRate}%`
+      });
+    }
+  }
 }

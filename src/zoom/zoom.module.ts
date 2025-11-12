@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { HttpModule } from '@nestjs/axios';
 import { ZoomController } from './zoom.controller';
 import { ZoomService } from './zoom.service';
+import { WebhookQueueService } from './webhook-queue.service';
 import { ZoomProject, ZoomProjectSchema } from './schemas/zoom-project.schema';
 import { ZoomMeetingEvent, ZoomMeetingEventSchema } from './schemas/zoom-meeting-event.schema';
 import { UsersModule } from 'src/users/users.module';
@@ -31,14 +32,17 @@ import { AttendeesModule } from 'src/attendees/attendees.module';
      WhatsappModule,
   ],
   controllers: [ZoomController],
-  providers: [ZoomService],
+  providers: [ZoomService, WebhookQueueService],
   exports: [ZoomService],
 })
 export class ZoomModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(AuthAdminTokenMiddleware)
-      .exclude({ path: 'zoom/webhook-v2', method: RequestMethod.ALL })
+      .exclude(
+        { path: 'zoom/webhook-v2', method: RequestMethod.ALL },
+        { path: 'zoom/webhook-v2/queue/health', method: RequestMethod.GET }
+      )
       .forRoutes(ZoomController);
   }
 }
