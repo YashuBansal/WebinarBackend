@@ -271,6 +271,8 @@ export class ZoomController {
     @Param('id') id: string,
     @Param('webinarId') webinarId: string,
     @Query('status') status?: 'pending' | 'approved' | 'denied',
+    @Query('pageSize') pageSize?: string,
+    @Query('nextPageToken') nextPageToken?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !webinarId) {
       return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
@@ -280,27 +282,12 @@ export class ZoomController {
       new Types.ObjectId(`${id}`),
       webinarId,
       status ?? 'approved',
+      {
+        pageSize: pageSize ? Number(pageSize) : undefined,
+        nextPageToken,
+      },
     );
     return { statusCode: HttpStatus.OK, message: 'Webinar registrants retrieved', data: result };
-  }
-
-  @Post('projects/:id/webinars/:webinarId/registrants')
-  async addWebinarRegistrant(
-    @Id() adminId: string,
-    @Param('id') id: string,
-    @Param('webinarId') webinarId: string,
-    @Body() body: { email: string; first_name?: string; last_name?: string },
-  ) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !webinarId || !body?.email) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
-    }
-    const result = await this.zoomService.addWebinarRegistrant(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${id}`),
-      webinarId,
-      body,
-    );
-    return { statusCode: HttpStatus.CREATED, message: 'Registrant added', data: result };
   }
 
   @Get('projects/:id/meetings/:meetingId')
@@ -340,23 +327,5 @@ export class ZoomController {
     return { statusCode: HttpStatus.OK, message: 'Meeting registrants retrieved', data: result };
   }
 
-  @Post('projects/:id/meetings/:meetingId/registrants')
-  async addMeetingRegistrant(
-    @Id() adminId: string,
-    @Param('id') id: string,
-    @Param('meetingId') meetingId: string,
-    @Body() body: { email: string; first_name?: string; last_name?: string },
-  ) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !meetingId || !body?.email) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
-    }
-    const result = await this.zoomService.addMeetingRegistrant(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${id}`),
-      meetingId,
-      body,
-    );
-    return { statusCode: HttpStatus.CREATED, message: 'Registrant added', data: result };
-  }
 }
 

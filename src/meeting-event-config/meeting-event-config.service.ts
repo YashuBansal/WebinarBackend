@@ -266,4 +266,47 @@ export class MeetingEventConfigService {
       );
     }
   }
+
+  /**
+   * Update the isExecuted flag for a specific event type in a meeting event configuration
+   * Sets the flag to true permanently - cannot be reset
+   */
+  async updateEventExecutedFlag(
+    meetingId: string,
+    eventType: 'meetingStarted' | 'meetingEndedAttendees' | 'meetingEndedNonAttendees',
+  ): Promise<MeetingEventConfiguration | null> {
+    try {
+      this.logger.log(
+        `Updating isExecuted flag for meeting ${meetingId}, eventType: ${eventType}`,
+      );
+
+      const updateField = `${eventType}.isExecuted`;
+      const updatedConfig = await this.meetingEventConfigModel
+        .findOneAndUpdate(
+          { meetingId },
+          { $set: { [updateField]: true } },
+          { new: true },
+        )
+        .exec();
+
+      if (!updatedConfig) {
+        this.logger.warn(
+          `Meeting event configuration not found for meeting: ${meetingId}`,
+        );
+        return null;
+      }
+
+      this.logger.log(
+        `Successfully updated isExecuted flag for meeting: ${meetingId}, eventType: ${eventType}`,
+      );
+      return updatedConfig;
+    } catch (error) {
+      this.logger.error(
+        `Failed to update isExecuted flag: ${error.message}`,
+        error.stack,
+      );
+      // Don't throw to avoid breaking webhook processing
+      return null;
+    }
+  }
 }

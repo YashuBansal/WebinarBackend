@@ -29,6 +29,13 @@ export class MeetingEventConfig {
     required: false,
   })
   configuredTemplateId?: Types.ObjectId;
+
+  @Prop({
+    type: Boolean,
+    required: false,
+    default: false,
+  })
+  isExecuted?: boolean;
 }
 
 @Schema({ timestamps: true })

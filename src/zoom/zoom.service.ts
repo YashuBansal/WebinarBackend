@@ -494,6 +494,7 @@ export class ZoomService {
     projectId: Types.ObjectId,
     webinarId: string,
     status: 'pending' | 'approved' | 'denied' = 'approved',
+    options?: { pageSize?: number; nextPageToken?: string },
   ) {
     const project = await this.zoomProjectModel.findOne({
       _id: projectId,
@@ -503,13 +504,19 @@ export class ZoomService {
       throw new NotAcceptableException('No access token found');
 
     try {
+      const pageSize = options?.pageSize ?? 30;
+      const params: any = { status, page_size: pageSize };
+      if (options?.nextPageToken) {
+        params.next_page_token = options.nextPageToken;
+      }
+
       const data = await this.executeWithTokenRetry(project, async (token) => {
         const resp = await firstValueFrom(
           this.http.get(
             `https://api.zoom.us/v2/webinars/${encodeURIComponent(webinarId)}/registrants`,
             {
               headers: { Authorization: `Bearer ${token}` },
-              params: { status },
+              params,
             },
           ),
         );
@@ -546,7 +553,7 @@ export class ZoomService {
           };
         });
 
-        // Return merged data
+        // Return merged data with pagination info
         return {
           ...data,
           registrants: mergedRegistrants,
@@ -965,6 +972,14 @@ export class ZoomService {
         return;
       }
 
+      // Check if already executed
+      if (meetingStarted.isExecuted) {
+        this.logger.warn(
+          `Meeting started event already executed for meeting: ${meetingId}. Skipping duplicate processing.`,
+        );
+        return;
+      }
+
       if (!mongoose.isValidObjectId(meetingStarted.configuredTemplateId)) {
         this.logger.warn(
           `Invalid configured template ID for meeting: ${meetingId}`,
@@ -986,6 +1001,12 @@ export class ZoomService {
 
       this.logger.log(
         `Using configured template: ${configuredTemplate.configuredTemplateName} for meeting: ${meetingId}`,
+      );
+
+      // Set isExecuted flag immediately to prevent duplicate processing
+      await this.meetingEventConfigService.updateEventExecutedFlag(
+        meetingId,
+        'meetingStarted',
       );
 
       const registrations = await this.getMeetingRegistrations({
@@ -1257,21 +1278,33 @@ export class ZoomService {
         meetingEndedAttendees.enabled &&
         mongoose.isValidObjectId(meetingEndedAttendees.configuredTemplateId)
       ) {
-        this.logger.log(
-          'meetingEndedAttendees --------==================-------------',
-          meetingEndedAttendees,
-        );
-        const configuredTemplate =
-          await this.ConfiguredTemplateService.getConfiguredTemplate(
-            meetingEndedAttendees.configuredTemplateId,
+        // Check if already executed
+        if (meetingEndedAttendees.isExecuted) {
+          this.logger.warn(
+            `Meeting ended attendees event already executed for meeting: ${meetingId}. Skipping duplicate processing.`,
           );
-        this.logger.log(
-          'configuredTemplate for attendees --------==================-------------',
-          configuredTemplate,
-        );
+        } else {
+          this.logger.log(
+            'meetingEndedAttendees --------==================-------------',
+            meetingEndedAttendees,
+          );
+          const configuredTemplate =
+            await this.ConfiguredTemplateService.getConfiguredTemplate(
+              meetingEndedAttendees.configuredTemplateId,
+            );
+          this.logger.log(
+            'configuredTemplate for attendees --------==================-------------',
+            configuredTemplate,
+          );
 
-        if (configuredTemplate) {
-          const attendees = await this.getMeetingAttendees({
+          if (configuredTemplate) {
+            // Set isExecuted flag immediately to prevent duplicate processing
+            await this.meetingEventConfigService.updateEventExecutedFlag(
+              meetingId,
+              'meetingEndedAttendees',
+            );
+
+            const attendees = await this.getMeetingAttendees({
             meetingId,
             adminId: meetingEventConfig.adminId,
             projectId: meetingEventConfig.whatsappProjectId,
@@ -1279,16 +1312,22 @@ export class ZoomService {
             zoomProjectId: meetingEventConfig.zoomProjectId,
             isWebinar,
           });
-          this.logger.log(
-            'attendees --------==================-------------',
-            attendees,
-          );
-          if (attendees.length > 0) {
-            await this.whatsappService.sendTemplateMessages({
-              fetchedContacts: attendees,
-              template: configuredTemplate,
-              meetingId,
-            });
+            this.logger.log(
+              'attendees --------==================-------------',
+              attendees,
+            );
+            // Send messages even if attendees.length === 0 (flag already set)
+            if (attendees.length > 0) {
+              await this.whatsappService.sendTemplateMessages({
+                fetchedContacts: attendees,
+                template: configuredTemplate,
+                meetingId,
+              });
+            } else {
+              this.logger.log(
+                `No attendees found for meeting: ${meetingId}. Flag already marked as executed.`,
+              );
+            }
           }
         }
       }
@@ -1298,21 +1337,33 @@ export class ZoomService {
         meetingEndedNonAttendees.enabled &&
         mongoose.isValidObjectId(meetingEndedNonAttendees.configuredTemplateId)
       ) {
-        this.logger.log(
-          'meetingEndedNonAttendees --------==================-------------',
-          meetingEndedNonAttendees,
-        );
-        const configuredTemplate =
-          await this.ConfiguredTemplateService.getConfiguredTemplate(
-            meetingEndedNonAttendees.configuredTemplateId,
+        // Check if already executed
+        if (meetingEndedNonAttendees.isExecuted) {
+          this.logger.warn(
+            `Meeting ended non-attendees event already executed for meeting: ${meetingId}. Skipping duplicate processing.`,
           );
-        this.logger.log(
-          'configuredTemplate for non-attendees --------==================-------------',
-          configuredTemplate,
-        );
+        } else {
+          this.logger.log(
+            'meetingEndedNonAttendees --------==================-------------',
+            meetingEndedNonAttendees,
+          );
+          const configuredTemplate =
+            await this.ConfiguredTemplateService.getConfiguredTemplate(
+              meetingEndedNonAttendees.configuredTemplateId,
+            );
+          this.logger.log(
+            'configuredTemplate for non-attendees --------==================-------------',
+            configuredTemplate,
+          );
 
-        if (configuredTemplate) {
-          const nonAttendees = await this.getMeetingNonAttendees({
+          if (configuredTemplate) {
+            // Set isExecuted flag immediately to prevent duplicate processing
+            await this.meetingEventConfigService.updateEventExecutedFlag(
+              meetingId,
+              'meetingEndedNonAttendees',
+            );
+
+            const nonAttendees = await this.getMeetingNonAttendees({
             meetingId,
             adminId: meetingEventConfig.adminId,
             projectId: meetingEventConfig.whatsappProjectId,
@@ -1320,16 +1371,22 @@ export class ZoomService {
             zoomProjectId: meetingEventConfig.zoomProjectId,
             isWebinar,
           });
-          this.logger.log(
-            'nonAttendees --------==================-------------',
-            nonAttendees,
-          );
-          if (nonAttendees.length > 0) {
-            await this.whatsappService.sendTemplateMessages({
-              fetchedContacts: nonAttendees,
-              template: configuredTemplate,
-              meetingId,
-            });
+            this.logger.log(
+              'nonAttendees --------==================-------------',
+              nonAttendees,
+            );
+            // Send messages even if nonAttendees.length === 0 (flag already set)
+            if (nonAttendees.length > 0) {
+              await this.whatsappService.sendTemplateMessages({
+                fetchedContacts: nonAttendees,
+                template: configuredTemplate,
+                meetingId,
+              });
+            } else {
+              this.logger.log(
+                `No non-attendees found for meeting: ${meetingId}. Flag already marked as executed.`,
+              );
+            }
           }
         }
       }
