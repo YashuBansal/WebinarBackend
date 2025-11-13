@@ -19,6 +19,7 @@ import {
   DisplayNameStatusDto,
   DisplayNameStatus,
 } from './dto/profile.dto';
+import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 
 @Injectable()
 export class ProfileService {
@@ -28,6 +29,7 @@ export class ProfileService {
   constructor(
     private readonly configService: ConfigService,
     private readonly projectService: ProjectsService,
+    private readonly whatsappService: WhatsappService,
   ) {
     // Initialize robust axios instance with IPv4 agent and retry logic
     const httpAgent = new http.Agent({ family: 4 });
@@ -416,5 +418,38 @@ export class ProfileService {
         `Failed to upload profile picture: ${error.response?.data?.error?.message || error.message}`,
       );
     }
+  }
+
+  /**
+   * Check webhook subscription status for a specific project
+   */
+  async checkWebhookSubscription(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+  ): Promise<{ isSubscribed: boolean }> {
+    const account = await this.projectService.findOne(adminId, projectId);
+    if (!account) {
+      throw new UnauthorizedException(
+        'You do not have permission to access this project.',
+      );
+    }
+
+    // Check if WhatsApp credentials are configured
+    if (!account.permanentAccessToken || !account.wabaId) {
+      throw new NotFoundException(
+        'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
+      );
+    }
+
+    const { permanentAccessToken, wabaId } = account;
+
+    const subscriptionStatus = await this.whatsappService.checkAppSubscriptionToWaba(
+      wabaId,
+      permanentAccessToken,
+    );
+
+    return {
+      isSubscribed: subscriptionStatus.isSubscribed,
+    };
   }
 }

@@ -5,9 +5,10 @@ import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { ProjectsModule } from 'src/projects/projects.module';
 import { HttpModule } from '@nestjs/axios';
 import { UsersModule } from 'src/users/users.module';
+import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 
 @Module({
-  imports: [HttpModule, ProjectsModule, UsersModule],
+  imports: [HttpModule, ProjectsModule, UsersModule, WhatsappModule],
   providers: [ProfileService],
   controllers: [ProfileController],
   exports: [ProfileService],

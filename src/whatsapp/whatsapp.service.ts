@@ -1912,6 +1912,78 @@ console.log('wabaMessageId ------------------------- > ', msgId);
   }
 
   /**
+   * Checks if the app is subscribed to a WhatsApp Business Account for webhook notifications
+   * @param wabaId The WhatsApp Business Account ID
+   * @param accessToken The access token for authentication
+   * @returns Promise with subscription status and app list
+   */
+  async checkAppSubscriptionToWaba(
+    wabaId: string,
+    accessToken: string,
+  ): Promise<{ isSubscribed: boolean; subscribedApps?: any[] }> {
+    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/subscribed_apps`;
+
+    this.logger.log(`Checking subscription status for WABA ${wabaId}`);
+
+    try {
+      const response = await this.axiosInstance.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+      });
+
+      const subscribedApps = response.data?.data || [];
+      this.logger.log(`subscribedApps ${JSON.stringify(subscribedApps)}`);
+      const appId = this.configService.get('META_APP_ID');
+      this.logger.log(`appId ${appId}`);
+      const isSubscribed = subscribedApps.some(
+        (app: any) => app?.whatsapp_business_api_data?.id === appId,
+      );
+
+      this.logger.log(
+        `App ${isSubscribed ? 'is' : 'is not'} subscribed to WABA ${wabaId}`,
+      );
+
+      return {
+        isSubscribed,
+        subscribedApps,
+      };
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      this.logger.error(
+        `Failed to check subscription status for WABA ${wabaId}`,
+        {
+          status: axiosError.response?.status,
+          data: axiosError.response?.data,
+          message: axiosError.message,
+        },
+      );
+
+      // Handle specific error cases similar to subscribeAppToWaba
+      if (axiosError.response?.status === 401) {
+        throw new UnauthorizedException(
+          'Invalid access token. Please reconfigure your WhatsApp Business Account.',
+        );
+      } else if (axiosError.response?.status === 403) {
+        throw new ForbiddenException(
+          'Access denied. Please check your WhatsApp Business Account permissions.',
+        );
+      } else if (axiosError.response?.status === 404) {
+        throw new NotFoundException(
+          'WhatsApp Business Account not found. Please check your WABA ID.',
+        );
+      }
+
+      throw new InternalServerErrorException(
+        'Could not check subscription status for WABA.',
+      );
+    }
+  }
+
+  /**
    * Uploads a sample file to Meta using WhatsApp Media Upload API to get a media ID for templates
    * @param fileBuffer The file buffer to upload
    * @param mimeType The MIME type of the file
