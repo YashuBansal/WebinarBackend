@@ -125,6 +125,30 @@ export class ProfileController {
   }
 
   /**
+   * Subscribe webhook for a project
+   */
+  @Post(':projectId/webhook-subscription')
+  async subscribeWebhook(
+    @Param('projectId') projectId: string,
+    @Id() adminId: string,
+  ) {
+    if (!Types.ObjectId.isValid(projectId)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+
+    const result = await this.profileService.subscribeWebhookForProject(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Webhook subscription successful',
+      data: result,
+    };
+  }
+
+  /**
    * Upload profile picture
    */
   @Post(':projectId/profile-picture')

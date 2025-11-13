@@ -452,4 +452,35 @@ export class ProfileService {
       isSubscribed: subscriptionStatus.isSubscribed,
     };
   }
+
+  /**
+   * Subscribe webhook for a specific project
+   */
+  async subscribeWebhookForProject(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+  ): Promise<{ success: boolean }> {
+    const account = await this.projectService.findOne(adminId, projectId);
+    if (!account) {
+      throw new UnauthorizedException(
+        'You do not have permission to access this project.',
+      );
+    }
+
+    // Check if WhatsApp credentials are configured
+    if (!account.permanentAccessToken || !account.wabaId) {
+      throw new NotFoundException(
+        'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
+      );
+    }
+
+    const subscriptionResult = await this.whatsappService.subscribeAppToWabaForProject(
+      adminId,
+      projectId,
+    );
+
+    return {
+      success: true,
+    };
+  }
 }
