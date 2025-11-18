@@ -142,6 +142,7 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     const fromAuth = client.handshake.auth?.clientApp;
     const fromQuery = client.handshake.query?.clientApp;
     const appName = (fromAuth || fromQuery || '').toString().toLowerCase();
+    console.log('appName ------------------------- > ', appName);
 
     if (appName === 'zoom' || appName === 'whatsapp') {
       return appName;
