@@ -767,7 +767,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     if (query.name) params.name = query.name;
 
     this.logger.log(
-      `Fetching templates for WABA ${wabaId} with params: ${JSON.stringify(params)}`,
+      `Fetching templates for WABA: ${wabaId}`,
     );
 
     try {

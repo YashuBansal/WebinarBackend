@@ -229,6 +229,18 @@ export class ZoomController {
     return { statusCode: HttpStatus.OK, message: 'Configuration status retrieved', data: status };
   }
 
+  @Get('projects/:id/webhook-subscription-status')
+  async getWebhookSubscriptionStatus(@Id() adminId: string, @Param('id') id: string) {
+    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
+      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    }
+    const status = await this.zoomService.checkWebhookSubscriptionStatus(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+    );
+    return { statusCode: HttpStatus.OK, message: 'Webhook subscription status retrieved', data: status };
+  }
+
   @Get('projects/:id/meetings')
   async getProjectMeetings(
     @Id() adminId: string,
@@ -294,21 +306,21 @@ export class ZoomController {
     @Param('id') id: string,
     @Param('webinarId') webinarId: string,
     @Query('status') status?: 'pending' | 'approved' | 'denied',
-    @Query('pageSize') pageSize?: string,
-    @Query('nextPageToken') nextPageToken?: string,
+    @Query('page') page?: string,
+    @Query('page_size') pageSize?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !webinarId) {
       return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
     }
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 30;
     const result = await this.zoomService.getWebinarRegistrants(
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(`${id}`),
       webinarId,
       status ?? 'approved',
-      {
-        pageSize: pageSize ? Number(pageSize) : undefined,
-        nextPageToken,
-      },
+      pageNum,
+      pageSizeNum,
     );
     return { statusCode: HttpStatus.OK, message: 'Webinar registrants retrieved', data: result };
   }
@@ -336,15 +348,21 @@ export class ZoomController {
     @Param('id') id: string,
     @Param('meetingId') meetingId: string,
     @Query('status') status?: 'pending' | 'approved' | 'denied',
+    @Query('page') page?: string,
+    @Query('page_size') pageSize?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !meetingId) {
       return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
     }
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 30;
     const result = await this.zoomService.getMeetingRegistrants(
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(`${id}`),
       meetingId,
       false,
+      pageNum,
+      pageSizeNum,
       status ?? 'approved',
     );
     return { statusCode: HttpStatus.OK, message: 'Meeting registrants retrieved', data: result };

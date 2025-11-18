@@ -10,6 +10,18 @@ import { WebsocketExceptionFilter } from './ws-exception.filter';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 
+type ClientApp = 'zoom' | 'whatsapp' | 'unknown';
+
+type ZoomRealtimeResource = 'meetings' | 'webinars';
+type ZoomRealtimeAction = 'created' | 'updated' | 'deleted' | 'refetch';
+
+interface ZoomRealtimePayload {
+  resource: ZoomRealtimeResource;
+  action: ZoomRealtimeAction;
+  projectId: string;
+  timestamp?: string;
+}
+
 @WebSocketGateway({
   cors: {
     origin: '*',
@@ -31,6 +43,11 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   // userId -> socketId
   public activeUsers = new Map<string, string>();
+  private readonly activeUsersByApp: Record<ClientApp, Map<string, string>> = {
+    zoom: new Map(),
+    whatsapp: new Map(),
+    unknown: new Map(),
+  };
 
   async handleConnection(client: Socket) {
     this.logger.log(`WhatsApp WS client connected: ${client.id}`);
@@ -47,7 +64,6 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     const cookies = this.parseCookies(cookieHeader);
     const accessTokenName = this.configService.get('ACCESS_TOKEN_NAME');
     const token = cookies[accessTokenName];
-    console.log('token ------------------------- > ', token);
 
     if (!token) {
       this.logger.warn(`No access token found in cookies for client ${client.id}, disconnecting`);
@@ -62,16 +78,21 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
       
       // Extract userId from token
       const userId = String(decodedToken.id || decodedToken.adminId);
+      const clientApp = this.getClientApp(client);
       
       // Store userId in socket data for later use
       client.data.userId = userId;
+      client.data.clientApp = clientApp;
       
       // Automatically join user room based on authenticated userId
       const roomName = `user:${userId}`;
       client.join(roomName);
       this.activeUsers.set(userId, client.id);
+      this.activeUsersByApp[clientApp].set(userId, client.id);
       
-      this.logger.log(`Client ${client.id} authenticated as user ${userId} and joined room ${roomName}`);
+      this.logger.log(
+        `Client ${client.id} (${clientApp}) authenticated as user ${userId} and joined room ${roomName}`,
+      );
       
     } catch (error) {
       this.logger.error(`Token validation failed for client ${client.id}:`, error);
@@ -94,14 +115,39 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   handleDisconnect(client: Socket) {
-    const userId = [...this.activeUsers.entries()].find(
-      ([, socketId]) => socketId === client.id,
-    )?.[0];
+    const userId: string | undefined = client.data.userId;
+    const clientApp: ClientApp = client.data.clientApp ?? 'unknown';
 
     if (userId) {
       this.activeUsers.delete(userId);
-      this.logger.log(`WhatsApp WS user ${userId} disconnected`);
+      this.activeUsersByApp[clientApp]?.delete(userId);
+      this.logger.log(`WhatsApp WS user ${userId} (${clientApp}) disconnected`);
+      return;
     }
+
+    // Fallback cleanup if userId was not stored for some reason
+    const fallbackUserId = [...this.activeUsers.entries()].find(
+      ([, socketId]) => socketId === client.id,
+    )?.[0];
+
+    if (fallbackUserId) {
+      this.activeUsers.delete(fallbackUserId);
+      this.logger.log(
+        `WhatsApp WS user ${fallbackUserId} (${clientApp}) disconnected via fallback`,
+      );
+    }
+  }
+
+  private getClientApp(client: Socket): ClientApp {
+    const fromAuth = client.handshake.auth?.clientApp;
+    const fromQuery = client.handshake.query?.clientApp;
+    const appName = (fromAuth || fromQuery || '').toString().toLowerCase();
+
+    if (appName === 'zoom' || appName === 'whatsapp') {
+      return appName;
+    }
+
+    return 'unknown';
   }
 
   // Note: No explicit join handler needed - user is automatically joined to their room
@@ -118,6 +164,14 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(room).emit('chat-message', {
       ...payload,
       createdAt: payload.createdAt ?? new Date().toISOString(),
+    });
+  }
+
+  emitZoomRealtimeEvent(userId: string, payload: ZoomRealtimePayload) {
+    const room = `user:${String(userId)}`;
+    this.server.to(room).emit('zoom-update', {
+      ...payload,
+      timestamp: payload.timestamp ?? new Date().toISOString(),
     });
   }
 }

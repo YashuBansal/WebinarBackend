@@ -31,6 +31,7 @@ import axios from 'axios';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { BooleanExpression } from 'mongoose';
 import { WebhookQueueService } from './webhook-queue.service';
+import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 
 @Injectable()
 export class ZoomService implements OnModuleInit {
@@ -50,6 +51,7 @@ export class ZoomService implements OnModuleInit {
     @Inject(forwardRef(() => AttendeesService))
     private readonly attendeesService: AttendeesService,
     private readonly webhookQueueService: WebhookQueueService,
+    private readonly whatsAppGateway: WhatsAppGateway,
   ) {}
 
   onModuleInit() {
@@ -505,7 +507,8 @@ export class ZoomService implements OnModuleInit {
     projectId: Types.ObjectId,
     webinarId: string,
     status: 'pending' | 'approved' | 'denied' = 'approved',
-    options?: { pageSize?: number; nextPageToken?: string },
+    page: number,
+    pageSize: number,
   ) {
     const project = await this.zoomProjectModel.findOne({
       _id: projectId,
@@ -515,11 +518,9 @@ export class ZoomService implements OnModuleInit {
       throw new NotAcceptableException('No access token found');
 
     try {
-      const pageSize = options?.pageSize ?? 30;
-      const params: any = { status, page_size: pageSize };
-      if (options?.nextPageToken) {
-        params.next_page_token = options.nextPageToken;
-      }
+      this.logger.log(
+        `getWebinarRegistrants --------==================------------- ${adminId} ${projectId} ${webinarId} webinar ${status} page: ${page} pageSize: ${pageSize}`,
+      );
 
       const data = await this.executeWithTokenRetry(project, async (token) => {
         const resp = await firstValueFrom(
@@ -527,7 +528,7 @@ export class ZoomService implements OnModuleInit {
             `https://api.zoom.us/v2/webinars/${encodeURIComponent(webinarId)}/registrants`,
             {
               headers: { Authorization: `Bearer ${token}` },
-              params,
+              params: { status, page_size: pageSize, page_number: page },
             },
           ),
         );
@@ -564,14 +565,29 @@ export class ZoomService implements OnModuleInit {
           };
         });
 
-        // Return merged data with pagination info
+        // Return merged data with pagination metadata
         return {
           ...data,
           registrants: mergedRegistrants,
+          pagination: {
+            page: data.page_number || page,
+            pageSize: data.page_size || pageSize,
+            totalRecords: data.total_records || 0,
+            pageCount: data.page_count || 0,
+          },
         };
       }
 
-      return data;
+      // Return data with pagination metadata even if no registrants
+      return {
+        ...data,
+        pagination: {
+          page: data.page_number || page,
+          pageSize: data.page_size || pageSize,
+          totalRecords: data.total_records || 0,
+          pageCount: data.page_count || 0,
+        },
+      };
     } catch (error: any) {
       const status = error?.response?.status;
       const payload =
@@ -734,6 +750,56 @@ export class ZoomService implements OnModuleInit {
     return true;
   }
 
+  async handleMeetingCreated(projectId: string) {
+    await this.notifyZoomRealtimeUpdate(projectId, 'meetings', 'created');
+  }
+
+  async handleWebinarCreated(projectId: string) {
+    await this.notifyZoomRealtimeUpdate(projectId, 'webinars', 'created');
+  }
+
+  private async notifyZoomRealtimeUpdate(
+    projectId: string,
+    resource: 'meetings' | 'webinars',
+    action: 'created' | 'updated' | 'deleted' | 'refetch',
+  ) {
+    try {
+      if (!projectId || !mongoose.isValidObjectId(projectId)) {
+        this.logger.warn(
+          `Skipping realtime update for ${resource}: invalid projectId ${projectId}`,
+        );
+        return;
+      }
+
+      const project = await this.zoomProjectModel
+        .findById(projectId)
+        .select('adminId')
+        .lean();
+
+      if (!project?.adminId) {
+        this.logger.warn(
+          `Unable to emit realtime update for ${resource}: project/admin missing`,
+        );
+        return;
+      }
+
+      const adminId = project.adminId.toString();
+      this.logger.log(
+        `Emitting realtime ${resource} update (${action}) to admin ${adminId}`,
+      );
+      this.whatsAppGateway.emitZoomRealtimeEvent(adminId, {
+        resource,
+        action,
+        projectId: projectId.toString(),
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to emit realtime update for ${resource} (${action})`,
+        error,
+      );
+    }
+  }
+
   // In zoom.service.ts
 
   async processWebhookPayloadV2(payload: any, projectId: string | undefined) {
@@ -786,6 +852,15 @@ export class ZoomService implements OnModuleInit {
 
       // Route to the correct notification handler based on the event
       switch (event) {
+        case ZoomWebhookEvent.MeetingCreated:
+          await this.handleMeetingCreated(projectId);
+          return;
+        case ZoomWebhookEvent.WebinarCreated:
+          await this.handleWebinarCreated(projectId);
+          return;
+
+
+
         case ZoomWebhookEvent.MeetingStarted:
           const meetingTopic = ValidationUtil.sanitizeText(
             object?.topic || 'the meeting',
@@ -1089,7 +1164,7 @@ export class ZoomService implements OnModuleInit {
       );
       if (Array.isArray(registrations)) return registrations;
     } else {
-      const registrations = await this.getMeetingRegistrants(
+      const registrations = await this.getAllMeetingRegistrants(
         data.adminId,
         data.zoomProjectId,
         data.meetingId,
@@ -1451,11 +1526,13 @@ export class ZoomService implements OnModuleInit {
     zoomProjectId: Types.ObjectId,
     meetingId: string,
     isWebinar: boolean,
+    page: number,
+    pageSize: number,
     status: 'pending' | 'approved' | 'denied' = 'approved',
   ) {
     try {
       this.logger.log(
-        `getMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${isWebinar ? 'webinar' : 'meeting'} ${status}`,
+        `getMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${isWebinar ? 'webinar' : 'meeting'} ${status} page: ${page} pageSize: ${pageSize}`,
       );
       const project = await this.zoomProjectModel.findOne({
         _id: zoomProjectId,
@@ -1473,13 +1550,13 @@ export class ZoomService implements OnModuleInit {
         const resp = await firstValueFrom(
           this.http.get(endpoint, {
             headers: { Authorization: `Bearer ${token}` },
-            params: { status, page_size: 500 },
+            params: { status, page_size: pageSize, page_number: page },
           }),
         );
         return resp.data;
       });
 
-      console.log('data', data?.registrants?.length);
+      console.log('data', data);
       let registrants = Array.isArray(data?.registrants)
         ? data?.registrants
         : [];
@@ -1510,14 +1587,29 @@ export class ZoomService implements OnModuleInit {
           };
         });
 
-        // Return merged data
+        // Return merged data with pagination metadata
         return {
           ...data,
           registrants: mergedRegistrants,
+          pagination: {
+            page: data.page_number || page,
+            pageSize: data.page_size || pageSize,
+            totalRecords: data.total_records || 0,
+            pageCount: data.page_count || 0,
+          },
         };
       }
 
-      return data;
+      // Return data with pagination metadata even if no registrants
+      return {
+        ...data,
+        pagination: {
+          page: data.page_number || page,
+          pageSize: data.page_size || pageSize,
+          totalRecords: data.total_records || 0,
+          pageCount: data.page_count || 0,
+        },
+      };
     } catch (error: any) {
       const status = error?.response?.status;
       const payload =
@@ -1528,6 +1620,156 @@ export class ZoomService implements OnModuleInit {
       );
       throw new NotAcceptableException(
         `Failed to fetch ${isWebinar ? 'webinar' : 'meeting'} registrants from Zoom`,
+      );
+    }
+  }
+
+  async getAllMeetingRegistrants(
+    adminId: Types.ObjectId,
+    zoomProjectId: Types.ObjectId,
+    meetingId: string,
+    isWebinar: boolean,
+    status: 'pending' | 'approved' | 'denied' = 'approved',
+  ) {
+    try {
+      this.logger.log(
+        `getAllMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${isWebinar ? 'webinar' : 'meeting'} ${status}`,
+      );
+      const project = await this.zoomProjectModel.findOne({
+        _id: zoomProjectId,
+        adminId,
+      });
+      if (!project?.accessToken)
+        throw new NotAcceptableException('No access token found');
+
+      // Use webinar endpoint if isWebinar is true, otherwise use meeting endpoint
+      const endpoint = isWebinar
+        ? `https://api.zoom.us/v2/webinars/${encodeURIComponent(meetingId)}/registrants`
+        : `https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}/registrants`;
+
+      const MAX_PAGE_SIZE = 300;
+      let allRegistrants: any[] = [];
+      let currentPage = 1;
+      let totalRecords = 0;
+      let pageCount = 0;
+      let pageSize = MAX_PAGE_SIZE;
+
+      // Fetch all pages
+      while (true) {
+        const data = await this.executeWithTokenRetry(project, async (token) => {
+          const resp = await firstValueFrom(
+            this.http.get(endpoint, {
+              headers: { Authorization: `Bearer ${token}` },
+              params: {
+                status,
+                page_size: pageSize,
+                page_number: currentPage,
+              },
+            }),
+          );
+          return resp.data;
+        });
+
+        const registrants = Array.isArray(data?.registrants)
+          ? data?.registrants
+          : [];
+
+        allRegistrants = allRegistrants.concat(registrants);
+
+        // Update pagination metadata from first page
+        if (currentPage === 1) {
+          totalRecords = data.total_records || 0;
+          pageCount = data.page_count || 0;
+          pageSize = data.page_size || MAX_PAGE_SIZE;
+        }
+
+        // Check if we've fetched all pages
+        if (
+          currentPage >= pageCount ||
+          registrants.length === 0 ||
+          allRegistrants.length >= totalRecords
+        ) {
+          break;
+        }
+
+        currentPage++;
+      }
+
+      this.logger.log(
+        `getAllMeetingRegistrants fetched ${allRegistrants.length} total registrants across ${currentPage} page(s)`,
+      );
+
+      // Match and merge with attendees data
+      if (allRegistrants.length > 0) {
+        // Batch attendee lookups if needed (fetchGroupedAttendees has a limit)
+        const BATCH_SIZE = 1000;
+        const attendeesMap = new Map();
+
+        for (let i = 0; i < allRegistrants.length; i += BATCH_SIZE) {
+          const batch = allRegistrants.slice(i, i + BATCH_SIZE);
+          const batchEmails = batch.map((r: any) => r.email).filter(Boolean);
+
+          if (batchEmails.length > 0) {
+            const attendeesResult =
+              await this.attendeesService.fetchGroupedAttendees(
+                adminId,
+                1,
+                1000,
+                {
+                  emails: batchEmails,
+                },
+              );
+
+            // Add to map
+            attendeesResult.data.forEach((attendee: any) => {
+              attendeesMap.set(attendee._id?.toLowerCase(), attendee);
+            });
+          }
+        }
+
+        // Merge registrants with attendees data
+        const mergedRegistrants = allRegistrants.map((registrant: any) => {
+          const email = registrant.email?.toLowerCase();
+          const attendeeData = attendeesMap.get(email);
+
+          return {
+            ...registrant,
+            attendeeData: attendeeData || null,
+          };
+        });
+
+        // Return merged data with pagination metadata
+        return {
+          registrants: mergedRegistrants,
+          pagination: {
+            page: 1,
+            pageSize: allRegistrants.length,
+            totalRecords: totalRecords || allRegistrants.length,
+            pageCount: 1,
+          },
+        };
+      }
+
+      // Return data with pagination metadata even if no registrants
+      return {
+        registrants: [],
+        pagination: {
+          page: 1,
+          pageSize: 0,
+          totalRecords: totalRecords || 0,
+          pageCount: 0,
+        },
+      };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
+      console.error(
+        `Zoom ${isWebinar ? 'webinar' : 'meeting'} all registrants fetch failed:`,
+        { status, payload },
+      );
+      throw new NotAcceptableException(
+        `Failed to fetch all ${isWebinar ? 'webinar' : 'meeting'} registrants from Zoom`,
       );
     }
   }
@@ -1825,5 +2067,72 @@ export class ZoomService implements OnModuleInit {
         // updatedAt: project.updatedAt,
       },
     };
+  }
+
+  /**
+   * Check webhook subscription status for a Zoom project
+   */
+  async checkWebhookSubscriptionStatus(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+  ): Promise<{ isSubscribed: boolean }> {
+    const project = await this.zoomProjectModel.findOne({
+      _id: projectId,
+      adminId,
+    });
+
+    if (!project?.accessToken) {
+      return { isSubscribed: false };
+    }
+
+    // Get webhook URL from config
+    const webhookUrl =
+      this.config.get<string>('EXTERNAL_WEBHOOK_URL') ||
+      this.config.get<string>('ZOOM_WEBHOOK_URL');
+
+
+
+    try {
+      const data = await this.executeWithTokenRetry(project, async (token) => {
+        const resp = await firstValueFrom(
+          this.http.get('https://api.zoom.us/v2/webhooks', {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        );
+        return resp.data;
+      });
+
+      // Check if our webhook URL exists in the subscriptions
+      const subscriptions = data?.webhooks || [];
+      console.log('subscriptions', subscriptions);
+
+      if (!webhookUrl) {
+        this.logger.warn('Webhook URL not configured in environment variables');
+        return { isSubscribed: false };
+      }
+      const isSubscribed = subscriptions.some(
+        (webhook: any) =>
+          webhook.url === webhookUrl ||
+          webhook.url?.includes(webhookUrl) ||
+          webhookUrl.includes(webhook.url),
+      );
+
+      this.logger.log(
+        `Webhook subscription status for project ${projectId}: ${isSubscribed ? 'Subscribed' : 'Not Subscribed'}`,
+      );
+
+      return { isSubscribed };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
+      this.logger.error('Failed to check webhook subscription status', {
+        status,
+        payload,
+        projectId: projectId.toString(),
+      });
+      // Return false on error to indicate not subscribed
+      return { isSubscribed: false };
+    }
   }
 }

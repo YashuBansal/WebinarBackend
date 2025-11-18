@@ -1,22 +1,40 @@
-import { Injectable } from '@nestjs/common';
-import { ZoomMeetingEvent, ZoomMeetingEventDocument } from '../schemas/zoom-meeting-event.schema';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import {
+  ZoomMeetingEvent,
+  ZoomMeetingEventDocument,
+} from '../schemas/zoom-meeting-event.schema';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { ZoomEventDto } from '../dto/zoom-event.dto';
 import { ZoomMeetingEventType } from '../schemas/zoom-meeting-event.schema';
+import { ZoomService } from '../zoom.service';
 
 @Injectable()
 export class ZoomEventService {
   constructor(
-    @InjectModel(ZoomMeetingEvent.name) private readonly zoomMeetingEventModel: Model<ZoomMeetingEventDocument>,
-  ) { }
-
+    @InjectModel(ZoomMeetingEvent.name)
+    private readonly zoomMeetingEventModel: Model<ZoomMeetingEventDocument>,
+    @Inject(forwardRef(() => ZoomService))
+    private readonly zoomService: ZoomService,
+  ) {}
 
   async createMeetingEvent(meetingEvent: ZoomEventDto) {
     return this.zoomMeetingEventModel.create(meetingEvent);
   }
 
-  async getMeetingStatus(meetingId: string, accountId?: string) {
+  async getMeetingStatus({
+    adminId,
+    zoomProjectId,
+    meetingId,
+    accountId,
+    isWebinar,
+  }: {
+    adminId: Types.ObjectId;
+    zoomProjectId: Types.ObjectId;
+    meetingId: string;
+    accountId?: string;
+    isWebinar: boolean;
+  }) {
     const query: Record<string, any> = { meetingId };
     if (accountId) {
       query.accountId = accountId;
@@ -41,6 +59,13 @@ export class ZoomEventService {
 
     const participantState = new Map<string, ParticipantState>();
 
+    const registrants = await this.zoomService.getAllMeetingRegistrants(
+      adminId,
+      zoomProjectId,
+      meetingId,
+      isWebinar,
+    );
+
     let meetingStartedAt: Date | undefined;
     let meetingEndedAt: Date | undefined;
 
@@ -51,11 +76,19 @@ export class ZoomEventService {
         meetingEndedAt = ev.createdAt ?? meetingEndedAt;
       }
 
-      if (ev.eventType !== ZoomMeetingEventType.ParticipantJoined && ev.eventType !== ZoomMeetingEventType.ParticipantLeft) {
+      if (
+        ev.eventType !== ZoomMeetingEventType.ParticipantJoined &&
+        ev.eventType !== ZoomMeetingEventType.ParticipantLeft
+      ) {
         continue;
       }
 
-      const key = ev.participantEmail || ev.participantUserId || ev.participantId || ev.participantName || `unknown:${Math.random()}`;
+      const key =
+        ev.participantEmail ||
+        ev.participantUserId ||
+        ev.participantId ||
+        ev.participantName ||
+        `unknown:${Math.random()}`;
       const existing = participantState.get(key);
       const state: ParticipantState = existing ?? {
         participantId: ev.participantId,
@@ -113,7 +146,20 @@ export class ZoomEventService {
     }
 
     const totalUniqueParticipants = participantState.size;
-    const totalJoins = Array.from(participantState.values()).reduce((sum, p) => sum + p.joinCount, 0);
+    const totalJoins = Array.from(participantState.values()).reduce(
+      (sum, p) => sum + p.joinCount,
+      0,
+    );
+    const registrantsArray = Array.isArray(registrants?.registrants) ? registrants?.registrants : [];
+
+    const participantEmails = new Set([
+      ...(onlineParticipants || []).map((p: any) => (p.participantEmail || '').toLowerCase()).filter(Boolean),
+      ...(leftParticipants || []).map((p: any) => (p.participantEmail || '').toLowerCase()).filter(Boolean),
+    ])
+    const notJoined = registrantsArray.filter((r: any) => {
+      const email = (r.email || r.registrant_email || '').toLowerCase()
+      return email && !participantEmails.has(email)
+    })
 
     return {
       meetingId,
@@ -126,10 +172,12 @@ export class ZoomEventService {
         joinedButLeft: joinedButLeftCount,
         totalUniqueParticipants,
         totalJoins,
+        totalNotJoined: notJoined.length,
       },
       participants: {
         online: onlineParticipants,
         left: leftParticipants,
+        notJoined,
       },
     };
   }
@@ -141,5 +189,4 @@ export class ZoomEventService {
       .lean()
       .exec();
   }
-
 }

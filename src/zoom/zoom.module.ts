@@ -15,6 +15,7 @@ import { MeetingEventConfigModule } from 'src/meeting-event-config/meeting-event
 import { ConfiguredTemplatesModule } from 'src/configured-templates/configured-templates.module';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 import { AttendeesModule } from 'src/attendees/attendees.module';
+import { WebsocketModule } from 'src/websocket/websocket.module';
 
 @Module({
   imports: [
@@ -26,10 +27,11 @@ import { AttendeesModule } from 'src/attendees/attendees.module';
     MongooseModule.forFeature([
       { name: ZoomProject.name, schema: ZoomProjectSchema },
     ]),
-    ZoomEventModule, 
+    forwardRef(() => ZoomEventModule), 
      MeetingEventConfigModule,
      ConfiguredTemplatesModule,
      WhatsappModule,
+     WebsocketModule
   ],
   controllers: [ZoomController],
   providers: [ZoomService, WebhookQueueService],

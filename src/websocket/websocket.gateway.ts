@@ -28,7 +28,7 @@ export class WebsocketGateway {
   public server: Server;
 
   handleConnection(client: any) {
-    this.logger.log(`Client connected: ${client.id}`);
+    this.logger.log(`Client connected main: ${client.id}`);
   }
 
   @SubscribeMessage('join')
