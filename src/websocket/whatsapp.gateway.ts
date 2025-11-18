@@ -50,7 +50,7 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
   };
 
   async handleConnection(client: Socket) {
-    this.logger.log(`WhatsApp WS client connected: ${client.id}`);
+    this.logger.log(`WS client connected: ${client.id}`);
     
     // Read token from cookies
     const cookieHeader = client.handshake.headers.cookie;
@@ -121,7 +121,7 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (userId) {
       this.activeUsers.delete(userId);
       this.activeUsersByApp[clientApp]?.delete(userId);
-      this.logger.log(`WhatsApp WS user ${userId} (${clientApp}) disconnected`);
+      this.logger.log(`WS user ${userId} (${clientApp}) disconnected`);
       return;
     }
 
@@ -133,7 +133,7 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (fallbackUserId) {
       this.activeUsers.delete(fallbackUserId);
       this.logger.log(
-        `WhatsApp WS user ${fallbackUserId} (${clientApp}) disconnected via fallback`,
+        `WS user ${fallbackUserId} (${clientApp}) disconnected via fallback`,
       );
     }
   }
@@ -142,7 +142,6 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     const fromAuth = client.handshake.auth?.clientApp;
     const fromQuery = client.handshake.query?.clientApp;
     const appName = (fromAuth || fromQuery || '').toString().toLowerCase();
-    console.log('appName ------------------------- > ', appName);
 
     if (appName === 'zoom' || appName === 'whatsapp') {
       return appName;
@@ -160,7 +159,6 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     createdAt?: string;
   }) {
 
-    console.log('payload ------------------------- > ', payload);
     const room = `user:${String(userId)}`;
     this.server.to(room).emit('chat-message', {
       ...payload,
