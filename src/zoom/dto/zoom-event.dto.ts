@@ -1,8 +1,12 @@
 //class-validator dto for zoom event
-import { IsString, IsNotEmpty, IsEnum, IsObject, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum, IsObject, IsOptional, IsMongoId } from 'class-validator';
 import { ZoomMeetingEventType } from '../schemas/zoom-meeting-event.schema';
+import { Types } from 'mongoose';
 
 export class ZoomEventDto {
+
+    @IsMongoId()
+    projectId: Types.ObjectId;
 
     @IsOptional()
     @IsString()

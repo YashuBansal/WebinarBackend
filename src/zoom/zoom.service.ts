@@ -673,6 +673,45 @@ export class ZoomService implements OnModuleInit {
     return response;
   }
 
+  private async notifyRegistrantsUpdate(
+    projectId: string,
+    meetingId: string,
+    type: 'meeting' | 'webinar',
+  ) {
+    try {
+      if (!projectId || !mongoose.isValidObjectId(projectId)) {
+        this.logger.warn(
+          `Skipping registrants update: invalid projectId ${projectId}`,
+        );
+        return;
+      }
+
+      const project = await this.zoomProjectModel
+        .findById(projectId)
+        .select('adminId')
+        .lean();
+
+      if (!project?.adminId) {
+        this.logger.warn(
+          `Unable to emit registrants update: project/admin missing`,
+        );
+        return;
+      }
+
+      const adminId = project.adminId.toString();
+      this.logger.log(
+        `Emitting registrants update for ${type} ${meetingId} to admin ${adminId}`,
+      );
+      this.whatsAppGateway.emitZoomRegistrantsUpdate(adminId, {
+        projectId,
+        meetingId,
+        type,
+      });
+    } catch (error) {
+      this.logger.error('Failed to emit registrants update:', error);
+    }
+  }
+
   async handleRegistrationCreated(
     meetingId: string,
     registrant: {
@@ -682,6 +721,8 @@ export class ZoomService implements OnModuleInit {
       email: string;
       phone: string;
     },
+    projectId: string,
+    type: 'meeting' | 'webinar',
   ) {
     console.log('Meeting registration created', registrant);
 
@@ -692,6 +733,10 @@ export class ZoomService implements OnModuleInit {
         registrant,
       );
       console.log('Registration handled:', result);
+
+      // Emit socket event to refresh registrants data
+      await this.notifyRegistrantsUpdate(projectId, meetingId, type);
+
       return result;
     } catch (error) {
       console.error('Error handling registration:', error);
@@ -699,56 +744,6 @@ export class ZoomService implements OnModuleInit {
     }
   }
 
-  async processWebhookPayload(payload: any) {
-    // TODO: verify Zoom signature for production
-    console.log('processWebhookPayload', payload);
-    // try {
-    //   this.http.axiosRef.post('https://b31f906b85a4.ngrok-free.app/api/v1/zoom/webhook', payload);
-    // } catch (error) {
-    //   console.error('processWebhookPayload failed:', error);
-    // }
-    const event: string = payload?.event ?? '';
-    const accountId: string | undefined =
-      payload?.account_id || payload?.payload?.account_id;
-    const object = payload?.payload?.object || payload?.object || {};
-    const meetingId: string | undefined = String(
-      object?.id || object?.uuid || '',
-    );
-    const participant = object?.participant || object?.participant_data || {};
-    const registrant = object?.registrant || object?.registration || {};
-
-    if (event === ZoomWebhookEvent.MeetingRegistrationCreated) {
-      this.handleRegistrationCreated(meetingId, registrant);
-      return true;
-    }
-
-    let eventType: ZoomMeetingEventType | undefined;
-    if (event === ZoomWebhookEvent.MeetingParticipantJoined)
-      eventType = ZoomMeetingEventType.ParticipantJoined;
-    if (event === ZoomWebhookEvent.MeetingParticipantLeft)
-      eventType = ZoomMeetingEventType.ParticipantLeft;
-    if (event === ZoomWebhookEvent.MeetingStarted)
-      eventType = ZoomMeetingEventType.MeetingStarted;
-    if (event === ZoomWebhookEvent.MeetingEnded)
-      eventType = ZoomMeetingEventType.MeetingEnded;
-    // console.log('eventType', eventType, meetingId);
-    if (!eventType || !meetingId) {
-      return true;
-    }
-
-    await this.zoomEventService.createMeetingEvent({
-      accountId,
-      meetingId,
-      eventType,
-      participantId: participant?.id,
-      participantUserId: participant?.user_id,
-      participantName: participant?.user_name || participant?.name,
-      participantEmail: participant?.email,
-      raw: payload,
-    });
-
-    return true;
-  }
 
   async handleMeetingCreated(projectId: string) {
     await this.notifyZoomRealtimeUpdate(projectId, 'meetings', 'created');
@@ -855,11 +850,10 @@ export class ZoomService implements OnModuleInit {
         case ZoomWebhookEvent.MeetingCreated:
           await this.handleMeetingCreated(projectId);
           return;
+
         case ZoomWebhookEvent.WebinarCreated:
           await this.handleWebinarCreated(projectId);
           return;
-
-
 
         case ZoomWebhookEvent.MeetingStarted:
           const meetingTopic = ValidationUtil.sanitizeText(
@@ -950,12 +944,12 @@ export class ZoomService implements OnModuleInit {
           break;
 
         case ZoomWebhookEvent.MeetingRegistrationCreated:
-          await this.handleRegistrationCreated(meetingId, registrant);
+          await this.handleRegistrationCreated(meetingId, registrant, projectId, 'meeting');
           return;
 
         case ZoomWebhookEvent.WebinarRegistrationCreated:
           console.log('Webinar registration created', registrant);
-          await this.handleRegistrationCreated(meetingId, registrant);
+          await this.handleRegistrationCreated(meetingId, registrant, projectId, 'webinar');
           return;
 
         default:
@@ -977,6 +971,7 @@ export class ZoomService implements OnModuleInit {
             ),
             participantEmail: participant?.email,
             raw: payload,
+            projectId: zoomProjectId,
           });
         } catch (eventError) {
           this.logger.error(

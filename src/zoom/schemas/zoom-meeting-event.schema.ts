@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { Project } from 'src/schemas/project.schema';
 
 export enum ZoomMeetingEventType {
   ParticipantJoined = 'participant_joined',
@@ -41,12 +42,16 @@ export class ZoomMeetingEvent {
 
   @Prop({ type: Object })
   raw?: Record<string, any>;
+
+  @Prop({ type: Types.ObjectId, ref: Project.name })
+  projectId: Types.ObjectId;
 }
 
 export type ZoomMeetingEventDocument = HydratedDocument<ZoomMeetingEvent>;
 export const ZoomMeetingEventSchema =
   SchemaFactory.createForClass(ZoomMeetingEvent);
 ZoomMeetingEventSchema.index({
+  projectId: 1,
   accountId: 1,
   meetingId: 1,
   eventType: 1,
