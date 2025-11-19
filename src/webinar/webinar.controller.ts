@@ -17,6 +17,7 @@ import {
   UpdateWebinarDto,
   UpdateWebinarSettingDto,
 } from './dto/createWebinar.dto';
+import { GetAttendeeCountDto } from './dto/attendee-count.dto';
 import { WebinarFilterDTO } from './dto/webinar-filter.dto';
 import { UsersService } from 'src/users/users.service';
 import mongoose, { Types } from 'mongoose';
@@ -50,11 +51,15 @@ export class WebinarController {
     return await this.webinarService.getAllWebinars(adminId);
   }
 
-  @Get('attendee-count')
-  async getAttendeeCount(@Id() adminId: string, @Query() query: { webinarIds: string | string[], tags: string[] }): Promise<any> {
-    // Handle both single ID (string) and array of IDs
-    const webinarIds = Array.isArray(query.webinarIds) ? query.webinarIds : [query.webinarIds];
-    const count = await this.webinarService.getPreWebinarAttendeeCount(adminId, webinarIds, query.tags);
+  @Post('attendee-count')
+  async getAttendeeCount(
+    @Id() adminId: string,
+    @Body() body: GetAttendeeCountDto,
+  ): Promise<any> {
+    const count = await this.webinarService.getPreWebinarAttendeeCount(
+      adminId,
+      body,
+    );
     return {
       message: 'Attendee Count Fetched Successfully',
       data: count,

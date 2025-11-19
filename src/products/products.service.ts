@@ -41,6 +41,9 @@ export class ProductsService {
   }
 
   async createProduct(createProductsDto: CreateProductsDto): Promise<any> {
+    if (createProductsDto.tag) {
+      await this.ensureTagIsAvailable(createProductsDto.tag, createProductsDto.adminId);
+    }
     let attempts = 0;
     let uniqueId: string;
     let existingProduct;
@@ -133,6 +136,9 @@ export class ProductsService {
     adminId: string,
     updateProductsDto: UpdateProductsDto,
   ): Promise<any> {
+    if (updateProductsDto.tag) {
+      await this.ensureTagIsAvailable(updateProductsDto.tag, adminId, id);
+    }
     const result = await this.productsModel.findOneAndUpdate(
       {
         _id: new Types.ObjectId(`${id}`),
@@ -240,5 +246,27 @@ export class ProductsService {
     }));
 
     return this.productLevelModel.insertMany(newProductLevels);
+  }
+
+  private async ensureTagIsAvailable(
+    tag: string,
+    adminId: string,
+    productIdToExclude?: string,
+  ) {
+    const query: any = {
+      tag,
+      adminId: new Types.ObjectId(`${adminId}`),
+    };
+
+    if (productIdToExclude) {
+      query._id = { $ne: new Types.ObjectId(`${productIdToExclude}`) };
+    }
+
+    const existingProduct = await this.productsModel.findOne(query).lean();
+    if (existingProduct) {
+      throw new NotAcceptableException(
+        'Tag is already associated with another product.',
+      );
+    }
   }
 }

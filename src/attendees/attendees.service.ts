@@ -85,25 +85,25 @@ export class AttendeesService {
     return attendees
   }
 
-  async getAttendeesCountMultipleWebinars(webinarIds: Types.ObjectId[], tags: string[], adminId: Types.ObjectId): Promise<number> {
-    
-    console.log(webinarIds, tags, adminId);
-    
-    // Build the query object
-    const query: any = {
+  async getAttendeesCountMultipleWebinars(
+    webinarIds: Types.ObjectId[],
+    adminId: Types.ObjectId,
+    advancedQuery?: Record<string, any> | null,
+  ): Promise<number> {
+    const baseQuery: any = {
       webinar: { $in: webinarIds },
       adminId: adminId,
       isAttended: false,
+      isDeleted: { $ne: true },
     };
-    
-    // If tags are provided, filter attendees that have ANY of these tags
-    // MongoDB's $in with array fields checks if the array contains any of the specified values
-    if (tags?.length > 0) {
-      query.tags = { $in: tags };
-    }
-    
-    const attendees = await this.attendeeModel.countDocuments(query);
-    return attendees
+
+    const finalQuery =
+      advancedQuery && Object.keys(advancedQuery).length > 0
+        ? { $and: [baseQuery, advancedQuery] }
+        : baseQuery;
+
+    const attendees = await this.attendeeModel.countDocuments(finalQuery);
+    return attendees;
   }
 
   async addAttendees(attendees: [PreWebinarPostAttendeeDTO]): Promise<any> {
