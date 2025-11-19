@@ -712,6 +712,45 @@ export class ZoomService implements OnModuleInit {
     }
   }
 
+  private async notifyLiveDataUpdate(
+    projectId: string,
+    meetingId: string,
+    isWebinar: boolean,
+  ) {
+    try {
+      if (!projectId || !mongoose.isValidObjectId(projectId)) {
+        this.logger.warn(
+          `Skipping live data update: invalid projectId ${projectId}`,
+        );
+        return;
+      }
+
+      const project = await this.zoomProjectModel
+        .findById(projectId)
+        .select('adminId')
+        .lean();
+
+      if (!project?.adminId) {
+        this.logger.warn(
+          `Unable to emit live data update: project/admin missing`,
+        );
+        return;
+      }
+
+      const adminId = project.adminId.toString();
+      this.logger.log(
+        `Emitting live data update for ${isWebinar ? 'webinar' : 'meeting'} ${meetingId} to admin ${adminId}`,
+      );
+      this.whatsAppGateway.emitZoomLiveUpdate(adminId, {
+        projectId,
+        meetingId,
+        isWebinar,
+      });
+    } catch (error) {
+      this.logger.error('Failed to emit live data update:', error);
+    }
+  }
+
   async handleRegistrationCreated(
     meetingId: string,
     registrant: {
@@ -844,6 +883,7 @@ export class ZoomService implements OnModuleInit {
       const participant = object?.participant || object?.participant_data || {};
       const registrant = object?.registrant || object?.registration || {};
       let eventType: ZoomMeetingEventType | undefined;
+      let isWebinarLiveEvent = false;
 
       // Route to the correct notification handler based on the event
       switch (event) {
@@ -869,6 +909,7 @@ export class ZoomService implements OnModuleInit {
           );
           await this.handleMeetingStarted(meetingId, webinarTopic, true);
           eventType = ZoomMeetingEventType.MeetingStarted;
+          isWebinarLiveEvent = true;
           break;
 
         case ZoomWebhookEvent.MeetingParticipantJoined:
@@ -909,6 +950,7 @@ export class ZoomService implements OnModuleInit {
             }
           }
           eventType = ZoomMeetingEventType.ParticipantJoined;
+          isWebinarLiveEvent = true;
           break;
 
         case ZoomWebhookEvent.MeetingParticipantLeft:
@@ -925,6 +967,7 @@ export class ZoomService implements OnModuleInit {
             true,
           );
           eventType = ZoomMeetingEventType.ParticipantLeft;
+          isWebinarLiveEvent = true;
           break;
 
         case ZoomWebhookEvent.MeetingEnded:
@@ -941,6 +984,7 @@ export class ZoomService implements OnModuleInit {
           );
           await this.handleMeetingEnded(meetingId, webinarEndedTopic, true);
           eventType = ZoomMeetingEventType.MeetingEnded;
+          isWebinarLiveEvent = true;
           break;
 
         case ZoomWebhookEvent.MeetingRegistrationCreated:
@@ -973,6 +1017,11 @@ export class ZoomService implements OnModuleInit {
             raw: payload,
             projectId: zoomProjectId,
           });
+          await this.notifyLiveDataUpdate(
+            projectId,
+            meetingId,
+            isWebinarLiveEvent,
+          );
         } catch (eventError) {
           this.logger.error(
             'Failed to create meeting event record:',

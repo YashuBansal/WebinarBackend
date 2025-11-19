@@ -29,6 +29,13 @@ interface ZoomRegistrantsUpdatePayload {
   timestamp?: string;
 }
 
+interface ZoomLiveUpdatePayload {
+  projectId: string;
+  meetingId: string;
+  isWebinar: boolean;
+  timestamp?: string;
+}
+
 @WebSocketGateway({
   cors: {
     origin: '*',
@@ -184,6 +191,14 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
   emitZoomRegistrantsUpdate(userId: string, payload: ZoomRegistrantsUpdatePayload) {
     const room = `user:${String(userId)}`;
     this.server.to(room).emit('zoom-registrants-update', {
+      ...payload,
+      timestamp: payload.timestamp ?? new Date().toISOString(),
+    });
+  }
+
+  emitZoomLiveUpdate(userId: string, payload: ZoomLiveUpdatePayload) {
+    const room = `user:${String(userId)}`;
+    this.server.to(room).emit('zoom-live-update', {
       ...payload,
       timestamp: payload.timestamp ?? new Date().toISOString(),
     });
