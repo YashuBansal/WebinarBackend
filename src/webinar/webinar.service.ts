@@ -781,7 +781,7 @@ export class WebinarService {
                 },
               })),
             };
-    } else {
+    } else if (condition.field === 'tags') {
       expression =
         condition.operator === 'equals'
           ? { tags: { $in: normalized } }
@@ -791,6 +791,24 @@ export class WebinarService {
                   $regex: this.escapeRegex(value),
                   $options: 'i',
                 },
+              })),
+            };
+    } else {
+      // webinars field - filter by webinar ObjectId
+      const webinarObjectIds = values
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      
+      if (webinarObjectIds.length === 0) {
+        return null;
+      }
+
+      expression =
+        condition.operator === 'equals'
+          ? { webinar: { $in: webinarObjectIds } }
+          : {
+              $or: webinarObjectIds.map((id) => ({
+                webinar: id,
               })),
             };
     }

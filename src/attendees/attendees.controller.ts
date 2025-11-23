@@ -155,7 +155,6 @@ export class AttendeesController {
   ) {
     return await this.attendeesService.updateAttendeeTags(
       new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${body.webinar}`),
       body.emails,
       body.tag,
     );

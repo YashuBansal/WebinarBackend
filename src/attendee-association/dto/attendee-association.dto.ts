@@ -1,4 +1,4 @@
-import { IsEmail, IsMongoId, IsNotEmpty, IsString } from 'class-validator';
+import { IsEmail, IsMongoId, IsNotEmpty, IsString, IsEnum } from 'class-validator';
 import { Types } from 'mongoose';
 
 export class AttendeeAssociationDto {
@@ -17,4 +17,14 @@ export class AttendeeAssociationDto {
   @IsString()
   @IsNotEmpty({ message: 'leadType Label is required' })
   leadTypeLabel: string;
+}
+
+export class UpdateAttendeeTagDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Tag is required' })
+  tag: string;
+
+  @IsEnum(['add', 'remove'], { message: 'Action must be either "add" or "remove"' })
+  @IsNotEmpty({ message: 'Action is required' })
+  action: 'add' | 'remove';
 }

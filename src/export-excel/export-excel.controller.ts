@@ -189,7 +189,7 @@ export class ExportExcelController {
     @Res() res: Response,
   ): Promise<void> {
     try {
-      const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
+      const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 0;
       const filePath =
         await this.exportExcelService.generateExcelForEmployeeAssignments(
           limit,

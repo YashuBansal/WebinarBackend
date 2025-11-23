@@ -73,16 +73,18 @@ export class AttendeesService {
     private readonly tagService: TagsService,
   ) {}
 
-
-  async getAttendeesCount(webinarId:Types.ObjectId, tags: string[], adminId: Types.ObjectId): Promise<number> {
-    const attendees = await this.attendeeModel.
-    countDocuments({
+  async getAttendeesCount(
+    webinarId: Types.ObjectId,
+    tags: string[],
+    adminId: Types.ObjectId,
+  ): Promise<number> {
+    const attendees = await this.attendeeModel.countDocuments({
       webinar: webinarId,
       adminId: adminId,
       ...(tags?.length > 0 && { tags: { $in: tags } }),
       isAttended: false,
-    })
-    return attendees
+    });
+    return attendees;
   }
 
   async getAttendeesCountMultipleWebinars(
@@ -189,26 +191,11 @@ export class AttendeesService {
         );
 
         attendeesForUpdate = uniquePrevAttendeesToUpdate.map((attendee) => {
-          let tags = '';
-          if (typeof attendee.tags === 'string') {
-            const tagArray = Array.from(
-              new Set(
-                attendee.tags
-                  .split(',')
-                  .map((tag) => tag.toLowerCase().trim())
-                  .filter(Boolean),
-              ),
-            );
-
-            tags = tagArray.join(',');
-          }
-
           const obj = {
             ...attendee,
             phone: attendee.phone || prevAttendeesMap.get(attendee.email).phone,
             attendeeId: prevAttendeesMap.get(attendee.email)
               ._id as Types.ObjectId,
-            tags,
           };
           return obj;
         });
@@ -233,7 +220,6 @@ export class AttendeesService {
         let location = attendee.location || null;
         let source = attendee.source || null;
         let gender = attendee.gender || null;
-        let tags = attendee.tags || '';
         if (similarPreWebinarAttendeesMap.has(attendee.email)) {
           const preWebinarAttendee = similarPreWebinarAttendeesMap.get(
             attendee.email,
@@ -241,13 +227,6 @@ export class AttendeesService {
           location = location || preWebinarAttendee.location || null;
           source = source || preWebinarAttendee.source || null;
           gender = gender || preWebinarAttendee.gender || null;
-          const preWebinarTags = Array.isArray(preWebinarAttendee.tags)
-            ? preWebinarAttendee.tags
-            : [];
-          const newTags = tags.split(',').map((tag) => tag.trim());
-          tags = Array.from(new Set([...preWebinarTags, ...newTags]))
-            .filter((tag) => tag.trim() !== '')
-            .join(',');
         }
 
         return {
@@ -255,39 +234,8 @@ export class AttendeesService {
           location,
           source,
           gender,
-          tags,
         };
       });
-      console.log(similarPreWebinarAttendeesMap);
-
-      attendeesForUpdate = attendeesForUpdate.map((attendee) => {
-        let tags = attendee.tags || '';
-        console.log(
-          similarPreWebinarAttendeesMap.has(attendee.email),
-          attendee.tags,
-        );
-        if (similarPreWebinarAttendeesMap.has(attendee.email)) {
-          const preWebinarAttendee = similarPreWebinarAttendeesMap.get(
-            attendee.email,
-          );
-          const preWebinarTags = Array.isArray(preWebinarAttendee.tags)
-            ? preWebinarAttendee.tags
-            : [];
-          const newTags = tags.split(',').map((tag) => tag.trim());
-          console.log(preWebinarTags, newTags);
-
-          tags = Array.from(new Set([...preWebinarTags, ...newTags]))
-            .filter((tag) => tag.trim() !== '')
-            .join(',');
-        }
-
-        return {
-          ...attendee,
-          tags,
-        };
-      });
-
-      // console.log('atendd',attendeesForUpdate)
     }
 
     const allLastNamesBlank = tempAttendees.every(
@@ -350,6 +298,11 @@ export class AttendeesService {
       }));
     }
 
+    const tagsPayload = attendees.map((a) => ({
+      email: a.email,
+      tags: typeof a.tags === 'string' ? a.tags.split(',') : [],
+    }));
+
     const session = await this.attendeeModel.startSession();
 
     try {
@@ -367,11 +320,6 @@ export class AttendeesService {
                   timeInSession: attendee.timeInSession || undefined,
                   location: attendee.location || undefined,
                   source: attendee.source || undefined,
-                  tags:
-                    typeof attendee.tags === 'string' &&
-                    attendee.tags.trim() !== ''
-                      ? attendee.tags.split(',')
-                      : [],
                 },
               },
             },
@@ -380,18 +328,8 @@ export class AttendeesService {
             session: currentSession,
           });
 
-          await this.enrollService.createUpdateEnrollments(
-            attendeesForUpdate.map((attendee) => ({
-              email: attendee.email,
-              tags:
-                typeof attendee.tags === 'string'
-                  ? attendee.tags
-                      .split(',')
-                      .map((tag) => tag.toLowerCase().trim())
-                      .filter(Boolean)
-                  : [],
-            })),
-            new Types.ObjectId(`${webinar}`),
+          await this.attendeeAssociationService.bulkUpsertAssociationsTags(
+            tagsPayload,
             new Types.ObjectId(`${adminId}`),
             currentSession,
           );
@@ -420,27 +358,14 @@ export class AttendeesService {
         updateProgress(70);
 
         const newAttendees = await this.attendeeModel.insertMany(
-          tempAttendees.map((attendee) => ({
-            ...attendee,
-            tags:
-              typeof attendee.tags === 'string' ? attendee.tags.split(',') : [],
-          })),
+          tempAttendees,
           {
             session: currentSession,
           },
         );
 
         await this.enrollService.createEnrollments(
-          tempAttendees.map((attendee) => ({
-            email: attendee.email,
-            tags:
-              typeof attendee.tags === 'string'
-                ? attendee.tags
-                    .split(',')
-                    .map((tag) => tag.toLowerCase().trim())
-                    .filter(Boolean)
-                : [],
-          })),
+          tagsPayload,
           new Types.ObjectId(`${webinar}`),
           new Types.ObjectId(`${adminId}`),
           currentSession,
@@ -596,32 +521,43 @@ export class AttendeesService {
 
   async updateAttendeeTags(
     adminId: Types.ObjectId,
-    webinarId: Types.ObjectId,
     emails: string[],
     tag: string,
   ) {
-    const filter = {
-      webinar: webinarId,
-      adminId: adminId,
-      email: {
-        $in: emails,
-      },
-      isAttended: true,
-    };
+    const session = await this.attendeeModel.startSession();
+    try {
+      let result;
+      await session.withTransaction(async (currentSession) => {
+        // Deduplicate emails (normalize and remove duplicates)
+        const normalizeEmail = (email?: string) =>
+          (email ?? '').toLowerCase().trim();
 
-    const count = await this.attendeeModel.countDocuments(filter);
+        const uniqueEmails = Array.from(
+          new Set(emails.map(normalizeEmail).filter((email) => email)),
+        );
 
-    if (emails.length !== count) {
+        // Transform input format: emails[] + tag -> [{ email, tags: [tag] }]
+        const payload = uniqueEmails.map((email) => ({
+          email,
+          tags: [tag],
+        }));
+
+        result =
+          await this.attendeeAssociationService.bulkUpsertAssociationsTags(
+            payload,
+            adminId,
+            currentSession,
+          );
+      });
+
+      return result;
+    } catch (error) {
       throw new BadRequestException(
-        'Some or all of the specified attendees were not found for this webinar.',
+        error?.message || 'Failed to update attendee tags. Please try again.',
       );
+    } finally {
+      session.endSession();
     }
-
-    const updateResult = await this.attendeeModel.updateMany(filter, {
-      $addToSet: { tags: tag.toLowerCase() },
-    });
-
-    return updateResult; // Returns an object like { matchedCount, modifiedCount, ... }
   }
 
   async hideAttendees(
@@ -878,6 +814,8 @@ export class AttendeesService {
   ): Promise<any> {
     const skip = (page - 1) * limit;
 
+    console.log('obj in getAttendees', obj);
+
     const {
       filters,
       validCall,
@@ -1062,6 +1000,38 @@ export class AttendeesService {
       }
     }
 
+    const associationFilter = [];
+
+    if (Array.isArray(filters.leadType) && filters.leadType.length > 0) {
+      associationFilter.push({
+        $in: [
+          '$leadType',
+          filters.leadType.map((item) => new Types.ObjectId(item)),
+        ],
+      });
+    }
+
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const normalizedTags = filters.tags
+        .map((item) => item?.trim().toLowerCase())
+        .filter((item) => Boolean(item));
+
+      if (normalizedTags.length > 0) {
+        associationFilter.push({
+          $gt: [
+            {
+              $size: {
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
+              },
+            },
+            0,
+          ],
+        });
+      }
+    }
+
+    console.log(`${JSON.stringify(associationFilter)}`);
+
     const basePipeline: PipelineStage[] = [
       {
         $match: {
@@ -1084,9 +1054,11 @@ export class AttendeesService {
                 }
               : { assignedTo: null }),
           }),
-          ...(emails && Array.isArray(emails) && emails.length > 0 && {
-            email: { $in: emails },
-          }),
+          ...(emails &&
+            Array.isArray(emails) &&
+            emails.length > 0 && {
+              email: { $in: emails },
+            }),
         },
       },
 
@@ -1166,9 +1138,6 @@ export class AttendeesService {
                 ...(filters.status && {
                   status: { $in: filters.status },
                 }),
-                ...(filters.tags && {
-                  tags: { $in: filters.tags },
-                }),
                 ...(Array.isArray(filters.isAssigned) &&
                   filters.isAssigned.length > 0 && {
                     lookupField: {
@@ -1182,7 +1151,7 @@ export class AttendeesService {
           ]
         : []),
 
-      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
+      ...(associationFilter.length > 0
         ? [
             {
               $lookup: {
@@ -1197,14 +1166,7 @@ export class AttendeesService {
                             $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
                           },
                           { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $in: [
-                              '$leadType',
-                              filters.leadType.map(
-                                (item) => new Types.ObjectId(item),
-                              ),
-                            ],
-                          },
+                          ...associationFilter,
                         ],
                       },
                     },
@@ -1346,7 +1308,7 @@ export class AttendeesService {
           lookupField: 0,
         },
       },
-      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
+      ...(associationFilter.length > 0
         ? []
         : [
             {
@@ -1384,6 +1346,7 @@ export class AttendeesService {
             $arrayElemAt: ['$assignedToDetails.userName', 0],
           },
           leadType: '$attendeeAssociations.leadType',
+          tags: '$attendeeAssociations.tags',
         },
       },
       ...(filters?.enrollments?.length
@@ -1649,7 +1612,9 @@ export class AttendeesService {
   async getPostWebinarAttendee(webinarId: string, adminId?: string) {
     const result = await this.attendeeModel.findOne({
       webinar: new Types.ObjectId(`${webinarId}`),
-      ...(mongoose.isValidObjectId(adminId) ? { adminId: new Types.ObjectId(`${adminId}`) } : {}),
+      ...(mongoose.isValidObjectId(adminId)
+        ? { adminId: new Types.ObjectId(`${adminId}`) }
+        : {}),
       isAttended: true,
     });
 
@@ -1671,7 +1636,7 @@ export class AttendeesService {
     if (!attendeeBeforeUpdate) {
       throw new NotFoundException('Attendee not found.');
     }
-    console.log('attendee service ---- > ', attendeeBeforeUpdate , userId);
+    console.log('attendee service ---- > ', attendeeBeforeUpdate, userId);
 
     // Permission check: Allow if userId is the assignedTo, tempAssignedTo, or adminId of the *existing* attendee
     if (
@@ -2020,8 +1985,7 @@ export class AttendeesService {
       this.checkLength(filters.salesAssignedTo) ||
       this.checkLength(filters.salesLastStatus) ||
       this.checkLength(filters.reminderAssignedTo) ||
-      this.checkLength(filters.reminderLastStatus) ||
-      this.checkLength(filters.tags);
+      this.checkLength(filters.reminderLastStatus);
 
     const parseNum = (val) => {
       if (typeof val === 'number') return val;
@@ -2096,6 +2060,38 @@ export class AttendeesService {
       }
     }
 
+    const associationFilter = [];
+
+    if (Array.isArray(filters.leadType) && filters.leadType.length > 0) {
+      associationFilter.push({
+        $in: [
+          '$leadType',
+          filters.leadType.map((item) => new Types.ObjectId(item)),
+        ],
+      });
+    }
+
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const normalizedTags = filters.tags
+        .map((item) => item?.trim().toLowerCase())
+        .filter((item) => Boolean(item));
+
+      if (normalizedTags.length > 0) {
+        associationFilter.push({
+          $gt: [
+            {
+              $size: {
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
+              },
+            },
+            0,
+          ],
+        });
+      }
+    }
+
+    console.log(`${JSON.stringify(associationFilter)}`);
+
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -2104,9 +2100,11 @@ export class AttendeesService {
           ...(filters.email && {
             email: { $regex: filters.email },
           }),
-          ...(filters.emails && Array.isArray(filters.emails) && filters.emails.length > 0 && {
-            email: { $in: filters.emails },
-          }),
+          ...(filters.emails &&
+            Array.isArray(filters.emails) &&
+            filters.emails.length > 0 && {
+              email: { $in: filters.emails },
+            }),
         },
       },
       {
@@ -2173,15 +2171,6 @@ export class AttendeesService {
               ],
             },
           },
-          tagsList: {
-            $push: {
-              $cond: [
-                { $gt: [{ $size: '$tags' }, 0] }, // Only if tags array has items
-                '$tags',
-                '$$REMOVE', // Skip empty arrays
-              ],
-            },
-          },
           adminId: {
             $first: '$adminId',
           },
@@ -2220,10 +2209,7 @@ export class AttendeesService {
             $addToSet: {
               $cond: [
                 {
-                  $and: [
-                    { $ne: ['$phone', null] },
-                    { $ne: ['$phone', ''] },
-                  ],
+                  $and: [{ $ne: ['$phone', null] }, { $ne: ['$phone', ''] }],
                 },
                 '$phone',
                 '$$REMOVE',
@@ -2267,7 +2253,7 @@ export class AttendeesService {
         },
       },
 
-      ...(this.checkLength(filters.leadType)
+      ...(this.checkLength(associationFilter)
         ? [
             {
               $lookup: {
@@ -2280,14 +2266,7 @@ export class AttendeesService {
                         $and: [
                           { $eq: ['$adminId', adminId] },
                           { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $in: [
-                              '$leadType',
-                              filters.leadType.map(
-                                (a) => new Types.ObjectId(a),
-                              ),
-                            ],
-                          },
+                          ...associationFilter,
                         ],
                       },
                     },
@@ -2310,13 +2289,6 @@ export class AttendeesService {
         ? [
             {
               $addFields: {
-                tags: {
-                  $reduce: {
-                    input: '$tagsList',
-                    initialValue: [],
-                    in: { $setUnion: ['$$value', '$$this'] },
-                  },
-                },
                 salesAssignedTo: {
                   $first: '$salesAssignedToList',
                 },
@@ -2355,17 +2327,6 @@ export class AttendeesService {
                 ...(this.checkLength(filters.reminderLastStatus) && {
                   reminderLastStatus: {
                     $in: filters.reminderLastStatus,
-                  },
-                }),
-
-                ...(this.checkLength(filters.tags) && {
-                  $expr: {
-                    $gt: [
-                      {
-                        $size: { $setIntersection: ['$tags', filters.tags] },
-                      },
-                      0,
-                    ],
                   },
                 }),
               },
@@ -2477,7 +2438,7 @@ export class AttendeesService {
       },
       { $skip: skip },
       ...(limit ? [{ $limit: limit }] : []),
-      ...(filters.leadType
+      ...(this.checkLength(associationFilter)
         ? []
         : [
             {
@@ -2511,13 +2472,6 @@ export class AttendeesService {
         ? [
             {
               $addFields: {
-                tags: {
-                  $reduce: {
-                    input: '$tagsList',
-                    initialValue: [],
-                    in: { $setUnion: ['$$value', '$$this'] },
-                  },
-                },
                 salesAssignedTo: {
                   $first: '$salesAssignedToList',
                 },
@@ -2625,7 +2579,7 @@ export class AttendeesService {
           salesLastStatus: 1,
           reminderAssignedTo: 1,
           salesAssignedTo: 1,
-          tags: 1,
+          tags: '$lead.tags',
           leadType: '$lead.leadType',
           adminId: 1,
           timeInSession: 1,
@@ -2670,8 +2624,39 @@ export class AttendeesService {
       this.checkLength(filters.salesAssignedTo) ||
       this.checkLength(filters.salesLastStatus) ||
       this.checkLength(filters.reminderAssignedTo) ||
-      this.checkLength(filters.reminderLastStatus) ||
-      this.checkLength(filters.tags);
+      this.checkLength(filters.reminderLastStatus);
+
+    const associationFilter = [];
+
+    if (Array.isArray(filters.leadType) && filters.leadType.length > 0) {
+      associationFilter.push({
+        $in: [
+          '$leadType',
+          filters.leadType.map((item) => new Types.ObjectId(item)),
+        ],
+      });
+    }
+
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const normalizedTags = filters.tags
+        .map((item) => item?.trim().toLowerCase())
+        .filter((item) => Boolean(item));
+
+      if (normalizedTags.length > 0) {
+        associationFilter.push({
+          $gt: [
+            {
+              $size: {
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
+              },
+            },
+            0,
+          ],
+        });
+      }
+    }
+
+    console.log(`${JSON.stringify(associationFilter)}`);
 
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
@@ -2747,15 +2732,6 @@ export class AttendeesService {
               ],
             },
           },
-          tagsList: {
-            $push: {
-              $cond: [
-                { $gt: [{ $size: '$tags' }, 0] }, // Only if tags array has items
-                '$tags',
-                '$$REMOVE', // Skip empty arrays
-              ],
-            },
-          },
           adminId: {
             $first: '$adminId',
           },
@@ -2824,7 +2800,7 @@ export class AttendeesService {
         },
       },
 
-      ...(this.checkLength(filters.leadType)
+      ...(this.checkLength(associationFilter)
         ? [
             {
               $lookup: {
@@ -2837,14 +2813,7 @@ export class AttendeesService {
                         $and: [
                           { $eq: ['$adminId', adminId] },
                           { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $in: [
-                              '$leadType',
-                              filters.leadType.map(
-                                (a) => new Types.ObjectId(a),
-                              ),
-                            ],
-                          },
+                         ...associationFilter,
                         ],
                       },
                     },
@@ -2867,13 +2836,6 @@ export class AttendeesService {
         ? [
             {
               $addFields: {
-                tags: {
-                  $reduce: {
-                    input: '$tagsList',
-                    initialValue: [],
-                    in: { $setUnion: ['$$value', '$$this'] },
-                  },
-                },
                 salesAssignedTo: {
                   $first: '$salesAssignedToList',
                 },
@@ -2912,17 +2874,6 @@ export class AttendeesService {
                 ...(this.checkLength(filters.reminderLastStatus) && {
                   reminderLastStatus: {
                     $in: filters.reminderLastStatus,
-                  },
-                }),
-
-                ...(this.checkLength(filters.tags) && {
-                  $expr: {
-                    $gt: [
-                      {
-                        $size: { $setIntersection: ['$tags', filters.tags] },
-                      },
-                      0,
-                    ],
                   },
                 }),
               },
@@ -3034,7 +2985,7 @@ export class AttendeesService {
       },
       { $skip: skip },
       ...(limit ? [{ $limit: limit }] : []),
-      ...(this.checkLength(filters.leadType)
+      ...(this.checkLength(associationFilter)
         ? []
         : [
             {
@@ -3068,13 +3019,6 @@ export class AttendeesService {
         ? [
             {
               $addFields: {
-                tags: {
-                  $reduce: {
-                    input: '$tagsList',
-                    initialValue: [],
-                    in: { $setUnion: ['$$value', '$$this'] },
-                  },
-                },
                 salesAssignedTo: {
                   $first: '$salesAssignedToList',
                 },
@@ -3175,6 +3119,21 @@ export class AttendeesService {
               },
             },
           ]),
+
+          {
+            $lookup: {
+              from: 'customleadtypes',
+              localField: 'lead.leadType',
+              foreignField: '_id',
+              as: 'leadTypeDetails',
+            }
+          },
+          {
+            $unwind: {
+              path: '$leadTypeDetails',
+              preserveNullAndEmptyArrays: true,
+            },
+          },
       {
         $project: {
           reminderLastStatus: 1,
@@ -3182,7 +3141,7 @@ export class AttendeesService {
           salesLastStatus: 1,
           reminderAssignedTo: '$reminderAssignedToDetails.userName',
           salesAssignedTo: '$salesAssignedToDetails.userName',
-          tags: 1,
+          tags: '$lead.tags',
           leadType: '$leadTypeDetails.label',
           adminId: 1,
           timeInSession: 1,
@@ -3246,6 +3205,7 @@ export class AttendeesService {
     const total = countResult[0]?.total || 0;
     const totalPages = limit ? Math.ceil(total / limit) || 1 : 1;
     const pagination = { page, totalPages, total };
+    console.log(`${JSON.stringify(parsedData)}`);
     return { data: parsedData || [], pagination };
   }
 
@@ -3310,11 +3270,13 @@ export class AttendeesService {
     return this.attendeeModel.findById(new Types.ObjectId(`${attendee}`));
   }
 
-  async getAttendeeByWebinarAndEmail(webinarId: string, email: string): Promise<Attendee | null> {
+  async getAttendeeByWebinarAndEmail(
+    webinarId: string,
+    email: string,
+  ): Promise<Attendee | null> {
     return this.attendeeModel.findOne({
       webinar: new Types.ObjectId(webinarId),
       email,
-      
     });
   }
 
@@ -3366,38 +3328,10 @@ export class AttendeesService {
   async getInvalidTags(adminId: Types.ObjectId) {
     const tags = await this.tagService.getTagsArray(adminId);
 
-    const pipeline: PipelineStage[] = [
-      {
-        $match: {
-          adminId,
-          tags: { $exists: true, $ne: [] },
-        },
-      },
-
-      { $unwind: '$tags' },
-
-      {
-        $match: {
-          tags: { $nin: ['', null] },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          allTagsUsed: { $addToSet: '$tags' },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          invalidTags: {
-            $setDifference: ['$allTagsUsed', tags],
-          },
-        },
-      },
-    ];
-
-    const result = await this.attendeeModel.aggregate(pipeline);
+    const result = await this.attendeeAssociationService.getInvalidTags(
+      adminId,
+      tags,
+    );
     if (Array.isArray(result) && result.length > 0) {
       return result[0].invalidTags || [];
     }

@@ -13,8 +13,8 @@ export class AttendeeFilterConditionDto {
   @IsEnum(['include', 'exclude'])
   mode: 'include' | 'exclude';
 
-  @IsEnum(['email', 'tags'])
-  field: 'email' | 'tags';
+  @IsEnum(['email', 'tags', 'webinars'])
+  field: 'email' | 'tags' | 'webinars';
 
   @IsEnum(['equals', 'contains'])
   operator: 'equals' | 'contains';

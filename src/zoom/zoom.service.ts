@@ -763,7 +763,7 @@ export class ZoomService implements OnModuleInit {
     projectId: string,
     type: 'meeting' | 'webinar',
   ) {
-    console.log('Meeting registration created', registrant);
+    this.logger.log('Meeting registration created', registrant);
 
     try {
       // Use webinar service to handle the registration
@@ -771,7 +771,7 @@ export class ZoomService implements OnModuleInit {
         meetingId,
         registrant,
       );
-      console.log('Registration handled:', result);
+      this.logger.log('Registration handled:', result);
 
       // Emit socket event to refresh registrants data
       await this.notifyRegistrantsUpdate(projectId, meetingId, type);

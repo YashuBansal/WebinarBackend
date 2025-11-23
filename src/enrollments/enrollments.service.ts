@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   forwardRef,
   Inject,
   Injectable,
+  Logger,
   NotAcceptableException,
   NotFoundException,
 } from '@nestjs/common';
@@ -17,9 +19,12 @@ import { ProductsService } from 'src/products/products.service';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { WebinarService } from 'src/webinar/webinar.service';
+import { ValidationUtil } from 'src/common/utils/validation.util';
 
 @Injectable()
 export class EnrollmentsService {
+  private readonly logger = new Logger(EnrollmentsService.name);
+
   constructor(
     @InjectModel(Enrollment.name)
     private readonly enrollmentModel: Model<Enrollment>,
@@ -39,123 +44,262 @@ export class EnrollmentsService {
     adminId: Types.ObjectId,
     session: ClientSession,
     checkExistingEnrollments: boolean = true,
-  ): Promise<any[]> {
-    // Adjust return type based on insertMany result
+  ): Promise<Enrollment[]> {
+    // Validate input parameters
+    if (!tagsData || !Array.isArray(tagsData) || tagsData.length === 0) {
+      this.logger.warn('createEnrollments called with empty or invalid tagsData');
+      return [];
+    }
 
-    const webinar = await this.webinarService.getAssignedProducts(webinarId);
-    console.log(tagsData, webinar);
+    if (!webinarId || !Types.ObjectId.isValid(webinarId)) {
+      this.logger.error('Invalid webinarId provided to createEnrollments');
+      throw new BadRequestException('Invalid webinar ID');
+    }
+
+    if (!adminId || !Types.ObjectId.isValid(adminId)) {
+      this.logger.error('Invalid adminId provided to createEnrollments');
+      throw new BadRequestException('Invalid admin ID');
+    }
+
+    // Fetch webinar with error handling
+    let webinar;
+    try {
+      webinar = await this.webinarService.getAssignedProducts(webinarId);
+    } catch (error) {
+      this.logger.error(
+        `Error fetching webinar ${webinarId}: ${error.message}`,
+        error.stack,
+      );
+      throw new NotFoundException(`Webinar not found: ${webinarId}`);
+    }
 
     if (
       !webinar ||
       !Array.isArray(webinar.productIds) ||
-      webinar.productIds.length === 0 ||
-      tagsData.length === 0
-    )
+      webinar.productIds.length === 0
+    ) {
+      this.logger.warn(
+        `Webinar ${webinarId} has no products assigned or invalid structure`,
+      );
       return [];
+    }
 
-    const products: any[] = webinar.productIds;
+    // Validate and normalize tagsData
+    const validatedTagsData: { email: string; tags: string[] }[] = [];
+    for (const item of tagsData) {
+      // Validate email
+      if (!item.email || typeof item.email !== 'string') {
+        this.logger.warn(`Skipping item with invalid email: ${item.email}`);
+        continue;
+      }
 
-    const productMap = new Map(
-      products
-        .filter(
-          (product) =>
-            typeof product.tag === 'string' && product.tag.trim() !== '',
-        )
-        .map((product) => [
-          product.tag.toLowerCase(),
-          {
-            id: product._id,
-            price: product.price,
-          },
-        ]),
-    );
-
-    const potentialEnrollments = []; // Renamed for clarity
-    console.log(potentialEnrollments);
-
-    tagsData.forEach((item) => {
-      const attendeeEmail = item.email;
-      const attendeeTags = item.tags;
-      attendeeTags.forEach((tag) => {
-        const lowerCaseTag = tag.toLowerCase(); // Ensure case-insensitive matching
-        if (typeof tag === 'string' && productMap.has(lowerCaseTag)) {
-          const product = productMap.get(lowerCaseTag);
-
-          potentialEnrollments.push({
-            attendee: attendeeEmail,
-            webinar: webinarId,
-            product: product.id,
-            price: product.price,
-            adminId,
-            // Add any other default fields needed for an enrollment document
-          });
+      try {
+        const normalizedEmail = ValidationUtil.validateEmail(item.email);
+        // Validate tags array
+        if (!Array.isArray(item.tags) || item.tags.length === 0) {
+          this.logger.debug(
+            `Skipping ${normalizedEmail} - no tags provided`,
+          );
+          continue;
         }
+
+        // Filter and validate tags
+        const validTags = item.tags
+          .filter(
+            (tag) =>
+              typeof tag === 'string' && tag.trim() !== '',
+          )
+          .map((tag) => tag.trim().toLowerCase());
+
+        if (validTags.length === 0) {
+          this.logger.debug(
+            `Skipping ${normalizedEmail} - no valid tags after filtering`,
+          );
+          continue;
+        }
+
+        validatedTagsData.push({
+          email: normalizedEmail,
+          tags: validTags,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Skipping invalid email "${item.email}": ${error.message}`,
+        );
+        continue;
+      }
+    }
+
+    if (validatedTagsData.length === 0) {
+      this.logger.warn('No valid tagsData after validation');
+      return [];
+    }
+
+    // Build product map with validation
+    interface ProductInfo {
+      id: Types.ObjectId;
+      price: number;
+    }
+
+    const products: Array<{
+      _id: Types.ObjectId;
+      tag: string;
+      price: number;
+    }> = webinar.productIds;
+
+    const productMap = new Map<string, ProductInfo>();
+    for (const product of products) {
+      if (
+        !product ||
+        !product._id ||
+        !Types.ObjectId.isValid(product._id) ||
+        typeof product.tag !== 'string' ||
+        product.tag.trim() === ''
+      ) {
+        this.logger.debug('Skipping product with invalid tag or ID');
+        continue;
+      }
+
+      // Validate price
+      const price =
+        typeof product.price === 'number' && product.price >= 0
+          ? product.price
+          : 0;
+
+      productMap.set(product.tag.toLowerCase().trim(), {
+        id: product._id,
+        price,
       });
-    });
+    }
+
+    if (productMap.size === 0) {
+      this.logger.warn('No valid products found after validation');
+      return [];
+    }
+
+    // Generate potential enrollments with deduplication
+    interface PotentialEnrollment {
+      attendee: string;
+      webinar: Types.ObjectId;
+      product: Types.ObjectId;
+      price: number;
+      adminId: Types.ObjectId;
+      assignType: AssignType;
+    }
+
+    const enrollmentKeySet = new Set<string>();
+    const potentialEnrollments: PotentialEnrollment[] = [];
+
+    for (const item of validatedTagsData) {
+      const attendeeEmail = item.email;
+      const attendeeTags = [...new Set(item.tags)]; // Remove duplicate tags
+
+      for (const tag of attendeeTags) {
+        if (productMap.has(tag)) {
+          const product = productMap.get(tag)!;
+          const key = `${attendeeEmail}_${product.id.toString()}`;
+
+          // Prevent duplicate enrollments in the same batch
+          if (!enrollmentKeySet.has(key)) {
+            enrollmentKeySet.add(key);
+            potentialEnrollments.push({
+              attendee: attendeeEmail,
+              webinar: webinarId,
+              product: product.id,
+              price: product.price,
+              adminId,
+              assignType: AssignType.AUTO,
+            });
+          }
+        }
+      }
+    }
 
     if (potentialEnrollments.length === 0) {
-      console.log('No potential enrollments generated from tags.');
-      return []; // Return empty array if nothing to process
+      this.logger.debug('No potential enrollments generated from tags');
+      return [];
     }
 
-    // 1. Identify the unique combinations of attendee and product from the potential list
-    // These are the combinations we need to check for existence
-    const combinationsToCheck = potentialEnrollments.map((e) => ({
-      attendee: e.attendee,
-      product: e.product, // This should be the ObjectId
-    }));
-
-    // 2. Query the database for existing enrollments matching the webinar and any of these combinations
-    // Using $or allows us to check multiple (attendee, product) pairs in one query
-    let existingEnrollments = [];
+    // Check for existing enrollments
+    let existingEnrollments: Enrollment[] = [];
 
     if (checkExistingEnrollments) {
-      existingEnrollments = await this.enrollmentModel
-        .find({
-          webinar: webinarId,
-          $or: combinationsToCheck,
-        })
-        .exec();
+      // Normalize emails in combinationsToCheck for case-insensitive comparison
+      const combinationsToCheck = potentialEnrollments.map((e) => ({
+        attendee: e.attendee.toLowerCase(),
+        product: e.product,
+      }));
+
+      try {
+        existingEnrollments = await this.enrollmentModel
+          .find({
+            webinar: webinarId,
+            $or: combinationsToCheck,
+          })
+          .exec();
+
+        // Normalize existing enrollment emails for comparison
+        existingEnrollments = existingEnrollments.map((enrollment) => ({
+          ...enrollment.toObject(),
+          attendee: enrollment.attendee.toLowerCase(),
+        })) as Enrollment[];
+      } catch (error) {
+        this.logger.error(
+          `Error checking existing enrollments: ${error.message}`,
+          error.stack,
+        );
+        throw error;
+      }
     }
 
-    // 3. Create a Set of existing enrollment keys for quick lookup
-    // A key will be a combination of attendee email and product ID string
+    // Create a Set of existing enrollment keys (normalized emails)
     const existingEnrollmentKeys = new Set(
       existingEnrollments.map(
         (enrollment) =>
-          `${enrollment.attendee}_${enrollment.product.toString()}`, // Convert ObjectId to string for key
+          `${enrollment.attendee.toLowerCase()}_${enrollment.product.toString()}`,
       ),
     );
 
-    // 4. Filter the potential enrollments list
-    // Keep only those whose (attendee, product) combination is NOT in the existing set
+    // Filter out existing enrollments
     const enrollmentsToInsert = potentialEnrollments.filter((enrollment) => {
-      const key = `${enrollment.attendee}_${enrollment.product.toString()}`; // Convert ObjectId to string for key
+      const key = `${enrollment.attendee.toLowerCase()}_${enrollment.product.toString()}`;
       return !existingEnrollmentKeys.has(key);
     });
 
-    // 5. Insert the filtered list of new enrollments
+    // Log duplicate count if duplicates were found
+    const duplicateCount = potentialEnrollments.length - enrollmentsToInsert.length;
+    if (duplicateCount > 0) {
+      this.logger.log(
+        `${duplicateCount}/${potentialEnrollments.length} enrollments already exist`,
+      );
+    }
+
+    // Insert new enrollments
     if (enrollmentsToInsert.length > 0) {
-      console.log(`Inserting ${enrollmentsToInsert.length} new enrollments.`);
+      this.logger.log(
+        `Inserting ${enrollmentsToInsert.length} new enrollments for webinar ${webinarId}`,
+      );
       try {
-        console.log(enrollmentsToInsert);
-        // Assuming enrollmentModel is a Mongoose model with insertMany
         const result = await this.enrollmentModel.insertMany(
           enrollmentsToInsert,
           { session },
         );
-        console.log(`Successfully inserted ${result.length} enrollments.`);
-        return result; // Return the documents that were successfully inserted
+        this.logger.log(
+          `Successfully inserted ${result.length} enrollments`,
+        );
+        return result;
       } catch (error) {
-        console.error('Error inserting enrollments:', error);
-        // Handle the error appropriately, perhaps re-throw or return null/empty array
-        throw error; // Re-throw the error to be handled by the caller
+        this.logger.error(
+          `Error inserting enrollments: ${error.message}`,
+          error.stack,
+        );
+        throw error;
       }
     } else {
-      console.log(
+      this.logger.debug(
         'All potential enrollments already exist. Nothing new to insert.',
       );
-      return []; // Return empty array if no new enrollments were inserted
+      return [];
     }
   }
 
