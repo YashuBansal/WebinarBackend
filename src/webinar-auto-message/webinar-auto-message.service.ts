@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { WebinarAutoMessage, WebinarAutoMessageDocument } from './webinar-auto-message.schema';
@@ -9,6 +9,8 @@ import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.sc
 
 @Injectable()
 export class WebinarAutoMessageService {
+  private readonly logger = new Logger(WebinarAutoMessageService.name);
+
   constructor(
     @InjectModel(WebinarAutoMessage.name) private model: Model<WebinarAutoMessageDocument>,
     private readonly whatsappService: WhatsappService,
@@ -41,29 +43,76 @@ export class WebinarAutoMessageService {
   }
 
   async list(adminId: string, projectId?: string) {
-    const filter: any = { };
-    if (projectId) filter.projectId = new Types.ObjectId(projectId);
-    console.log(' fetch fitler',filter);
+    this.logger.log(`Listing webinar auto messages for adminId: ${adminId}, projectId: ${projectId || 'all'}`);
 
-    const docs = await this.model
-      .find(filter)
-      .populate('webinarId', 'webinarName webinarDate')
-      .sort({ updatedAt: -1 })
-      .lean();
+    try {
+      // Validate adminId
+      if (!adminId || !Types.ObjectId.isValid(adminId)) {
+        this.logger.error(`Invalid adminId provided: ${adminId}`);
+        throw new BadRequestException('Invalid adminId provided');
+      }
 
-    // Transform _id fields to id and extract webinar data
-    return docs.map((doc: any) => {
-      const webinar = doc.webinarId;
-      return {
-        ...doc,
-        id: doc._id.toString(),
-        adminId: doc.adminId.toString(),
-        webinarId: doc.webinarId._id ? doc.webinarId._id.toString() : doc.webinarId.toString(),
-        projectId: doc.projectId.toString(),
-        webinarName: webinar?.webinarName || 'Unknown Webinar',
-        webinarDate: webinar?.webinarDate || null,
+      // Build filter
+      const filter: any = {
+        adminId: new Types.ObjectId(adminId),
       };
-    });
+
+      if (projectId) {
+        if (!Types.ObjectId.isValid(projectId)) {
+          this.logger.error(`Invalid projectId provided: ${projectId}`);
+          throw new BadRequestException('Invalid projectId provided');
+        }
+        filter.projectId = new Types.ObjectId(projectId);
+      }
+
+      this.logger.debug(`Fetching with filter: ${JSON.stringify(filter)}`);
+
+      // Query database
+      const docs = await this.model
+        .find(filter)
+        .populate('webinarId', 'webinarName webinarDate')
+        .sort({ updatedAt: -1 })
+        .lean();
+
+      this.logger.log(`Found ${docs.length} webinar auto message(s)`);
+
+      // Transform _id fields to id and extract webinar data
+      const result = docs.map((doc: any) => {
+        try {
+          const webinar = doc.webinarId;
+          return {
+            ...doc,
+            id: doc._id?.toString() || null,
+            adminId: doc.adminId?.toString() || adminId,
+            webinarId: webinar?._id ? webinar._id.toString() : (doc.webinarId?.toString() || null),
+            projectId: doc.projectId?.toString() || null,
+            webinarName: webinar?.webinarName || 'Unknown Webinar',
+            webinarDate: webinar?.webinarDate || null,
+          };
+        } catch (error) {
+          this.logger.warn(`Error transforming document ${doc._id}: ${error.message}`);
+          // Return a safe fallback object
+          return {
+            id: doc._id?.toString() || null,
+            adminId: doc.adminId?.toString() || adminId,
+            webinarId: null,
+            projectId: doc.projectId?.toString() || null,
+            webinarName: 'Unknown Webinar',
+            webinarDate: null,
+            error: 'Failed to transform document',
+          };
+        }
+      });
+
+      this.logger.log(`Successfully transformed ${result.length} document(s)`);
+      return result;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(`Error listing webinar auto messages: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to list webinar auto messages: ${error.message}`);
+    }
   }
 
   private resolveVariables(mappings: VariableMappingDto[], contact: any): { values: string[]; dynamic: boolean[] } {
