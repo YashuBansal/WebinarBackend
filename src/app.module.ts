@@ -70,6 +70,7 @@ import { WinstonModule } from 'nest-winston';
 import { WebinarWebhookModule } from './webinar-webhook/webinar-webhook.module';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -121,6 +122,7 @@ import 'winston-daily-rotate-file';
       serveRoot: '/uploads',
     }),
     AttendeeAssociationModule,
+    HealthModule,
     UsersModule,
     AttendeesModule,
     AuthModule,
