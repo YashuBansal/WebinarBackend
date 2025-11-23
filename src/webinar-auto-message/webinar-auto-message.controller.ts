@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Post, Query, UsePipes, ValidationPipe } 
 import { WebinarAutoMessageService } from './webinar-auto-message.service';
 import { UpsertAutoMessageDto, GetConfigQueryDto, TestSendDto, DeleteAutoMessageDto } from './dto';
 import { Id } from '../decorators/custom.decorator';
+import mongoose from 'mongoose';
 
 @Controller('webinar-auto-message')
 export class WebinarAutoMessageController {
@@ -16,6 +17,9 @@ export class WebinarAutoMessageController {
 
   @Get('all')
   async list(@Query('projectId') projectId: string, @Id() adminId: string) {
+    if(!mongoose.isValidObjectId(projectId) || !mongoose.isValidObjectId(adminId)) {
+      return { statusCode: 400, message: 'Invalid projectId or adminId' };
+    }
     const data = await this.svc.list(adminId, projectId);
     return { statusCode: 200, message: 'ok', data };
   }
