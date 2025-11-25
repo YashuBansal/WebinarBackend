@@ -302,23 +302,45 @@ export class ApiCampaignService {
     }
     const template = apiCampaign.messageTemplate;
 
-    await this.whatsappService.sendSingleTemplateMessage({
-      adminId: new Types.ObjectId(adminId),
-      projectId: apiCampaign.project.toString(),
-      recipientPhoneNumber: destination,
-      templateName: template.templateName,
-      bodyVariables: templateParams || [],
-      messageType: WabaMessageType.API_CAMPAIGN,
-      apiCampaignId: apiCampaign._id.toString(),
-      media
-    });
+    if (!template?.templateName) {
+      throw new BadRequestException(
+        'Campaign template is missing a valid template name',
+      );
+    }
+
+    this.whatsappService
+      .sendSingleTemplateMessage({
+        adminId: new Types.ObjectId(adminId),
+        projectId: apiCampaign.project.toString(),
+        recipientPhoneNumber: destination,
+        templateName: template.templateName,
+        bodyVariables: templateParams || [],
+        messageType: WabaMessageType.API_CAMPAIGN,
+        apiCampaignId: apiCampaign._id.toString(),
+        media,
+      })
+      .then((response) => {
+        const primaryMessage = response?.messages?.[0];
+        this.logger.log('Single template message sent successfully', {
+          messageId: primaryMessage?.id,
+          destination,
+          campaignName,
+        });
+      })
+      .catch((err) => {
+        this.logger.error('Error sending single template message', err);
+      });
 
     return {
-      message: 'Campaign execution logged',
+      message: 'Campaign execution triggered',
       campaignName,
       destination,
       media,
       templateParams: templateParams || [],
+      dispatch: {
+        status: 'queued',
+        messageId: null,
+      },
     };
   }
 
