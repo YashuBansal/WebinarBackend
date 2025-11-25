@@ -190,10 +190,13 @@ export class WhatsappService {
             const msgId = msg.id;
 
             if (!from || !msgId) continue;
-console.log('from ------------------------- > ', from);
-console.log('fromPhoneNumberId ------------------------- > ', fromPhoneNumberId);
-console.log('textBody ------------------------- > ', textBody);
-console.log('wabaMessageId ------------------------- > ', msgId);
+            console.log('from ------------------------- > ', from);
+            console.log(
+              'fromPhoneNumberId ------------------------- > ',
+              fromPhoneNumberId,
+            );
+            console.log('textBody ------------------------- > ', textBody);
+            console.log('wabaMessageId ------------------------- > ', msgId);
             await this.handleInboundTextMessage({
               from,
               fromPhoneNumberId,
@@ -236,7 +239,6 @@ console.log('wabaMessageId ------------------------- > ', msgId);
 
     const adminId = project.adminId as any as Types.ObjectId;
     const projectId = project._id as any as Types.ObjectId;
-
 
     // Emit websocket event to admin (WhatsApp chat-message) via gateway
     this.whatsAppGateway.emitToUser(String(adminId), {
@@ -766,9 +768,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     if (query.limit) params.limit = query.limit;
     if (query.name) params.name = query.name;
 
-    this.logger.log(
-      `Fetching templates for WABA: ${wabaId}`,
-    );
+    this.logger.log(`Fetching templates for WABA: ${wabaId}`);
 
     try {
       const response = await this.axiosInstance.get(url, {
@@ -822,7 +822,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     createTemplateDto: CreateTemplateDto,
   ): Promise<TemplateResponseDto> {
     const account = await this.projectService.findOne(adminId, projectId);
-  
+
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this project.',
@@ -854,10 +854,14 @@ console.log('wabaMessageId ------------------------- > ', msgId);
       });
       const list = Array.isArray(existing.data?.data) ? existing.data.data : [];
       const hasDuplicate = list.some(
-        (t: any) => String(t?.name || '').toLowerCase() === String(createTemplateDto.name).toLowerCase(),
+        (t: any) =>
+          String(t?.name || '').toLowerCase() ===
+          String(createTemplateDto.name).toLowerCase(),
       );
       if (hasDuplicate) {
-        throw new BadRequestException('A template with the same name already exists.');
+        throw new BadRequestException(
+          'A template with the same name already exists.',
+        );
       }
     } catch (err) {
       if (err instanceof BadRequestException) {
@@ -869,7 +873,9 @@ console.log('wabaMessageId ------------------------- > ', msgId);
         data: axiosError.response?.data,
         message: axiosError.message,
       });
-      throw new InternalServerErrorException('Failed to verify existing templates before creation');
+      throw new InternalServerErrorException(
+        'Failed to verify existing templates before creation',
+      );
     }
 
     // Validate that BODY component exists
@@ -906,7 +912,6 @@ console.log('wabaMessageId ------------------------- > ', msgId);
             (handle) =>
               handle && typeof handle === 'string' && handle.trim().length > 0,
           );
-
 
           if (validHandles.length === 0) {
             throw new BadRequestException(
@@ -1215,6 +1220,8 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     campaignId?: string;
     attendeeId?: Types.ObjectId;
     meetingId?: string;
+    media?: { url: string; filename: string };
+    apiCampaignId?: string;
   }): Promise<any> {
     this.logger.log('payload', payload);
 
@@ -1231,6 +1238,8 @@ console.log('wabaMessageId ------------------------- > ', msgId);
       attendeeId,
       messageType = WabaMessageType.INDIVIDUAL,
       campaignId,
+      media,
+      apiCampaignId,
     } = payload;
 
     // Normalize and validate recipient phone number per India format rules
@@ -1295,14 +1304,6 @@ console.log('wabaMessageId ------------------------- > ', msgId);
       }
 
       // Get template details to determine header format
-      this.logger.log(
-        'templateName',
-        templateName,
-        'projectId',
-        projectId,
-        'adminId',
-        adminId,
-      );
       const templates = await this.getTemplatesForWaba(
         adminId,
         new Types.ObjectId(projectId),
@@ -1364,6 +1365,71 @@ console.log('wabaMessageId ------------------------- > ', msgId);
           parameters: [headerParameter],
         });
       }
+    } else if (media) {
+      this.logger.log('mediaAsset', media);
+
+      // Get template details to determine header format
+      const templates = await this.getTemplatesForWaba(
+        adminId,
+        new Types.ObjectId(projectId),
+        { name: templateName },
+      );
+
+      const ourTemplate = templates.find(
+        (template: any) => template.name === templateName,
+      );
+
+      if (!ourTemplate) {
+        throw new NotFoundException(`Template '${templateName}' not found`);
+      }
+
+      this.logger.log('templateDetails', ourTemplate);
+      const headerComponent = ourTemplate.components.find(
+        (c) => c.type === 'HEADER',
+      );
+
+      if (headerComponent) {
+        const headerFormat = headerComponent.format;
+        let headerParameter: any;
+
+        switch (headerFormat) {
+          case 'IMAGE':
+            headerParameter = {
+              type: 'image',
+              image: {
+                link: media.url,
+              },
+            };
+            break;
+          case 'VIDEO':
+            headerParameter = {
+              type: 'video',
+              video: {
+                link: media.url,
+              },
+            };
+            break;
+          case 'DOCUMENT':
+            headerParameter = {
+              type: 'document',
+              document: {
+                link: media.url,
+                filename: media.filename,
+              },
+            };
+            break;
+          default:
+            this.logger.log('Unsupported header format', headerFormat);
+            throw new BadRequestException(
+              `Unsupported header format: ${headerFormat}`,
+            );
+        }
+
+        templateStructure.components.push({
+          type: 'header',
+          parameters: [headerParameter],
+        });
+      }
     }
 
     // Remove components if empty
@@ -1380,6 +1446,13 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     this.logger.log('metaPayload', metaPayload);
 
     try {
+      console.log(
+        'formatted.digitsOnly ------------------------- > ',
+        formatted.digitsOnly.length,
+      );
+
+      if (!formatted.digitsOnly)
+        throw new BadRequestException('Invalid phone number');
 
       this.logger.log('Sending template message to Meta', metaPayload);
       const response = await this.axiosInstance.post(url, metaPayload, {
@@ -1412,6 +1485,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
             ),
             campaignId,
             attendeeId: attendeeId?.toString(),
+            apiCampaignId,
             meetingId,
             direction: 'outbound' as any,
           });
@@ -1435,6 +1509,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
         templateStructure: templateStructure.components || [],
         campaignId,
         attendeeId: attendeeId?.toString(),
+        apiCampaignId,
         meetingId,
         error: error,
       });
@@ -1488,6 +1563,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     templateStructure,
     attendeeId,
     meetingId,
+    apiCampaignId,
     messageType,
     messageFormat,
   }: {
@@ -1502,6 +1578,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     templateStructure: any;
     attendeeId?: string;
     meetingId?: string;
+    apiCampaignId?: string;
     messageType: WabaMessageType;
     messageFormat: 'text' | 'template' | 'media';
   }) {
@@ -1513,6 +1590,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
         campaignId,
         phoneNumber: normalizedRecipientPhoneNumber,
         contactId,
+        apiCampaignId,
         wabaMessageId, //
         messageType,
         templateName,
@@ -1534,10 +1612,12 @@ console.log('wabaMessageId ------------------------- > ', msgId);
 
   private formatIndianRecipient(input: string): {
     phoneNumber: string;
+    digitsOnly: string;
     isValid: boolean;
   } {
     const raw = `${input || ''}`.trim();
     const digitsOnly = raw.replace(/\D/g, '');
+    console.log('digitsOnly ------------------------- > ', digitsOnly);
     let candidate = '';
 
     if (/^0\d{10}$/.test(digitsOnly)) {
@@ -1551,7 +1631,7 @@ console.log('wabaMessageId ------------------------- > ', msgId);
     }
 
     const isValid = /^\+91\d{10}$/.test(candidate);
-    return { phoneNumber: isValid ? candidate : input, isValid };
+    return { phoneNumber: isValid ? candidate : input, digitsOnly, isValid };
   }
 
   async sendTemplateMessage(
@@ -2298,6 +2378,28 @@ console.log('wabaMessageId ------------------------- > ', msgId);
         'A server error occurred while fetching media assets.',
       );
     }
+  }
+
+  async getMediaAssetInfo(
+    mediaAssetId: string | Types.ObjectId,
+  ): Promise<(MediaAsset & { _id: Types.ObjectId }) | null> {
+    if (!mediaAssetId) {
+      return null;
+    }
+
+    let objectId: Types.ObjectId | null;
+
+    if (mediaAssetId instanceof Types.ObjectId) {
+      objectId = mediaAssetId;
+    } else if (Types.ObjectId.isValid(mediaAssetId)) {
+      objectId = new Types.ObjectId(mediaAssetId);
+    } else {
+      return null;
+    }
+
+    return this.mediaAssetModel
+      .findById(objectId)
+      .lean<MediaAsset & { _id: Types.ObjectId }>();
   }
 
   /**

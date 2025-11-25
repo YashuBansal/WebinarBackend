@@ -26,6 +26,7 @@ export class WabaMessageService {
     phoneNumber: string;
     campaignId?: string;
     contactId?: string;
+    apiCampaignId?: string;
     attendeeId?: string;
     wabaMessageId: string;
     messageType?: string;
@@ -55,6 +56,9 @@ export class WabaMessageService {
       contactId: mongoose.isValidObjectId(wabaMessageData.contactId)
         ? new Types.ObjectId(wabaMessageData.contactId)
         : undefined,
+      apiCampaignId: mongoose.isValidObjectId(wabaMessageData.apiCampaignId)
+        ? new Types.ObjectId(wabaMessageData.apiCampaignId)
+        : undefined,
       attendeeId: mongoose.isValidObjectId(wabaMessageData.attendeeId)
         ? new Types.ObjectId(wabaMessageData.attendeeId)
         : undefined,
@@ -82,6 +86,7 @@ export class WabaMessageService {
       projectId?: Types.ObjectId;
       adminId?: Types.ObjectId;
       campaignId?: Types.ObjectId;
+      apiCampaignId?: Types.ObjectId;
       contactId?: Types.ObjectId;
       messageType?: WabaMessageType;
       templateName?: string;
@@ -231,13 +236,33 @@ export class WabaMessageService {
       .exec();
   }
 
-  async getMessageStats(campaignId: string): Promise<any> {
+  async getApiCampaignMessages(apiCampaignId: string): Promise<any[]> {
+    return this.wabaMessageModel
+      .find({
+        apiCampaignId: new Types.ObjectId(apiCampaignId),
+        isDeleted: false,
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  async getMessageStats({
+    campaignId,
+    apiCampaignId,
+  }: {
+    campaignId?: Types.ObjectId;
+    apiCampaignId?: Types.ObjectId;
+  }): Promise<any> {
+    const filter: any = { isDeleted: false };
+    if (mongoose.isValidObjectId(campaignId)) {
+      filter.campaignId = campaignId;
+    }
+    if (mongoose.isValidObjectId(apiCampaignId)) {
+      filter.apiCampaignId = apiCampaignId;
+    }
     const result = await this.wabaMessageModel.aggregate([
       {
-        $match: {
-          campaignId: new Types.ObjectId(campaignId),
-          isDeleted: false,
-        },
+        $match: filter
       },
       {
         $group: {
