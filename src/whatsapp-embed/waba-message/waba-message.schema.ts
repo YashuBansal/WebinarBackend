@@ -5,6 +5,7 @@ import { Project } from 'src/schemas/project.schema';
 import { User } from 'src/schemas/User.schema';
 import { Attendee } from 'src/schemas/Attendee.schema';
 import { Campaign } from 'src/schemas/whatsapp-embed/campaign.schema';
+import { ApiCampaign } from '../api-campaign/api-campaign.schema';
 
 export type WabaMessageDocument = WabaMessage & Document;
 
@@ -14,6 +15,7 @@ export enum WabaMessageType {
   TEMPLATE = 'template',
   AUTO_MESSAGE = 'auto-message',
   ZOOM_EVENT = 'zoom-event',
+  API_CAMPAIGN = 'api-campaign',
 }
 
 export enum WabaMessageDirection {
@@ -63,6 +65,14 @@ export class WabaMessage extends Document {
     index: true,
   })
   campaignId?: Types.ObjectId;
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: ApiCampaign.name,
+    required: false,
+    index: true,
+  })
+  apiCampaignId?: Types.ObjectId;
 
   @Prop({
     type: Types.ObjectId,
