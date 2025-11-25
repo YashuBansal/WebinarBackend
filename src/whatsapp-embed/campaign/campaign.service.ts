@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import  { Model, Types } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import {
   Campaign,
   CampaignContactType,
@@ -37,7 +37,7 @@ export class CampaignService {
     private readonly whatsappService: WhatsappService,
     private readonly attendeesService: AttendeesService,
     private readonly contactsService: ContactsService,
-  ) { }
+  ) {}
 
   async create(
     createCampaignDto: CreateCampaignDto,
@@ -69,7 +69,7 @@ export class CampaignService {
       scheduledAt,
       headerMediaAssetId,
       wlhAttendeeFilters,
-      contactType
+      contactType,
     } = createCampaignWorkflowDto;
 
     // Create the campaign
@@ -87,32 +87,43 @@ export class CampaignService {
           ? new Date(scheduledAt)
           : undefined,
       headerMediaAssetId: headerMediaAssetId || undefined,
-      storedCampaignData: sendType === 'scheduled' ? {
-        contacts: selectedContacts,
-        bodyVariables: variableMappings?.map((mapping) => {
-          // For backward compatibility, if isDynamic is not set, use the old behavior
-          if (mapping.isDynamic === undefined) {
-            return mapping.contactField;
-          }
-          // For new dynamic/static structure
-          return mapping.isDynamic ? mapping.contactField : mapping.staticValue || '';
-        }) || [],
-        dynamicVariables: variableMappings?.map((mapping) => {
-          // For backward compatibility, if isDynamic is not set, assume dynamic
-          if (mapping.isDynamic === undefined) {
-            return true; // Old behavior assumed all variables were dynamic
-          }
-          return mapping.isDynamic;
-        }) || [],
-        fallbackValues: variableMappings?.map((mapping) => {
-          return mapping.fallbackValue || '';
-        }) || [],
-        language: 'en_US',
-        variableMappings: variableMappings || [],
-        headerMediaAssetId: headerMediaAssetId || undefined,
-      } : undefined,
+      storedCampaignData:
+        sendType === 'scheduled'
+          ? {
+              contacts: selectedContacts,
+              bodyVariables:
+                variableMappings?.map((mapping) => {
+                  // For backward compatibility, if isDynamic is not set, use the old behavior
+                  if (mapping.isDynamic === undefined) {
+                    return mapping.contactField;
+                  }
+                  // For new dynamic/static structure
+                  return mapping.isDynamic
+                    ? mapping.contactField
+                    : mapping.staticValue || '';
+                }) || [],
+              dynamicVariables:
+                variableMappings?.map((mapping) => {
+                  // For backward compatibility, if isDynamic is not set, assume dynamic
+                  if (mapping.isDynamic === undefined) {
+                    return true; // Old behavior assumed all variables were dynamic
+                  }
+                  return mapping.isDynamic;
+                }) || [],
+              fallbackValues:
+                variableMappings?.map((mapping) => {
+                  return mapping.fallbackValue || '';
+                }) || [],
+              language: 'en_US',
+              variableMappings: variableMappings || [],
+              headerMediaAssetId: headerMediaAssetId || undefined,
+            }
+          : undefined,
 
-      wlhAttendeeFilters: contactType === CampaignContactType.WLH ? wlhAttendeeFilters : undefined,
+      wlhAttendeeFilters:
+        contactType === CampaignContactType.WLH
+          ? wlhAttendeeFilters
+          : undefined,
       contactType,
     });
 
@@ -124,33 +135,45 @@ export class CampaignService {
         {
           campaignId: savedCampaign._id.toString(),
           contacts: selectedContacts,
-          bodyVariables: variableMappings?.map((mapping) => {
-            // For backward compatibility, if isDynamic is not set, use the old behavior
-            if (mapping.isDynamic === undefined) {
-              return mapping.contactField;
-            }
-            // For new dynamic/static structure
-            return mapping.isDynamic ? mapping.contactField : mapping.staticValue || '';
-          }) || [],
-          dynamicVariables: variableMappings?.map((mapping) => {
-            // For backward compatibility, if isDynamic is not set, assume dynamic
-            if (mapping.isDynamic === undefined) {
-              return true; // Old behavior assumed all variables were dynamic
-            }
-            return mapping.isDynamic;
-          }) || [],
-          fallbackValues: variableMappings?.map((mapping) => {
-            return mapping.fallbackValue || '';
-          }) || [],
+          bodyVariables:
+            variableMappings?.map((mapping) => {
+              // For backward compatibility, if isDynamic is not set, use the old behavior
+              if (mapping.isDynamic === undefined) {
+                return mapping.contactField;
+              }
+              // For new dynamic/static structure
+              return mapping.isDynamic
+                ? mapping.contactField
+                : mapping.staticValue || '';
+            }) || [],
+          dynamicVariables:
+            variableMappings?.map((mapping) => {
+              // For backward compatibility, if isDynamic is not set, assume dynamic
+              if (mapping.isDynamic === undefined) {
+                return true; // Old behavior assumed all variables were dynamic
+              }
+              return mapping.isDynamic;
+            }) || [],
+          fallbackValues:
+            variableMappings?.map((mapping) => {
+              return mapping.fallbackValue || '';
+            }) || [],
           language: 'en_US',
           headerMediaAssetId: headerMediaAssetId || undefined,
-          wlhAttendeeFilters: contactType === CampaignContactType.WLH ? wlhAttendeeFilters : undefined,
+          wlhAttendeeFilters:
+            contactType === CampaignContactType.WLH
+              ? wlhAttendeeFilters
+              : undefined,
           contactType,
         },
         adminId,
       ).catch((error) => {
         this.logger.error('Failed to execute campaign immediately:', error);
-        this.update(savedCampaign._id.toString(), { status: CampaignStatus.FAILED }, adminId);
+        this.update(
+          savedCampaign._id.toString(),
+          { status: CampaignStatus.FAILED },
+          adminId,
+        );
       });
     }
 
@@ -259,7 +282,9 @@ export class CampaignService {
     }
 
     // Calculate analytics at runtime from WABA messages
-    const analyticsData = await this.calculateCampaignAnalytics(campaign._id.toString());
+    const analyticsData = await this.calculateCampaignAnalytics(
+      campaign._id.toString(),
+    );
 
     // Update campaign with real-time analytics
     campaign.analyticsSummary = analyticsData;
@@ -382,8 +407,17 @@ export class CampaignService {
     executeCampaignDto: ExecuteCampaignDto,
     adminId: string,
   ): Promise<any> {
-    const { contactType, wlhAttendeeFilters, campaignId, contacts, bodyVariables: rawBodyVariables, dynamicVariables: rawDynamicVariables, fallbackValues: rawFallbackValues, headerMediaAssetId, language } =
-      executeCampaignDto;
+    const {
+      contactType,
+      wlhAttendeeFilters,
+      campaignId,
+      contacts,
+      bodyVariables: rawBodyVariables,
+      dynamicVariables: rawDynamicVariables,
+      fallbackValues: rawFallbackValues,
+      headerMediaAssetId,
+      language,
+    } = executeCampaignDto;
 
     // For scheduled campaigns, bodyVariables and dynamicVariables are already processed
     // For immediate campaigns, we need to process them
@@ -398,16 +432,17 @@ export class CampaignService {
       fallbackValues = rawFallbackValues || [];
     } else {
       // This is an immediate campaign - process the variables
-      const processedVariables = rawBodyVariables?.map((value, index) => {
-        const isDynamic = rawDynamicVariables?.[index] || false;
-        return {
-          value,
-          isDynamic,
-        };
-      }) || [];
+      const processedVariables =
+        rawBodyVariables?.map((value, index) => {
+          const isDynamic = rawDynamicVariables?.[index] || false;
+          return {
+            value,
+            isDynamic,
+          };
+        }) || [];
 
-      bodyVariables = processedVariables.map(v => v.value);
-      dynamicVariables = processedVariables.map(v => v.isDynamic);
+      bodyVariables = processedVariables.map((v) => v.value);
+      dynamicVariables = processedVariables.map((v) => v.isDynamic);
       fallbackValues = rawFallbackValues || [];
     }
 
@@ -421,10 +456,10 @@ export class CampaignService {
       throw new NotFoundException('Campaign not found');
     }
 
-
     if (campaign.status !== CampaignStatus.DRAFT) {
       throw new BadRequestException(
-        'Campaign can only be executed when in draft status');
+        'Campaign can only be executed when in draft status',
+      );
     }
 
     // Get project details for WhatsApp credentials
@@ -433,13 +468,11 @@ export class CampaignService {
       campaign.project,
     );
 
-
     if (!project) {
       throw new UnauthorizedException(
         'You do not have permission to access this project',
       );
     }
-
 
     // Check if WhatsApp credentials are configured
     if (!project.permanentAccessToken || !project.phoneNumberId) {
@@ -448,9 +481,12 @@ export class CampaignService {
       );
     }
 
-
     // Update campaign status to in-progress
-    await this.update(campaignId, { status: CampaignStatus.IN_PROGRESS }, adminId);
+    await this.update(
+      campaignId,
+      { status: CampaignStatus.IN_PROGRESS },
+      adminId,
+    );
 
     const results = {
       sent: 0,
@@ -460,60 +496,59 @@ export class CampaignService {
     };
     this.logger.log('contactType', contactType);
     // Send messages to each contact using the unified WhatsApp service method
-    if(contactType === CampaignContactType.WHATSAPP){
-
+    if (contactType === CampaignContactType.WHATSAPP) {
       const fetchedContacts = await this.contactsService.getContactsByIds(
         new Types.ObjectId(`${adminId}`),
-        contacts.map(contact => new Types.ObjectId(contact.contactId))
-      )
+        contacts.map((contact) => new Types.ObjectId(contact.contactId)),
+      );
 
-      
       for (const contact of fetchedContacts) {
         try {
           // Process variables with fallback values for this specific contact
-          const processedBodyVariables = bodyVariables.map((variable, index) => {
-            const isDynamic = dynamicVariables[index];
-            const fallbackValue = fallbackValues[index];
-  
-            if (isDynamic) {
-              // Extract field name from variable (e.g., "$firstName" -> "firstName")
-              const fieldName = variable.replace('$', '');
-              const contactValue = contact[fieldName];
-  
-              // Use contact value if available and not empty, otherwise use fallback
-              if (contactValue && contactValue.trim() !== '') {
-                return contactValue;
+          const processedBodyVariables = bodyVariables.map(
+            (variable, index) => {
+              const isDynamic = dynamicVariables[index];
+              const fallbackValue = fallbackValues[index];
+
+              if (isDynamic) {
+                // Extract field name from variable (e.g., "$firstName" -> "firstName")
+                const fieldName = variable.replace('$', '');
+                const contactValue = contact[fieldName];
+
+                // Use contact value if available and not empty, otherwise use fallback
+                if (contactValue && contactValue.trim() !== '') {
+                  return contactValue;
+                } else {
+                  return fallbackValue || variable;
+                }
               } else {
-                return fallbackValue || variable;
+                // Static variable, use as-is
+                return variable;
               }
-            } else {
-              // Static variable, use as-is
-              return variable;
-            }
-          });
-  
-          const messageResult = await this.whatsappService.sendSingleTemplateMessage(
-           {
-            adminId: new Types.ObjectId(`${adminId}`),
-            projectId: project._id.toString(),
-            recipientPhoneNumber: contact.phone,
-            templateName: campaign.messageTemplate.templateName,
-            bodyVariables: processedBodyVariables,
-            headerMediaAssetId,
-            language,
-            contactId: contact._id.toString(),
-            messageType: WabaMessageType.CAMPAIGN,
-            campaignId,
-           }
+            },
           );
-  
+
+          const messageResult =
+            await this.whatsappService.sendSingleTemplateMessage({
+              adminId: new Types.ObjectId(`${adminId}`),
+              projectId: project._id.toString(),
+              recipientPhoneNumber: contact.phone,
+              templateName: campaign.messageTemplate.templateName,
+              bodyVariables: processedBodyVariables,
+              headerMediaAssetId,
+              language,
+              contactId: contact._id.toString(),
+              messageType: WabaMessageType.CAMPAIGN,
+              campaignId,
+            });
+
           results.sent++;
           results.messageIds.push(messageResult.messages[0].id);
-  
+
           this.logger.log(
             `Message sent successfully to ${contact.phone}. Message ID: ${messageResult.messages[0].id}`,
           );
-  
+
           // Add a delay between messages to avoid rate limiting
           await new Promise((resolve) => setTimeout(resolve, 200));
         } catch (error) {
@@ -523,18 +558,14 @@ export class CampaignService {
             phoneNumber: contact.phone,
             error: error.response?.data?.error || error.message,
           });
-  
-  
-  
+
           this.logger.error(
             `Failed to send message to ${contact.phone} (Contact ID: ${contact._id.toString()})`,
             error.response?.data?.error,
           );
         }
       }
-    }
-    else {
-
+    } else {
       const webinarIds = wlhAttendeeFilters.filters.webinarIds;
       const tags = wlhAttendeeFilters.filters.tags;
       this.logger.log(`webinarIds: ${webinarIds}, tags: ${tags}`);
@@ -553,12 +584,12 @@ export class CampaignService {
           {
             filters: {
               ...(tags?.length > 0 && { tags: tags }),
-            }
-          }
+            },
+          },
         );
-        
+
         const webinarAttendees = attendees.result || [];
-        
+
         // Deduplicate attendees by phone number across multiple webinars
         for (const attendee of webinarAttendees) {
           if (!allAttendeeIds.has(attendee.phone)) {
@@ -567,57 +598,63 @@ export class CampaignService {
           }
         }
       }
-      
-      this.logger.log(`Total unique attendees from ${webinarIds.length} webinars: ${attendeeResults.length}`);
 
-
+      this.logger.log(
+        `Total unique attendees from ${webinarIds.length} webinars: ${attendeeResults.length}`,
+      );
 
       for (const contact of attendeeResults) {
         try {
           // Process variables with fallback values for this specific contact
-          const processedBodyVariables = bodyVariables.map((variable, index) => {
-            const isDynamic = dynamicVariables[index];
-            const fallbackValue = fallbackValues[index];
-  
-            if (isDynamic) {
-              // Extract field name from variable (e.g., "$firstName" -> "firstName")
-              const fieldName = variable.replace('$', '');
-              const contactValue = contact[fieldName];
-  
-              // Use contact value if available and not empty, otherwise use fallback
-              if (contactValue && (typeof contactValue === 'string' && contactValue.trim() !== '' || typeof contactValue === 'number')) {
-                return contactValue.toString();
+          const processedBodyVariables = bodyVariables.map(
+            (variable, index) => {
+              const isDynamic = dynamicVariables[index];
+              const fallbackValue = fallbackValues[index];
+
+              if (isDynamic) {
+                // Extract field name from variable (e.g., "$firstName" -> "firstName")
+                const fieldName = variable.replace('$', '');
+                const contactValue = contact[fieldName];
+
+                // Use contact value if available and not empty, otherwise use fallback
+                if (
+                  contactValue &&
+                  ((typeof contactValue === 'string' &&
+                    contactValue.trim() !== '') ||
+                    typeof contactValue === 'number')
+                ) {
+                  return contactValue.toString();
+                } else {
+                  return fallbackValue || variable;
+                }
               } else {
-                return fallbackValue || variable;
+                // Static variable, use as-is
+                return variable;
               }
-            } else {
-              // Static variable, use as-is
-              return variable;
-            }
-          });
-  
-          const messageResult = await this.whatsappService.sendSingleTemplateMessage(
-            {
-              adminId: new Types.ObjectId(`${adminId}`),
-            projectId: project._id.toString(),
-            recipientPhoneNumber: contact.phone,
-            templateName: campaign.messageTemplate.templateName,
-            bodyVariables: processedBodyVariables,
-            headerMediaAssetId,
-            language,
-            attendeeId: contact._id,
-            messageType: WabaMessageType.CAMPAIGN,
-            campaignId,
-            }
+            },
           );
-  
+
+          const messageResult =
+            await this.whatsappService.sendSingleTemplateMessage({
+              adminId: new Types.ObjectId(`${adminId}`),
+              projectId: project._id.toString(),
+              recipientPhoneNumber: contact.phone,
+              templateName: campaign.messageTemplate.templateName,
+              bodyVariables: processedBodyVariables,
+              headerMediaAssetId,
+              language,
+              attendeeId: contact._id,
+              messageType: WabaMessageType.CAMPAIGN,
+              campaignId,
+            });
+
           results.sent++;
           results.messageIds.push(messageResult.messages[0].id);
-  
+
           this.logger.log(
             `Message sent successfully to ${contact.phone}. Message ID: ${messageResult.messages[0].id}`,
           );
-  
+
           // Add a delay between messages to avoid rate limiting
           await new Promise((resolve) => setTimeout(resolve, 200));
         } catch (error) {
@@ -627,10 +664,7 @@ export class CampaignService {
             phoneNumber: contact?.phone,
             error: error.response?.data?.error || error.message,
           });
-  
 
-  
-  
           this.logger.error(
             `Failed to send message to ${contact.phone} (Contact ID: ${contact._id})`,
             error.response?.data?.error,
@@ -671,9 +705,11 @@ export class CampaignService {
       { name: templateName },
     );
 
-    const ourTemplate = templates.find((template: any) => template.name === templateName);
+    const ourTemplate = templates.find(
+      (template: any) => template.name === templateName,
+    );
 
-    if(!ourTemplate) {
+    if (!ourTemplate) {
       throw new NotFoundException(`Template '${templateName}' not found`);
     }
 
@@ -726,7 +762,6 @@ export class CampaignService {
       parameters: [headerParameter],
     };
   }
-
 
   /**
    * Process webhook payload for message status updates
@@ -808,7 +843,9 @@ export class CampaignService {
   private async calculateCampaignAnalytics(campaignId: string): Promise<any> {
     try {
       // Get message statistics from WABA messages
-      const messageStats = await this.wabaMessageService.getMessageStats(campaignId);
+      const messageStats = await this.wabaMessageService.getMessageStats({
+        campaignId: new Types.ObjectId(campaignId),
+      });
 
       // Calculate analytics based on message statuses
       const analyticsData = {
@@ -820,7 +857,10 @@ export class CampaignService {
         failed: messageStats.failed || 0,
       };
 
-      this.logger.log(`Calculated analytics for campaign ${campaignId}:`, analyticsData);
+      this.logger.log(
+        `Calculated analytics for campaign ${campaignId}:`,
+        analyticsData,
+      );
       return analyticsData;
     } catch (error) {
       this.logger.error(
@@ -888,8 +928,9 @@ export class CampaignService {
     const campaign = await this.findOne(campaignId, adminId);
     const messages =
       await this.wabaMessageService.getCampaignMessages(campaignId);
-    const messageStats =
-      await this.wabaMessageService.getMessageStats(campaignId);
+    const messageStats = await this.wabaMessageService.getMessageStats({
+      campaignId: new Types.ObjectId(campaignId),
+    });
 
     return {
       campaign: {
@@ -923,8 +964,11 @@ export class CampaignService {
     adminId: string,
   ): Promise<any> {
     const campaign = await this.findOne(campaignId, adminId);
-    const messages = await this.wabaMessageService.getCampaignMessages(campaignId);
-    const messageStats = await this.wabaMessageService.getMessageStats(campaignId);
+    const messages =
+      await this.wabaMessageService.getCampaignMessages(campaignId);
+    const messageStats = await this.wabaMessageService.getMessageStats({
+      campaignId: new Types.ObjectId(campaignId),
+    });
 
     // Format messages for CSV export
     const formattedMessages = messages.map((msg) => ({
@@ -961,11 +1005,15 @@ export class CampaignService {
   async processScheduledCampaigns(): Promise<void> {
     const scheduledCampaigns = await this.getScheduledCampaigns();
 
-    this.logger.log(`Found ${scheduledCampaigns.length} scheduled campaigns ready for execution`);
+    this.logger.log(
+      `Found ${scheduledCampaigns.length} scheduled campaigns ready for execution`,
+    );
 
     for (const campaign of scheduledCampaigns) {
       try {
-        this.logger.log(`Processing scheduled campaign: ${campaign._id} - ${campaign.name}`);
+        this.logger.log(
+          `Processing scheduled campaign: ${campaign._id} - ${campaign.name}`,
+        );
 
         // Prepare execution data from stored campaign data
         const executionData = await this.prepareCampaignExecutionData(campaign);
@@ -973,12 +1021,21 @@ export class CampaignService {
         // Execute the campaign
         await this.executeCampaign(executionData, campaign.adminId.toString());
 
-        this.logger.log(`Scheduled campaign ${campaign._id} executed successfully`);
+        this.logger.log(
+          `Scheduled campaign ${campaign._id} executed successfully`,
+        );
       } catch (error) {
-        this.logger.error(`Failed to execute scheduled campaign ${campaign._id}:`, error);
+        this.logger.error(
+          `Failed to execute scheduled campaign ${campaign._id}:`,
+          error,
+        );
 
         // Update campaign status to failed
-        await this.update(campaign._id.toString(), { status: CampaignStatus.FAILED }, campaign.adminId.toString());
+        await this.update(
+          campaign._id.toString(),
+          { status: CampaignStatus.FAILED },
+          campaign.adminId.toString(),
+        );
       }
     }
   }
@@ -986,12 +1043,24 @@ export class CampaignService {
   /**
    * Prepare campaign execution data from stored campaign data
    */
-  private async prepareCampaignExecutionData(campaign: any): Promise<ExecuteCampaignDto> {
+  private async prepareCampaignExecutionData(
+    campaign: any,
+  ): Promise<ExecuteCampaignDto> {
     if (!campaign.storedCampaignData) {
-      throw new Error(`Campaign ${campaign._id} does not have stored execution data`);
+      throw new Error(
+        `Campaign ${campaign._id} does not have stored execution data`,
+      );
     }
 
-    const { contacts, bodyVariables, dynamicVariables, fallbackValues, language, variableMappings, headerMediaAssetId } = campaign.storedCampaignData;
+    const {
+      contacts,
+      bodyVariables,
+      dynamicVariables,
+      fallbackValues,
+      language,
+      variableMappings,
+      headerMediaAssetId,
+    } = campaign.storedCampaignData;
 
     return {
       campaignId: campaign._id.toString(),
@@ -1009,31 +1078,48 @@ export class CampaignService {
   /**
    * Cancel a scheduled campaign
    */
-  async cancelScheduledCampaign(campaignId: string, adminId: string): Promise<Campaign> {
+  async cancelScheduledCampaign(
+    campaignId: string,
+    adminId: string,
+  ): Promise<Campaign> {
     const campaign = await this.findOne(campaignId, adminId);
 
     if (campaign.status !== CampaignStatus.DRAFT || !campaign.scheduledAt) {
-      throw new BadRequestException('Only scheduled draft campaigns can be cancelled');
+      throw new BadRequestException(
+        'Only scheduled draft campaigns can be cancelled',
+      );
     }
 
-    return this.update(campaignId, {
-      scheduledAt: null,
-      storedCampaignData: null,
-    }, adminId);
+    return this.update(
+      campaignId,
+      {
+        scheduledAt: null,
+        storedCampaignData: null,
+      },
+      adminId,
+    );
   }
 
   /**
    * Reschedule a campaign
    */
-  async rescheduleCampaign(campaignId: string, newScheduledAt: string, adminId: string): Promise<Campaign> {
+  async rescheduleCampaign(
+    campaignId: string,
+    newScheduledAt: string,
+    adminId: string,
+  ): Promise<Campaign> {
     const campaign = await this.findOne(campaignId, adminId);
 
     if (campaign.status !== CampaignStatus.DRAFT) {
       throw new BadRequestException('Only draft campaigns can be rescheduled');
     }
 
-    return this.update(campaignId, {
-      scheduledAt: new Date(newScheduledAt).toISOString()
-    }, adminId);
+    return this.update(
+      campaignId,
+      {
+        scheduledAt: new Date(newScheduledAt).toISOString(),
+      },
+      adminId,
+    );
   }
 }

@@ -72,6 +72,10 @@ export class CampaignPaginationQueryDto extends PaginationQueryDto {
 campaignId?: string;
 
 @IsOptional()
+@IsMongoId()
+apiCampaignId?: string;
+
+@IsOptional()
 @IsString()
 datePreset?: 'today' | 'yesterday' | 'lastWeek' | 'custom';
 
