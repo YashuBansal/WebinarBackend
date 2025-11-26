@@ -72,6 +72,7 @@ export class ProjectsController {
       page,
       limit,
       campaignId,
+      apiCampaignId,
       datePreset,
       startDate,
       endDate,
@@ -120,6 +121,9 @@ export class ProjectsController {
         ...(messageType && { messageType }),
         ...(mongoose.isValidObjectId(campaignId) && {
           campaignId: new Types.ObjectId(campaignId),
+        }),
+        ...(mongoose.isValidObjectId(apiCampaignId) && {
+          apiCampaignId: new Types.ObjectId(apiCampaignId),
         }),
         ...(meetingId && { meetingId }),
       },

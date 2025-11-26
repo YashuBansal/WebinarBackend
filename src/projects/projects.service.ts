@@ -36,6 +36,7 @@ export class ProjectsService {
       projectId?: Types.ObjectId;
       adminId: Types.ObjectId;
       campaignId?: Types.ObjectId;
+      apiCampaignId?: Types.ObjectId;
       messageType?: WabaMessageType;
       meetingId?: string;
     },
