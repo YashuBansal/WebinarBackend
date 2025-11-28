@@ -68,6 +68,9 @@ export class AttendeesModule {
         method: RequestMethod.GET,
       },
       { path: 'attendees/all', method: RequestMethod.DELETE },
+      { path: 'attendees/tag-by-filters', method: RequestMethod.PUT },
+      { path: 'attendees/tag-grouped', method: RequestMethod.PUT },
+      { path: 'attendees/advance-filters', method: RequestMethod.POST },
     );
 
     consumer
@@ -82,6 +85,7 @@ export class AttendeesModule {
       .exclude(
         { path: 'attendees/webinar', method: RequestMethod.GET },
         { path: 'attendees/grouped', method: RequestMethod.ALL },
+        { path: 'attendees/advance-filters', method: RequestMethod.POST },
       )
       .forRoutes(
         { path: 'attendees', method: RequestMethod.GET },

@@ -118,6 +118,40 @@ export class ExportEmployeeAssignmentDTO {
   fileName: string;
 }
 
+export class ApplyTagsToEmployeeAssignmentsDTO {
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AttendeesFilterDto)
+  filters: AttendeesFilterDto;
+
+  @IsOptional()
+  @IsString()
+  validCall?: string;
+
+  @IsOptional()
+  @IsString()
+  webinarId?: string;
+
+  @IsOptional()
+  @IsString()
+  validCallFlag?: string;
+
+  @IsEnum(AssignmentStatus, {
+    message: 'assignmentStatus must be a valid value',
+  })
+  assignmentStatus: AssignmentStatus;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => WebinarAttendeesSortObject)
+  sort?: WebinarAttendeesSortObject;
+
+  @IsString()
+  @IsNotEmpty()
+  tag: string;
+}
+
 export class RequestReAssignmentsDTO {
   @IsArray()
   @IsNotEmpty()

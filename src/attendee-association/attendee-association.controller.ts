@@ -12,7 +12,7 @@ import {
   AttendeeAssociationDto,
   UpdateAttendeeTagDto,
 } from './dto/attendee-association.dto';
-import { AdminId } from 'src/decorators/custom.decorator';
+import { AdminId, Role, Id } from 'src/decorators/custom.decorator';
 import { Types } from 'mongoose';
 
 @Controller('attendee-association')
@@ -59,6 +59,7 @@ export class AttendeeAssociationController {
     @Param('email') email: string,
     @Body() body: UpdateAttendeeTagDto,
     @AdminId() adminId: Types.ObjectId,
+    @Id() userId: string,
   ) {
     if (!email || !email.trim()) {
       throw new BadRequestException('Email is required.');
@@ -72,6 +73,7 @@ export class AttendeeAssociationController {
         adminId,
         body.tag,
         body.action,
+        userId,
       );
     return {
       success: true,

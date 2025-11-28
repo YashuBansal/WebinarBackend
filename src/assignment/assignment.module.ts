@@ -39,7 +39,7 @@ import { AttendeeAssociationModule } from 'src/attendee-association/attendee-ass
     EnrollmentsModule,
     AttendeeLogModule,
     forwardRef(() => WebinarAutoMessageModule),
-    AttendeeAssociationModule
+    AttendeeAssociationModule,
   ],
   providers: [AssignmentService],
   controllers: [AssignmentController],
@@ -58,15 +58,25 @@ export class AssignmentModule {
       },
     );
 
-    consumer.apply(GetAdminIdMiddleware).forRoutes({
-      path: 'assignment/data/:empId',
-      method: RequestMethod.POST,
-    });
+    consumer.apply(GetAdminIdMiddleware).forRoutes(
+      {
+        path: 'assignment/data/:empId',
+        method: RequestMethod.POST,
+      },
+      {
+        path: 'assignment/tag-employee-assignments/:empId',
+        method: RequestMethod.PUT,
+      },
+    );
 
     consumer
       .apply(AuthAdminTokenMiddleware, AuthActiveUserMiddleware)
       .exclude(
         { path: 'assignment/data/:empId', method: RequestMethod.POST },
+        {
+          path: 'assignment/tag-employee-assignments/:empId',
+          method: RequestMethod.PUT,
+        },
         {
           path: 'assignment/activityInactivity',
           method: RequestMethod.GET,

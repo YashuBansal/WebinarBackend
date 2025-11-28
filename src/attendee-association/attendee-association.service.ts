@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, PipelineStage, Types } from 'mongoose';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAssociation } from 'src/schemas/attendee-association.schema';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class AttendeeAssociationService {
@@ -13,6 +14,8 @@ export class AttendeeAssociationService {
     @InjectModel(AttendeeAssociation.name)
     private readonly attendeeAssociationModel: Model<AttendeeAssociation>,
     private readonly attendeeLogService: AttendeeLogService,
+    @Inject(forwardRef(() => UsersService))
+    private readonly userService: UsersService,
   ) {}
 
   async createAssociation(
@@ -47,6 +50,29 @@ export class AttendeeAssociationService {
       });
     }
     return updatedAssociation;
+  }
+
+  async createAttendeeLogForTagUpdate(
+    email: string,
+    adminId: Types.ObjectId,
+    id: string,
+    tag: string,
+    action: 'add' | 'remove',
+  ) {
+    const user = await this.userService.getUserById(id);
+    let userName = '';
+
+    if (user?.userName) {
+      userName = user.userName;
+    }
+
+    await this.attendeeLogService.createSingleAttendeeLog({
+      attendee: email,
+      item: '',
+      action: AttendeeAction.LEAD_TYPE,
+      details: `Tag <strong>${tag}</strong> ${action === 'add' ? 'added' : 'removed'} by <strong>${userName}</strong>`,
+      adminId: new Types.ObjectId(`${adminId}`),
+    });
   }
 
   async getAssociation(
@@ -199,26 +225,23 @@ export class AttendeeAssociationService {
           )
         : [];
 
-    const preparedPayloadMap = payload.reduce(
-      (acc, item) => {
-        const email = normalizeEmail(item.email);
-        const tags = normalizeTags(item.tags);
+    const preparedPayloadMap = payload.reduce((acc, item) => {
+      const email = normalizeEmail(item.email);
+      const tags = normalizeTags(item.tags);
 
-        if (!email || tags.length === 0) {
-          return acc;
-        }
-
-        if (!acc.has(email)) {
-          acc.set(email, new Set<string>());
-        }
-
-        const tagSet = acc.get(email);
-        tags.forEach((tag) => tagSet?.add(tag));
-
+      if (!email || tags.length === 0) {
         return acc;
-      },
-      new Map<string, Set<string>>(),
-    );
+      }
+
+      if (!acc.has(email)) {
+        acc.set(email, new Set<string>());
+      }
+
+      const tagSet = acc.get(email);
+      tags.forEach((tag) => tagSet?.add(tag));
+
+      return acc;
+    }, new Map<string, Set<string>>());
 
     const preparedPayloads = Array.from(preparedPayloadMap.entries()).map(
       ([email, tags]) => ({
@@ -309,10 +332,11 @@ export class AttendeeAssociationService {
     adminId: Types.ObjectId,
     tag: string,
     action: 'add' | 'remove',
+    userId: string,
   ): Promise<AttendeeAssociation | null> {
     try {
       const normalizedTag = tag?.toLowerCase().trim();
-      
+
       if (!normalizedTag) {
         throw new Error('Tag cannot be empty');
       }
@@ -332,6 +356,9 @@ export class AttendeeAssociationService {
             fullNames: [],
             phones: [],
           });
+
+
+          await this.createAttendeeLogForTagUpdate(email, adminId, userId, normalizedTag, action);
           return newAssociation;
         }
         // If action is 'remove' and association doesn't exist, return null
@@ -354,6 +381,7 @@ export class AttendeeAssociationService {
               },
               { new: true },
             );
+          await this.createAttendeeLogForTagUpdate(email, adminId, userId, normalizedTag, action);
           return updatedAssociation;
         }
         // Tag already exists, return current association
@@ -371,6 +399,7 @@ export class AttendeeAssociationService {
             },
             { new: true },
           );
+        await this.createAttendeeLogForTagUpdate(email, adminId, userId, normalizedTag, action);
         return updatedAssociation;
       }
 

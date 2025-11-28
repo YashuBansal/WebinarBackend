@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -47,9 +48,21 @@ import { CustomLeadTypeService } from 'src/custom-lead-type/custom-lead-type.ser
 import { WebinarParticipantDto } from 'src/webinar-participant/dto/webinar-participant.dto';
 import { WebinarParticipantService } from 'src/webinar-participant/webinar-participant.service';
 import { TagsService } from 'src/tags/tags.service';
+import {
+  AdvanceFilterDTO,
+  AdvanceFilterUnitDTO,
+  AdvanceFilterResponseType,
+} from './dto/advance-attendee-filters.dto';
+import {
+  AdvanceFilterFieldType,
+  AdvanceFilterLogicOperator,
+  AdvanceFilterMode,
+  AdvanceFilterOperator,
+} from 'src/schemas/advance-filter.schema';
 
 @Injectable()
 export class AttendeesService {
+  private readonly logger = new Logger(AttendeesService.name);
   constructor(
     @InjectModel(Attendee.name) private attendeeModel: Model<Attendee>,
     private readonly configService: ConfigService,
@@ -523,6 +536,10 @@ export class AttendeesService {
     adminId: Types.ObjectId,
     emails: string[],
     tag: string,
+    attributes?: {
+      isEmployee?: boolean;
+      employeeId?: string;
+    },
   ) {
     const session = await this.attendeeModel.startSession();
     try {
@@ -548,6 +565,48 @@ export class AttendeesService {
             adminId,
             currentSession,
           );
+
+        // 📝 Create attendee logs for tag application
+        if (uniqueEmails.length > 0 && tag) {
+          // Fetch admin/user to include userName in the log, if available
+          let userName = 'Admin';
+          try {
+            if (!attributes?.isEmployee) {
+              const adminUser = await this.userService.getUserById(
+                adminId.toString(),
+              );
+              if (adminUser?.userName) {
+                userName = adminUser.userName;
+              }
+            } else if (
+              attributes?.isEmployee &&
+              mongoose.isValidObjectId(attributes?.employeeId)
+            ) {
+              const employee = await this.userService.getUserById(
+                attributes?.employeeId,
+              );
+              if (employee?.userName) {
+                userName = employee.userName;
+              }
+            }
+          } catch (e) {
+            // If lookup fails, fall back to generic label
+            userName = 'Admin';
+          }
+
+          const logs = uniqueEmails.map((email) => ({
+            attendee: email,
+            action: AttendeeAction.TAG_APPLIED,
+            item: 'Tag',
+            details: `<span>Tag <strong>${tag}</strong> has been applied by <strong>${userName}</strong> to this attendee.</span>`,
+            adminId,
+          }));
+
+          await this.attendeeLogService.createAttendeeLogs(
+            logs,
+            currentSession,
+          );
+        }
       });
 
       return result;
@@ -557,6 +616,119 @@ export class AttendeesService {
       );
     } finally {
       session.endSession();
+    }
+  }
+
+  async applyTagsByFilters(
+    adminId: string,
+    webinarId: string,
+    isAttended: boolean,
+    filters: AttendeesFilterDto,
+    validCall?: string,
+    assignmentType?: string,
+    tag?: string,
+  ) {
+    try {
+      // Get all attendees matching the filters (using a very large limit to get all results)
+      const result = await this.getAttendees(
+        webinarId,
+        adminId,
+        isAttended,
+        1,
+        1000000, // Very large limit to get all matching attendees
+        {
+          filters,
+          validCall,
+          assignmentType,
+        },
+        false, // Don't use pagination
+      );
+
+      // Extract unique, non-empty emails from the results
+      const rawEmails = (result || [])
+        .map((attendee: any) => attendee?.email as string | undefined)
+        .filter(
+          (email): email is string =>
+            typeof email === 'string' && email.trim().length > 0,
+        );
+
+      const emails = Array.from(new Set<string>(rawEmails)) as string[];
+
+      if (emails.length === 0) {
+        return {
+          success: true,
+          message: 'No attendees found matching the filters.',
+          affectedCount: 0,
+        };
+      }
+
+      // Apply tags to all matching attendees
+      await this.updateAttendeeTags(new Types.ObjectId(adminId), emails, tag);
+
+      return {
+        success: true,
+        message: `Tag "${tag}" applied successfully to ${emails.length} attendee(s).`,
+        affectedCount: emails.length,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error?.message ||
+          'Failed to apply tags to filtered attendees. Please try again.',
+      );
+    }
+  }
+
+  async applyTagsToGroupedAttendees(
+    adminId: string,
+    filters: GroupedAttendeesFilterDto,
+    sort?: GroupedAttendeesSortObject,
+    tag?: string,
+  ) {
+    try {
+      const adminObjectId = new Types.ObjectId(adminId);
+
+      // Fetch all grouped attendees matching the filters (very high limit)
+      const result = await this.fetchGroupedAttendeesForExport(
+        adminObjectId,
+        1,
+        1000000,
+        filters,
+        sort,
+      );
+
+      const data = (result as any)?.data || result || [];
+
+      // Extract unique, non-empty emails from grouped attendees (_id is email)
+      const rawEmails = (data as any[])
+        .map((item) => item?._id as string | undefined)
+        .filter(
+          (email): email is string =>
+            typeof email === 'string' && email.trim().length > 0,
+        );
+
+      const emails = Array.from(new Set<string>(rawEmails)) as string[];
+
+      if (emails.length === 0) {
+        return {
+          success: true,
+          message: 'No attendees found matching the filters.',
+          affectedCount: 0,
+        };
+      }
+
+      // Apply tags to all matching attendees (reuses logging etc.)
+      await this.updateAttendeeTags(adminObjectId, emails, tag);
+
+      return {
+        success: true,
+        message: `Tag "${tag}" applied successfully to ${emails.length} attendee(s).`,
+        affectedCount: emails.length,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error?.message ||
+          'Failed to apply tags to grouped attendees. Please try again.',
+      );
     }
   }
 
@@ -813,8 +985,6 @@ export class AttendeesService {
     usePagination: boolean = true,
   ): Promise<any> {
     const skip = (page - 1) * limit;
-
-    console.log('obj in getAttendees', obj);
 
     const {
       filters,
@@ -2089,14 +2259,23 @@ export class AttendeesService {
         });
       }
     }
-
-    console.log(`${JSON.stringify(associationFilter)}`);
+    const createdAtFilter = {};
+    if (filters.createdAt) {
+      createdAtFilter['createdAt'] = {};
+      if (filters.createdAt.$gte) {
+        createdAtFilter['createdAt'].$gte = new Date(filters.createdAt.$gte);
+      }
+      if (filters.createdAt.$lte) {
+        createdAtFilter['createdAt'].$lte = new Date(filters.createdAt.$lte);
+      }
+    }
 
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
         $match: {
           adminId,
+          ...createdAtFilter,
           ...(filters.email && {
             email: { $regex: filters.email },
           }),
@@ -2656,8 +2835,6 @@ export class AttendeesService {
       }
     }
 
-    console.log(`${JSON.stringify(associationFilter)}`);
-
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -2813,7 +2990,7 @@ export class AttendeesService {
                         $and: [
                           { $eq: ['$adminId', adminId] },
                           { $eq: ['$email', '$$tempMail'] },
-                         ...associationFilter,
+                          ...associationFilter,
                         ],
                       },
                     },
@@ -3120,20 +3297,20 @@ export class AttendeesService {
             },
           ]),
 
-          {
-            $lookup: {
-              from: 'customleadtypes',
-              localField: 'lead.leadType',
-              foreignField: '_id',
-              as: 'leadTypeDetails',
-            }
-          },
-          {
-            $unwind: {
-              path: '$leadTypeDetails',
-              preserveNullAndEmptyArrays: true,
-            },
-          },
+      {
+        $lookup: {
+          from: 'customleadtypes',
+          localField: 'lead.leadType',
+          foreignField: '_id',
+          as: 'leadTypeDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$leadTypeDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
       {
         $project: {
           reminderLastStatus: 1,
@@ -3205,7 +3382,6 @@ export class AttendeesService {
     const total = countResult[0]?.total || 0;
     const totalPages = limit ? Math.ceil(total / limit) || 1 : 1;
     const pagination = { page, totalPages, total };
-    console.log(`${JSON.stringify(parsedData)}`);
     return { data: parsedData || [], pagination };
   }
 
@@ -3337,5 +3513,335 @@ export class AttendeesService {
     }
 
     return [];
+  }
+
+  private escapeRegex(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  processAdvanceFilters(filters: AdvanceFilterUnitDTO[]): Record<string, any> {
+    if (!filters || filters.length === 0) {
+      return {};
+    }
+
+    const andConditions: any[] = [];
+    const orConditions: any[] = [];
+
+    for (const filter of filters) {
+      const {
+        field,
+        operator,
+        mode,
+        value,
+        fieldType,
+        isMultiple,
+        logicOperator,
+      } = filter;
+
+      let queryFragment: Record<string, any> = {};
+      let processedValue: any[];
+
+      // ---------------------------------------------------------
+      // 1. DATA TYPE CONVERSION
+      // ---------------------------------------------------------
+      try {
+        if (fieldType === AdvanceFilterFieldType.MONGODB_ID) {
+          processedValue = value.map((v) => new Types.ObjectId(v));
+        } else if (fieldType === AdvanceFilterFieldType.NUMBER) {
+          processedValue = value.map((v) => Number(v));
+        } else if (fieldType === AdvanceFilterFieldType.BOOLEAN) {
+          // specific check for string "true", everything else is false
+          processedValue = value.map((v) => v.toLowerCase() === 'true');
+        } else if (fieldType === AdvanceFilterFieldType.DATE) {
+          processedValue = value.map((v) => new Date(v));
+        } else {
+          // Default to String
+          processedValue = value;
+        }
+      } catch (e) {
+        // Fallback: if conversion fails (e.g. invalid ObjectId), ignore this filter or throw
+        console.warn(`Filter conversion failed for field ${field}`, e);
+        continue;
+      }
+
+      // ---------------------------------------------------------
+      // 2. BUILD QUERY FRAGMENT
+      // ---------------------------------------------------------
+
+      // CASE A: EQUALITY (Works for all data types)
+      if (operator === AdvanceFilterOperator.EQUALS) {
+        if (mode === AdvanceFilterMode.INCLUDE) {
+          // Use $in for multiple, $eq for single
+          queryFragment = isMultiple
+            ? { [field]: { $in: processedValue } }
+            : { [field]: { $eq: processedValue[0] } };
+        } else {
+          // EXCLUDE: Use $nin for multiple, $ne for single
+          queryFragment = isMultiple
+            ? { [field]: { $nin: processedValue } }
+            : { [field]: { $ne: processedValue[0] } };
+        }
+      }
+
+      // CASE B: RANGE / COMPARISON (Numbers, Dates)
+      else if (
+        operator === AdvanceFilterOperator.GREATER_THAN_OR_EQUAL ||
+        operator === AdvanceFilterOperator.LESS_THAN_OR_EQUAL
+      ) {
+        // Range operators usually apply to a single threshold value.
+        const singleVal = processedValue[0];
+        const mongoOp =
+          operator === AdvanceFilterOperator.GREATER_THAN_OR_EQUAL
+            ? '$gte'
+            : '$lte';
+
+        const rangeQuery = { [mongoOp]: singleVal };
+
+        if (mode === AdvanceFilterMode.INCLUDE) {
+          queryFragment = { [field]: rangeQuery };
+        } else {
+          // EXCLUDE: Logic "NOT >= 10" (which effectively means < 10)
+          queryFragment = { [field]: { $not: rangeQuery } };
+        }
+      }
+
+      // CASE C: STRING PATTERN MATCHING (Strings only)
+      else if (
+        operator === AdvanceFilterOperator.CONTAINS ||
+        operator === AdvanceFilterOperator.STARTS_WITH ||
+        operator === AdvanceFilterOperator.ENDS_WITH
+      ) {
+        // Ensure we are working with string values for Regex
+        const rawString = String(value[0] || '');
+        const escapedString = this.escapeRegex(rawString);
+        let regexPattern = '';
+
+        switch (operator) {
+          case AdvanceFilterOperator.STARTS_WITH:
+            regexPattern = `^${escapedString}`;
+            break;
+          case AdvanceFilterOperator.ENDS_WITH:
+            regexPattern = `${escapedString}$`;
+            break;
+          case AdvanceFilterOperator.CONTAINS:
+            regexPattern = escapedString;
+            break;
+        }
+
+        const regexQuery = { $regex: regexPattern, $options: 'i' };
+
+        if (mode === AdvanceFilterMode.INCLUDE) {
+          queryFragment = { [field]: regexQuery };
+        } else {
+          queryFragment = { [field]: { $not: regexQuery } };
+        }
+      }
+
+      // ---------------------------------------------------------
+      // 3. LOGIC GROUPING (AND / OR)
+      // ---------------------------------------------------------
+      if (Object.keys(queryFragment).length > 0) {
+        if (logicOperator === AdvanceFilterLogicOperator.OR) {
+          orConditions.push(queryFragment);
+        } else {
+          andConditions.push(queryFragment);
+        }
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 4. ASSEMBLE FINAL OBJECT
+    // ---------------------------------------------------------
+    const matchStage: Record<string, any> = {
+      $or: [],
+    };
+
+    if (andConditions.length > 0) {
+      matchStage.$or.push({ $and: andConditions });
+    }
+
+    if (orConditions.length > 0) {
+      matchStage.$or.push({ $or: orConditions });
+    }
+
+    return matchStage;
+  }
+
+  async preParseFilterClasses(payload: AdvanceFilterDTO) {
+    const { units } = payload;
+
+    const initialUnits: AdvanceFilterUnitDTO[] = [];
+
+    for (const unit of units) {
+      const { field } = unit;
+
+      switch (field) {
+        case 'email':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'firstName':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'lastName':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'phone':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'timeInSession':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.NUMBER,
+          });
+          break;
+
+        case 'gender':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'location':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'assignedTo':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.MONGODB_ID,
+          });
+          break;
+
+        case 'status':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'isPulledback':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.BOOLEAN,
+          });
+          break;
+
+        case 'source':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        default:
+          break;
+      }
+    }
+
+    return {
+      initialMatch: this.processAdvanceFilters(initialUnits),
+    };
+  }
+
+  async fetchAttendeesByAdvanceFilters(
+    payload: AdvanceFilterDTO,
+    adminId: string,
+  ) {
+    try {
+      const {
+        responseType = AdvanceFilterResponseType.DATA,
+        webinarId,
+        isAttended,
+      } = payload;
+
+      // Validate adminId
+      if (!mongoose.isValidObjectId(adminId)) {
+        throw new BadRequestException('Invalid Admin ID');
+      }
+
+      const adminObjectId = new Types.ObjectId(adminId);
+
+      // Get filter conditions from advance filters
+      const { initialMatch } = await this.preParseFilterClasses(payload);
+
+      // Build base match stage with security filters
+      // Always include adminId and isDeleted filters for security
+      const securityFilters = {
+        adminId: adminObjectId,
+        isDeleted: { $ne: true },
+        webinar: new Types.ObjectId(webinarId),
+        isAttended,
+      };
+
+      const basePipeline: PipelineStage[] = [
+        {
+          $match: securityFilters,
+        },
+        {
+          $match: initialMatch,
+        },
+      ];
+      this.logger.log(`Base pipeline: ${JSON.stringify(basePipeline, null, 2)}`);
+
+      // Build count pipeline (always needed for accurate count)
+      const countPipeline: PipelineStage[] = [
+        ...basePipeline,
+        { $count: 'total' },
+      ];
+
+      // Get total count
+      const [countResult] = await this.attendeeModel
+        .aggregate(countPipeline)
+        .exec();
+      const totalCount = countResult?.total || 0;
+
+      // If only count is requested, return early
+      if (responseType === AdvanceFilterResponseType.COUNT) {
+        return {
+          data: [],
+          count: totalCount,
+          responseType,
+          message: 'Count fetched successfully',
+        };
+      }
+
+      // Execute data pipeline
+      const data = await this.attendeeModel.aggregate(basePipeline).exec();
+
+      return {
+        data,
+        count: totalCount,
+        responseType,
+        message: 'Data fetched successfully',
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      console.error('Error in fetchAttendeesByAdvanceFilters:', error);
+      throw new InternalServerErrorException(
+        'Failed to fetch attendees by advance filters',
+      );
+    }
   }
 }

@@ -17,6 +17,7 @@ import {
   RecordType,
 } from 'src/schemas/Assignments.schema';
 import {
+  ApplyTagsToEmployeeAssignmentsDTO,
   AssignmentDto,
   MoveToPullbacksDTO,
   ReAssignmentDTO,
@@ -525,6 +526,77 @@ export class AssignmentService {
     };
 
     return { pagination, result };
+  }
+
+  async applyTagsToEmployeeAssignments(
+    adminId: string,
+    employeeId: string,
+    body: ApplyTagsToEmployeeAssignmentsDTO,
+    isEmployee: boolean,
+  ) {
+    const page = 1;
+    const limit = 1000000;
+
+    const {
+      filters = {} as AttendeesFilterDto,
+      webinarId,
+      validCall,
+      validCallFlag,
+      assignmentStatus,
+      sort,
+      tag,
+    } = body;
+
+    const assignmentStatusToUse =
+      assignmentStatus || AssignmentStatus.ACTIVE;
+
+    const { result } = await this.getAssignments(
+      adminId,
+      employeeId,
+      page,
+      limit,
+      filters,
+      {
+        webinarId: webinarId || '',
+        validCall,
+        assignmentStatus: assignmentStatusToUse,
+        sort,
+        validCallFlag,
+      },
+    );
+
+    const rawEmails = (result || [])
+      .map((row: any) => row?.email as string | undefined)
+      .filter(
+        (email): email is string =>
+          typeof email === 'string' && email.trim().length > 0,
+      );
+
+    const emails = Array.from(new Set<string>(rawEmails)) as string[];
+
+    if (emails.length === 0) {
+      return {
+        success: true,
+        message: 'No attendees found matching the filters.',
+        affectedCount: 0,
+      };
+    }
+
+    await this.attendeeService.updateAttendeeTags(
+      new Types.ObjectId(adminId),
+      emails,
+      tag,
+      {
+        isEmployee,
+        employeeId: employeeId,
+      },
+    );
+
+    return {
+      success: true,
+      message: `Tag "${tag}" applied successfully to ${emails.length} attendee(s).`,
+      affectedCount: emails.length,
+    };
   }
 
   async addAssignment(data: AssignmentDto, adminId: string, employee: User) {

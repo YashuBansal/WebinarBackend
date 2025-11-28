@@ -379,6 +379,10 @@ export class GroupedAttendeesFilterDto {
   @IsArray()
   @IsString({ each: true })
   sources?: string[];
+
+  @IsOptional()
+  @IsObject()
+  createdAt?: RangeStringDto;
 }
 
 export enum SortOrder {
@@ -617,6 +621,47 @@ export class UpdateAttendeeTagDTO {
   @IsOptional()
   @IsMongoId()
   webinar: string;
+
+  @IsString()
+  @IsNotEmpty()
+  tag: string;
+}
+
+export class ApplyTagsByFiltersDTO {
+  @IsMongoId()
+  webinarId: string;
+
+  @IsBoolean()
+  isAttended: boolean;
+
+  @IsNotEmpty()
+  @ValidateNested()
+  @Type(() => AttendeesFilterDto)
+  filters: AttendeesFilterDto;
+
+  @IsOptional()
+  @IsString()
+  validCall?: string;
+
+  @IsOptional()
+  @IsString()
+  assignmentType?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  tag: string;
+}
+
+export class ApplyTagsToGroupedAttendeesDTO {
+  @IsNotEmpty()
+  @ValidateNested()
+  @Type(() => GroupedAttendeesFilterDto)
+  filters: GroupedAttendeesFilterDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GroupedAttendeesSortObject)
+  sort?: GroupedAttendeesSortObject;
 
   @IsString()
   @IsNotEmpty()
