@@ -1,16 +1,20 @@
+import './tracer';
+
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import * as express from 'express';
 import type { Request, Response, NextFunction } from 'express';
-import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { OtelLoggerService } from './logger/otel-logger.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  // Set Winston as the global logger
-  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
+  
+  // Set the OpenTelemetry logger as the global logger
+  const otelLogger = app.get(OtelLoggerService);
+  app.useLogger(otelLogger);
   
   app.enableCors({
     origin: (origin, callback) => {
@@ -71,10 +75,9 @@ async function bootstrap() {
 
   // Express-level fallback error handler so middleware errors never crash the app
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
     try {
       const message = err instanceof Error ? err.message : String(err);
-      logger.error(`Express error: ${message}`);
+      console.error(`Express error: ${message}`);
     } catch (_) {
       // ignore logger errors
     }
@@ -84,12 +87,10 @@ async function bootstrap() {
 
   // Process-level guards to prevent app crashes on unhandled errors
   process.on('unhandledRejection', (reason: unknown) => {
-    const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
-    logger.error(`Unhandled Rejection: ${String(reason)}`);
+    console.error(`Unhandled Rejection: ${String(reason)}`);
   });
   process.on('uncaughtException', (err: Error) => {
-    const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
-    logger.error(`Uncaught Exception: ${err.message}`, err.stack);
+    console.error(`Uncaught Exception: ${err.message}`, err.stack);
   });
 
   await app.listen(PORT);
