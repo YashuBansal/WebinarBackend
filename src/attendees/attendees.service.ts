@@ -3844,4 +3844,438 @@ export class AttendeesService {
       );
     }
   }
+
+
+
+  async fetchGroupedAttendeesv2(
+    adminId: Types.ObjectId,
+    page: number = 1,
+    limit: number = 10,
+    filters: GroupedAttendeesFilterDto = {},
+    sort: GroupedAttendeesSortObject = {
+      sortBy: GroupedAttendeesSortBy.EMAIL,
+      sortOrder: SortOrder.ASC,
+    },
+  ) {
+    const isLastFilters =
+      this.checkLength(filters.salesAssignedTo) ||
+      this.checkLength(filters.salesLastStatus) ||
+      this.checkLength(filters.reminderAssignedTo) ||
+      this.checkLength(filters.reminderLastStatus);
+
+    const parseNum = (val) => {
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string' && parseInt(val, 10) >= 0) {
+        return parseInt(val, 10);
+      }
+      return null;
+    };
+
+    const timeInSessionFilter = {};
+    const timeInSession = filters.timeInSession;
+
+    if (timeInSession) {
+      timeInSessionFilter['timeInSession'] = {};
+
+      if (timeInSession.$gte !== undefined) {
+        const gteValue = parseNum(timeInSession.$gte);
+        if (gteValue !== null) {
+          timeInSessionFilter['timeInSession'].$gte = gteValue;
+        }
+      }
+
+      if (timeInSession.$lte !== undefined) {
+        const lteValue = parseNum(timeInSession.$lte);
+        if (lteValue !== null) {
+          timeInSessionFilter['timeInSession'].$lte = lteValue;
+        }
+      }
+    }
+
+    const attendedWebinarCountFilter = {};
+    const attendedWebinarCount = filters.attendedWebinarCount;
+
+    if (attendedWebinarCount) {
+      attendedWebinarCountFilter['attendedWebinarCount'] = {};
+
+      if (attendedWebinarCount.$gte !== undefined) {
+        const gteValue = parseNum(attendedWebinarCount.$gte);
+        if (gteValue !== null) {
+          attendedWebinarCountFilter['attendedWebinarCount'].$gte = gteValue;
+        }
+      }
+
+      if (attendedWebinarCount.$lte !== undefined) {
+        const lteValue = parseNum(attendedWebinarCount.$lte);
+        if (lteValue !== null) {
+          attendedWebinarCountFilter['attendedWebinarCount'].$lte = lteValue;
+        }
+      }
+    }
+
+    const registeredWebinarCountFilter = {};
+    const registeredWebinarCount = filters.registeredWebinarCount;
+
+    if (registeredWebinarCount) {
+      registeredWebinarCountFilter['registeredWebinarCount'] = {};
+
+      if (registeredWebinarCount.$gte !== undefined) {
+        const gteValue = parseNum(registeredWebinarCount.$gte);
+        if (gteValue !== null) {
+          registeredWebinarCountFilter['registeredWebinarCount'].$gte =
+            gteValue;
+        }
+      }
+
+      if (registeredWebinarCount.$lte !== undefined) {
+        const lteValue = parseNum(registeredWebinarCount.$lte);
+        if (lteValue !== null) {
+          registeredWebinarCountFilter['registeredWebinarCount'].$lte =
+            lteValue;
+        }
+      }
+    }
+
+    const associationFilter = [];
+
+    if (Array.isArray(filters.leadType) && filters.leadType.length > 0) {
+      associationFilter.push({
+        $in: [
+          '$leadType',
+          filters.leadType.map((item) => new Types.ObjectId(item)),
+        ],
+      });
+    }
+
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const normalizedTags = filters.tags
+        .map((item) => item?.trim().toLowerCase())
+        .filter((item) => Boolean(item));
+
+      if (normalizedTags.length > 0) {
+        associationFilter.push({
+          $gt: [
+            {
+              $size: {
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
+              },
+            },
+            0,
+          ],
+        });
+      }
+    }
+    const createdAtFilter = {};
+    if (filters.createdAt) {
+      createdAtFilter['createdAt'] = {};
+      if (filters.createdAt.$gte) {
+        createdAtFilter['createdAt'].$gte = new Date(filters.createdAt.$gte);
+      }
+      if (filters.createdAt.$lte) {
+        createdAtFilter['createdAt'].$lte = new Date(filters.createdAt.$lte);
+      }
+    }
+
+    const basePipeline: PipelineStage[] = [
+      {
+        $match: {
+          adminId,
+          
+        },
+      },
+      {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+      {
+        $group: {
+          _id: '$email',
+          salesAssignedToList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $ne: ['$assignedTo', null] },
+                  ],
+                },
+                '$assignedTo',
+                '$$REMOVE',
+              ],
+            },
+          },
+          salesLastStatusList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $ne: ['$status', null] },
+                  ],
+                },
+                '$status',
+                '$$REMOVE',
+              ],
+            },
+          },
+          reminderAssignedToList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', false] },
+                    { $ne: ['$assignedTo', null] },
+                  ],
+                },
+                '$assignedTo',
+                '$$REMOVE',
+              ],
+            },
+          },
+          reminderLastStatusList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', false] },
+                    { $ne: ['$status', null] },
+                  ],
+                },
+                '$status',
+                '$$REMOVE',
+              ],
+            },
+          },
+          adminId: {
+            $first: '$adminId',
+          },
+          timeInSession: {
+            $sum: '$timeInSession',
+          },
+          attendeeId: {
+            $first: '$_id',
+          },
+          registeredWebinarCount: {
+            $sum: {
+              $cond: [{ $eq: ['$isAttended', false] }, 1, 0],
+            },
+          },
+          attendedWebinarCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $gt: ['$timeInSession', 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          locations: {
+            $addToSet: '$location',
+          },
+          sources: {
+            $addToSet: '$source',
+          },
+          phones: {
+            $addToSet: {
+              $cond: [
+                {
+                  $and: [{ $ne: ['$phone', null] }, { $ne: ['$phone', ''] }],
+                },
+                '$phone',
+                '$$REMOVE',
+              ],
+            },
+          },
+          fullNames: {
+            $addToSet: {
+              $trim: {
+                input: {
+                  $concat: [
+                    { $ifNull: ['$firstName', ''] },
+                    ' ',
+                    { $ifNull: ['$lastName', ''] },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+
+      {
+        $match: {
+          
+        },
+      },
+
+    ];
+
+    const countPipeline: PipelineStage[] = [
+      ...basePipeline,
+      { $count: 'total' },
+    ];
+
+    const mainPipeline: PipelineStage[] = [
+      ...basePipeline,
+      {
+        $lookup: {
+          from: 'attendeeassociations',
+          let: { tempMail: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$adminId', adminId] },
+                    { $eq: ['$email', '$$tempMail'] }, // Match email with attendee email
+                  ],
+                },
+              },
+            },
+          ],
+
+          as: 'lead',
+        },
+      },
+      {
+        $unwind: {
+          path: '$lead',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+          {
+            $addFields: {
+              salesAssignedTo: {
+                $first: '$salesAssignedToList',
+              },
+              salesLastStatus: {
+                $first: '$salesLastStatusList',
+              },
+              reminderAssignedTo: {
+                $first: '$reminderAssignedToList',
+              },
+              reminderLastStatus: {
+                $first: '$reminderLastStatusList',
+              },
+            },
+          },
+
+        {
+          $lookup: {
+            from: 'enrollments',
+            let: { tempMail: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      {
+                        $eq: ['$attendee', '$$tempMail'],
+                      },
+                      {
+                        $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                      },
+                    ],
+                  },
+                },
+              },
+              {
+                $group: {
+                  _id: {
+                    product: '$product',
+                    price: '$price',
+                  },
+                  count: {
+                    $sum: 1,
+                  },
+                },
+              },
+              {
+                $lookup: {
+                  from: 'products',
+                  localField: '_id.product',
+                  foreignField: '_id',
+                  as: 'product',
+                },
+              },
+              {
+                $unwind: {
+                  path: '$product',
+                  preserveNullAndEmptyArrays: true,
+                },
+              },
+              {
+                $addFields: {
+                  label: {
+                    $concat: [
+                      '$product.name',
+                      ' (',
+                      { $toString: '$count' },
+                      ') - ',
+                      { $toString: '$_id.price' },
+                    ],
+                  },
+                },
+              },
+              {
+                $group: {
+                  _id: null,
+                  labels: { $push: '$label' },
+                },
+              },
+              {
+                $project: {
+                  _id: 0,
+                  labels: 1,
+                },
+              },
+            ],
+            as: 'enrollments',
+          },
+        },
+        {
+          $unwind: {
+            path: '$enrollments',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+      {
+        $project: {
+          reminderLastStatus: 1,
+          enrollments: '$enrollments.labels',
+          salesLastStatus: 1,
+          reminderAssignedTo: 1,
+          salesAssignedTo: 1,
+          tags: '$lead.tags',
+          leadType: '$lead.leadType',
+          adminId: 1,
+          timeInSession: 1,
+          attendeeId: 1,
+          attendedWebinarCount: 1,
+          registeredWebinarCount: 1,
+          locations: 1,
+          sources: 1,
+          phones: 1,
+          fullNames: {
+            $filter: {
+              input: '$fullNames',
+              as: 'name',
+              cond: { $ne: ['$$name', ''] },
+            },
+          },
+        },
+      },
+    ];
+
+    const [countResult, mainResult] = await Promise.all([
+      this.attendeeModel.aggregate(countPipeline).exec(),
+      this.attendeeModel.aggregate(mainPipeline).exec(),
+    ]);
+  }
 }
