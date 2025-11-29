@@ -825,14 +825,22 @@ export class WhatsappService {
 
     if (!account) {
       throw new UnauthorizedException(
-        'You do not have permission to access this project.',
+        {
+          source: 'app',
+          message: 'You do not have permission to access this project.',
+        } as any,
       );
     }
 
     // Check if WhatsApp credentials are configured
     if (!account.permanentAccessToken || !account.wabaId) {
       throw new NotFoundException(
-        'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
+        {
+          source: 'app',
+          message:
+            'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
+          code: 'WABA_NOT_CONFIGURED',
+        } as any,
       );
     }
 
@@ -859,9 +867,11 @@ export class WhatsappService {
           String(createTemplateDto.name).toLowerCase(),
       );
       if (hasDuplicate) {
-        throw new BadRequestException(
-          'A template with the same name already exists.',
-        );
+        throw new BadRequestException({
+          source: 'app',
+          message: 'A template with the same name already exists.',
+          code: 'TEMPLATE_NAME_DUPLICATE',
+        } as any);
       }
     } catch (err) {
       if (err instanceof BadRequestException) {
@@ -883,9 +893,11 @@ export class WhatsappService {
       (c) => c.type === 'BODY',
     );
     if (!bodyComponent) {
-      throw new InternalServerErrorException(
-        'BODY component is required for all templates',
-      );
+      throw new InternalServerErrorException({
+        source: 'app',
+        message: 'BODY component is required for all templates',
+        code: 'BODY_COMPONENT_REQUIRED',
+      } as any);
     }
 
     // Process components to handle header_handle properly
@@ -914,9 +926,12 @@ export class WhatsappService {
           );
 
           if (validHandles.length === 0) {
-            throw new BadRequestException(
-              'Invalid header_handle: must contain at least one valid media handle',
-            );
+            throw new BadRequestException({
+              source: 'app',
+              message:
+                'Invalid header_handle: must contain at least one valid media handle',
+              code: 'INVALID_HEADER_HANDLE',
+            } as any);
           }
 
           // Handle generic media cases
@@ -1003,34 +1018,54 @@ export class WhatsappService {
       );
       return response.data;
     } catch (error) {
-      console.log('error', error.response?.data);
       const axiosError = error as AxiosError;
+      const metaData: any = axiosError.response?.data;
+
       this.logger.error(`Failed to create template for WABA ${wabaId}`, {
         status: axiosError.response?.status,
-        data: axiosError.response?.data,
+        data: metaData,
         message: axiosError.message,
       });
 
-      // Provide more specific error messages
+      const metaMessage =
+        metaData?.error?.message ||
+        (typeof metaData === 'string' ? metaData : undefined);
+      const metaCode = metaData?.error?.code ?? metaData?.error?.error_subcode;
+
+      // Provide more specific error messages while clearly tagging Meta as the source
       if (axiosError.response?.status === 401) {
-        throw new UnauthorizedException(
-          'Invalid WhatsApp access token. Please reconfigure your WhatsApp Business Account.',
-        );
+        throw new UnauthorizedException({
+          source: 'meta',
+          message:
+            'Invalid WhatsApp access token. Please reconfigure your WhatsApp Business Account.',
+          code: metaCode ?? 401,
+          details: metaData,
+        } as any);
       } else if (axiosError.response?.status === 403) {
-        throw new ForbiddenException(
-          'Access denied. Please check your WhatsApp Business Account permissions.',
-        );
+        throw new ForbiddenException({
+          source: 'meta',
+          message:
+            'Access denied. Please check your WhatsApp Business Account permissions.',
+          code: metaCode ?? 403,
+          details: metaData,
+        } as any);
       } else if (axiosError.response?.status === 400) {
-        const errorMessage =
-          axiosError.response?.data || 'Invalid template data';
-        throw new InternalServerErrorException(
-          `Template validation failed: ${errorMessage}`,
-        );
+        throw new BadRequestException({
+          source: 'meta',
+          message:
+            metaMessage ||
+            'Template validation failed with Meta. Please review your template content.',
+          code: metaCode ?? 400,
+          details: metaData,
+        } as any);
       }
 
-      throw new InternalServerErrorException(
-        axiosError.response?.data || 'Could not create template.',
-      );
+      throw new InternalServerErrorException({
+        source: 'meta',
+        message: 'Could not create template with Meta.',
+        code: metaCode ?? axiosError.response?.status ?? 500,
+        details: metaData,
+      } as any);
     }
   }
 
