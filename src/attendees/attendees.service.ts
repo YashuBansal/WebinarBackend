@@ -3793,6 +3793,9 @@ export class AttendeesService {
         isAttended,
       };
 
+      this.logger.log(`Security filters: ${JSON.stringify(securityFilters, null, 2)}`);
+      this.logger.log(`Initial match: ${JSON.stringify(initialMatch, null, 2)}`);
+
       const basePipeline: PipelineStage[] = [
         {
           $match: securityFilters,

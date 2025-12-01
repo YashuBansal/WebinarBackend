@@ -415,4 +415,115 @@ export class WabaMessageService {
       };
     });
   }
+
+  async getAnalyticsSummary(options: {
+    adminId?: string;
+    startDate?: string;
+    endDate?: string;
+    projectId?: string;
+  }): Promise<{
+    totalMessages: number;
+    pending: number;
+    sent: number;
+    delivered: number;
+    read: number;
+    failed: number;
+    dateRange: { start: string; end: string };
+  }> {
+    const { adminId, startDate, endDate, projectId } = options;
+
+    const baseMatch: any = {
+      isDeleted: false,
+    };
+
+    if (adminId && mongoose.Types.ObjectId.isValid(adminId)) {
+      baseMatch.adminId = new Types.ObjectId(adminId);
+    }
+
+    if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+      baseMatch.projectId = new Types.ObjectId(projectId);
+    }
+
+    let rangeStart: Date;
+    let rangeEnd: Date;
+
+    if (startDate && endDate) {
+      // Treat startDate and endDate as inclusive day boundaries
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      // start at beginning of start day
+      rangeStart = new Date(start);
+      rangeStart.setHours(0, 0, 0, 0);
+
+      // end is exclusive: start of the day AFTER endDate
+      const endDay = new Date(end);
+      endDay.setHours(0, 0, 0, 0);
+      endDay.setDate(endDay.getDate() + 1);
+      rangeEnd = endDay;
+    } else {
+      // No date filter: all-time until now
+      rangeStart = new Date(0);
+      rangeEnd = new Date();
+    }
+
+    const matchStage: any = {
+      ...baseMatch,
+    };
+
+    // Only apply createdAt filter if a specific range is provided
+    if (startDate && endDate) {
+      matchStage.createdAt = { $gte: rangeStart, $lt: rangeEnd };
+    }
+
+    const result = await this.wabaMessageModel.aggregate([
+      { $match: matchStage },
+      {
+        $group: {
+          _id: null,
+          totalMessages: { $sum: 1 },
+          pending: {
+            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
+          },
+          sent: {
+            $sum: { $cond: ['$sentAt', 1, 0] },
+          },
+          delivered: {
+            $sum: { $cond: ['$deliveredAt', 1, 0] },
+          },
+          read: {
+            $sum: { $cond: ['$readAt', 1, 0] },
+          },
+          failed: {
+            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
+          },
+        },
+      },
+    ]);
+
+    const summary =
+      result && result.length > 0
+        ? result[0]
+        : {
+            totalMessages: 0,
+            pending: 0,
+            sent: 0,
+            delivered: 0,
+            read: 0,
+            failed: 0,
+          };
+
+    return {
+      totalMessages: summary.totalMessages,
+      pending: summary.pending,
+      sent: summary.sent,
+      delivered: summary.delivered,
+      read: summary.read,
+      failed: summary.failed,
+      dateRange: {
+        start: rangeStart.toISOString(),
+        end: rangeEnd.toISOString(),
+      },
+    };
+  }
 }

@@ -25,6 +25,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { ContactsService } from 'src/contacts/contacts.service';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
+import { AdvanceFilterResponseType } from 'src/attendees/dto/advance-attendee-filters.dto';
 
 @Injectable()
 export class CampaignService {
@@ -38,6 +39,16 @@ export class CampaignService {
     private readonly attendeesService: AttendeesService,
     private readonly contactsService: ContactsService,
   ) {}
+
+  /**
+   * Validate that a scheduled time is in the future
+   */
+  private validateScheduledTime(scheduledAt: Date) {
+    const now = new Date();
+    if (scheduledAt <= now) {
+      throw new BadRequestException('Scheduled time must be in the future.');
+    }
+  }
 
   async create(
     createCampaignDto: CreateCampaignDto,
@@ -84,7 +95,11 @@ export class CampaignService {
       status: CampaignStatus.DRAFT,
       scheduledAt:
         sendType === 'scheduled' && scheduledAt
-          ? new Date(scheduledAt)
+          ? (() => {
+              const scheduledDate = new Date(scheduledAt);
+              this.validateScheduledTime(scheduledDate);
+              return scheduledDate;
+            })()
           : undefined,
       headerMediaAssetId: headerMediaAssetId || undefined,
       storedCampaignData:
@@ -567,37 +582,26 @@ export class CampaignService {
       }
     } else {
       const webinarIds = wlhAttendeeFilters.filters.webinarIds;
-      const tags = wlhAttendeeFilters.filters.tags;
-      this.logger.log(`webinarIds: ${webinarIds}, tags: ${tags}`);
+      const conditions = wlhAttendeeFilters.filters.conditions;
+      const isAttended = wlhAttendeeFilters.isAttended;
+      const responseType = AdvanceFilterResponseType.DATA;
+      this.logger.log(
+        `webinarIds: ${webinarIds}, conditions: ${JSON.stringify(conditions, null, 2)}`,
+      );
 
-      // Handle multiple webinars - get attendees from all specified webinars
-      let attendeeResults: any[] = [];
-      const allAttendeeIds = new Set<string>(); // Use Set to deduplicate by phone number
-
-      for (const webinarId of webinarIds) {
-        const attendees = await this.attendeesService.getAttendees(
-          webinarId,
-          adminId,
-          false,
-          0,
-          0,
+      // Fetch attendees using advance filters
+      const advanceResult =
+        await this.attendeesService.fetchAttendeesByAdvanceFilters(
           {
-            filters: {
-              ...(tags?.length > 0 && { tags: tags }),
-            },
+            isAttended: isAttended,
+            responseType: responseType,
+            units: conditions,
+            webinarId: webinarIds[0],
           },
+          adminId,
         );
 
-        const webinarAttendees = attendees.result || [];
-
-        // Deduplicate attendees by phone number across multiple webinars
-        for (const attendee of webinarAttendees) {
-          if (!allAttendeeIds.has(attendee.phone)) {
-            allAttendeeIds.add(attendee.phone);
-            attendeeResults.push(attendee);
-          }
-        }
-      }
+      const attendeeResults = advanceResult.data || [];
 
       this.logger.log(
         `Total unique attendees from ${webinarIds.length} webinars: ${attendeeResults.length}`,
@@ -1114,10 +1118,13 @@ export class CampaignService {
       throw new BadRequestException('Only draft campaigns can be rescheduled');
     }
 
+    const newDate = new Date(newScheduledAt);
+    this.validateScheduledTime(newDate);
+
     return this.update(
       campaignId,
       {
-        scheduledAt: new Date(newScheduledAt).toISOString(),
+        scheduledAt: newDate.toISOString(),
       },
       adminId,
     );
