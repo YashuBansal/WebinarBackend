@@ -87,7 +87,7 @@ export class ProfileService {
     try {
       const response = await this.axiosInstance.get(url, { 
         params,
-        timeout: 15000,
+        timeout: 5000,
       });
 
       this.logger.log(

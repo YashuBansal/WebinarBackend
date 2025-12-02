@@ -66,15 +66,55 @@ import { WebinarAutoMessageModule } from './webinar-auto-message/webinar-auto-me
 import { ZoomEventModule } from './zoom/zoom-event/zoom-event.module';
 import { ConfiguredTemplatesModule } from './configured-templates/configured-templates.module';
 import { MeetingEventConfigModule } from './meeting-event-config/meeting-event-config.module';
+import { WinstonModule } from 'nest-winston';
 import { WebinarWebhookModule } from './webinar-webhook/webinar-webhook.module';
+import * as winston from 'winston';
+import 'winston-daily-rotate-file';
 import { HealthModule } from './health/health.module';
-import { OtelLoggerService } from './logger/otel-logger.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       load: [configurations],
       isGlobal: true,
+    }),
+    WinstonModule.forRoot({
+      transports: [
+        // Console transport for development
+        new winston.transports.Console({
+          format: winston.format.combine(
+            winston.format.colorize(),
+            winston.format.timestamp(),
+            winston.format.printf(({ timestamp, level, message, context }) => {
+              return `${timestamp} [${context}] ${level}: ${message}`;
+            }),
+          ),
+        }),
+        // Daily rotate file transport for all logs
+        new winston.transports.DailyRotateFile({
+          filename: 'logs/application-%DATE%.log',
+          datePattern: 'YYYY-MM-DD',
+          maxFiles: '14d',
+          zippedArchive: true,
+          format: winston.format.combine(
+            winston.format.timestamp(),
+            winston.format.json(),
+          ),
+          level: 'info',
+        }),
+        // Daily rotate file transport for error logs
+        new winston.transports.DailyRotateFile({
+          filename: 'logs/error-%DATE%.log',
+          datePattern: 'YYYY-MM-DD',
+          maxFiles: '14d',
+          zippedArchive: true,
+          format: winston.format.combine(
+            winston.format.timestamp(),
+            winston.format.json(),
+          ),
+          level: 'error',
+        }),
+      ],
     }),
     MongooseModule.forRoot(process.env.MONGO_URI),
     ServeStaticModule.forRoot({
@@ -161,7 +201,7 @@ import { OtelLoggerService } from './logger/otel-logger.service';
     WebinarWebhookModule,
   ],
   controllers: [AppController],
-  providers: [AppService, CalendarService, FileStorageService, OtelLoggerService],
+  providers: [AppService, CalendarService, FileStorageService],
 })
 export class AppModule {
   configure(consumer: MiddlewareConsumer) {

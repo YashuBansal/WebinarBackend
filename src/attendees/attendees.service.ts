@@ -3800,6 +3800,7 @@ export class AttendeesService {
         {
           $match: securityFilters,
         },
+        
         {
           $match: initialMatch,
         },
