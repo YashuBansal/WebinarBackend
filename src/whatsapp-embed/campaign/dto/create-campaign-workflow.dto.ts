@@ -12,6 +12,12 @@ import {
   IsMongoId,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+  AdvanceFilterFieldType,
+  AdvanceFilterLogicOperator,
+  AdvanceFilterMode,
+  AdvanceFilterOperator,
+} from 'src/schemas/advance-filter.schema';
 
 export class MessageTemplateDto {
   @IsString()
@@ -55,26 +61,55 @@ export class ContactSelectionDto {
   phoneNumber: string;
 }
 
-export class WlhAttendeeFiltersFiltersDto {
+export class WlhFilterConditionDto {
+  @IsEnum(AdvanceFilterMode)
+  mode: AdvanceFilterMode;
+
+  // Keep field flexible – backend maps it using advance-filter schema config
+  @IsString()
+  field: string;
+
+  @IsEnum(AdvanceFilterOperator)
+  operator: AdvanceFilterOperator;
+
+  @IsArray()
+  @IsString({ each: true })
+  value: string[];
+
+  @IsEnum(AdvanceFilterLogicOperator)
+  logicOperator: AdvanceFilterLogicOperator;
+
+  @IsEnum(AdvanceFilterFieldType)
+  fieldType: AdvanceFilterFieldType;
+
+  @IsBoolean()
+  isMultiple: boolean;
+}
+
+export class WlhFiltersDto {
   @IsArray()
   @IsMongoId({ each: true })
   webinarIds: string[];
 
   @IsArray()
-  @IsString({ each: true })
-  tags: string[];
+  @ValidateNested({ each: true })
+  @Type(() => WlhFilterConditionDto)
+  conditions: WlhFilterConditionDto[];
 }
 
 export class WlhAttendeeFiltersDto {
-  
   @IsObject()
   @ValidateNested()
-  @Type(() => WlhAttendeeFiltersFiltersDto)
-  filters: WlhAttendeeFiltersFiltersDto;
+  @Type(() => WlhFiltersDto)
+  filters: WlhFiltersDto;
 
   @IsNumber()
   contactCount: number;
-  
+
+  // Attendance segment (sales / reminder)
+  @IsOptional()
+  @IsBoolean()
+  isAttended?: boolean;
 }
 
 export class CreateCampaignWorkflowDto {

@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -47,9 +48,21 @@ import { CustomLeadTypeService } from 'src/custom-lead-type/custom-lead-type.ser
 import { WebinarParticipantDto } from 'src/webinar-participant/dto/webinar-participant.dto';
 import { WebinarParticipantService } from 'src/webinar-participant/webinar-participant.service';
 import { TagsService } from 'src/tags/tags.service';
+import {
+  AdvanceFilterDTO,
+  AdvanceFilterUnitDTO,
+  AdvanceFilterResponseType,
+} from './dto/advance-attendee-filters.dto';
+import {
+  AdvanceFilterFieldType,
+  AdvanceFilterLogicOperator,
+  AdvanceFilterMode,
+  AdvanceFilterOperator,
+} from 'src/schemas/advance-filter.schema';
 
 @Injectable()
 export class AttendeesService {
+  private readonly logger = new Logger(AttendeesService.name);
   constructor(
     @InjectModel(Attendee.name) private attendeeModel: Model<Attendee>,
     private readonly configService: ConfigService,
@@ -73,37 +86,39 @@ export class AttendeesService {
     private readonly tagService: TagsService,
   ) {}
 
-
-  async getAttendeesCount(webinarId:Types.ObjectId, tags: string[], adminId: Types.ObjectId): Promise<number> {
-    const attendees = await this.attendeeModel.
-    countDocuments({
+  async getAttendeesCount(
+    webinarId: Types.ObjectId,
+    tags: string[],
+    adminId: Types.ObjectId,
+  ): Promise<number> {
+    const attendees = await this.attendeeModel.countDocuments({
       webinar: webinarId,
       adminId: adminId,
       ...(tags?.length > 0 && { tags: { $in: tags } }),
       isAttended: false,
-    })
-    return attendees
+    });
+    return attendees;
   }
 
-  async getAttendeesCountMultipleWebinars(webinarIds: Types.ObjectId[], tags: string[], adminId: Types.ObjectId): Promise<number> {
-    
-    console.log(webinarIds, tags, adminId);
-    
-    // Build the query object
-    const query: any = {
+  async getAttendeesCountMultipleWebinars(
+    webinarIds: Types.ObjectId[],
+    adminId: Types.ObjectId,
+    advancedQuery?: Record<string, any> | null,
+  ): Promise<number> {
+    const baseQuery: any = {
       webinar: { $in: webinarIds },
       adminId: adminId,
       isAttended: false,
+      isDeleted: { $ne: true },
     };
-    
-    // If tags are provided, filter attendees that have ANY of these tags
-    // MongoDB's $in with array fields checks if the array contains any of the specified values
-    if (tags?.length > 0) {
-      query.tags = { $in: tags };
-    }
-    
-    const attendees = await this.attendeeModel.countDocuments(query);
-    return attendees
+
+    const finalQuery =
+      advancedQuery && Object.keys(advancedQuery).length > 0
+        ? { $and: [baseQuery, advancedQuery] }
+        : baseQuery;
+
+    const attendees = await this.attendeeModel.countDocuments(finalQuery);
+    return attendees;
   }
 
   async addAttendees(attendees: [PreWebinarPostAttendeeDTO]): Promise<any> {
@@ -189,26 +204,11 @@ export class AttendeesService {
         );
 
         attendeesForUpdate = uniquePrevAttendeesToUpdate.map((attendee) => {
-          let tags = '';
-          if (typeof attendee.tags === 'string') {
-            const tagArray = Array.from(
-              new Set(
-                attendee.tags
-                  .split(',')
-                  .map((tag) => tag.toLowerCase().trim())
-                  .filter(Boolean),
-              ),
-            );
-
-            tags = tagArray.join(',');
-          }
-
           const obj = {
             ...attendee,
             phone: attendee.phone || prevAttendeesMap.get(attendee.email).phone,
             attendeeId: prevAttendeesMap.get(attendee.email)
               ._id as Types.ObjectId,
-            tags,
           };
           return obj;
         });
@@ -233,7 +233,6 @@ export class AttendeesService {
         let location = attendee.location || null;
         let source = attendee.source || null;
         let gender = attendee.gender || null;
-        let tags = attendee.tags || '';
         if (similarPreWebinarAttendeesMap.has(attendee.email)) {
           const preWebinarAttendee = similarPreWebinarAttendeesMap.get(
             attendee.email,
@@ -241,13 +240,6 @@ export class AttendeesService {
           location = location || preWebinarAttendee.location || null;
           source = source || preWebinarAttendee.source || null;
           gender = gender || preWebinarAttendee.gender || null;
-          const preWebinarTags = Array.isArray(preWebinarAttendee.tags)
-            ? preWebinarAttendee.tags
-            : [];
-          const newTags = tags.split(',').map((tag) => tag.trim());
-          tags = Array.from(new Set([...preWebinarTags, ...newTags]))
-            .filter((tag) => tag.trim() !== '')
-            .join(',');
         }
 
         return {
@@ -255,39 +247,8 @@ export class AttendeesService {
           location,
           source,
           gender,
-          tags,
         };
       });
-      console.log(similarPreWebinarAttendeesMap);
-
-      attendeesForUpdate = attendeesForUpdate.map((attendee) => {
-        let tags = attendee.tags || '';
-        console.log(
-          similarPreWebinarAttendeesMap.has(attendee.email),
-          attendee.tags,
-        );
-        if (similarPreWebinarAttendeesMap.has(attendee.email)) {
-          const preWebinarAttendee = similarPreWebinarAttendeesMap.get(
-            attendee.email,
-          );
-          const preWebinarTags = Array.isArray(preWebinarAttendee.tags)
-            ? preWebinarAttendee.tags
-            : [];
-          const newTags = tags.split(',').map((tag) => tag.trim());
-          console.log(preWebinarTags, newTags);
-
-          tags = Array.from(new Set([...preWebinarTags, ...newTags]))
-            .filter((tag) => tag.trim() !== '')
-            .join(',');
-        }
-
-        return {
-          ...attendee,
-          tags,
-        };
-      });
-
-      // console.log('atendd',attendeesForUpdate)
     }
 
     const allLastNamesBlank = tempAttendees.every(
@@ -350,6 +311,11 @@ export class AttendeesService {
       }));
     }
 
+    const tagsPayload = attendees.map((a) => ({
+      email: a.email,
+      tags: typeof a.tags === 'string' ? a.tags.split(',') : [],
+    }));
+
     const session = await this.attendeeModel.startSession();
 
     try {
@@ -367,11 +333,6 @@ export class AttendeesService {
                   timeInSession: attendee.timeInSession || undefined,
                   location: attendee.location || undefined,
                   source: attendee.source || undefined,
-                  tags:
-                    typeof attendee.tags === 'string' &&
-                    attendee.tags.trim() !== ''
-                      ? attendee.tags.split(',')
-                      : [],
                 },
               },
             },
@@ -380,18 +341,8 @@ export class AttendeesService {
             session: currentSession,
           });
 
-          await this.enrollService.createUpdateEnrollments(
-            attendeesForUpdate.map((attendee) => ({
-              email: attendee.email,
-              tags:
-                typeof attendee.tags === 'string'
-                  ? attendee.tags
-                      .split(',')
-                      .map((tag) => tag.toLowerCase().trim())
-                      .filter(Boolean)
-                  : [],
-            })),
-            new Types.ObjectId(`${webinar}`),
+          await this.attendeeAssociationService.bulkUpsertAssociationsTags(
+            tagsPayload,
             new Types.ObjectId(`${adminId}`),
             currentSession,
           );
@@ -420,27 +371,14 @@ export class AttendeesService {
         updateProgress(70);
 
         const newAttendees = await this.attendeeModel.insertMany(
-          tempAttendees.map((attendee) => ({
-            ...attendee,
-            tags:
-              typeof attendee.tags === 'string' ? attendee.tags.split(',') : [],
-          })),
+          tempAttendees,
           {
             session: currentSession,
           },
         );
 
         await this.enrollService.createEnrollments(
-          tempAttendees.map((attendee) => ({
-            email: attendee.email,
-            tags:
-              typeof attendee.tags === 'string'
-                ? attendee.tags
-                    .split(',')
-                    .map((tag) => tag.toLowerCase().trim())
-                    .filter(Boolean)
-                : [],
-          })),
+          tagsPayload,
           new Types.ObjectId(`${webinar}`),
           new Types.ObjectId(`${adminId}`),
           currentSession,
@@ -596,32 +534,202 @@ export class AttendeesService {
 
   async updateAttendeeTags(
     adminId: Types.ObjectId,
-    webinarId: Types.ObjectId,
     emails: string[],
     tag: string,
+    attributes?: {
+      isEmployee?: boolean;
+      employeeId?: string;
+    },
   ) {
-    const filter = {
-      webinar: webinarId,
-      adminId: adminId,
-      email: {
-        $in: emails,
-      },
-      isAttended: true,
-    };
+    const session = await this.attendeeModel.startSession();
+    try {
+      let result;
+      await session.withTransaction(async (currentSession) => {
+        // Deduplicate emails (normalize and remove duplicates)
+        const normalizeEmail = (email?: string) =>
+          (email ?? '').toLowerCase().trim();
 
-    const count = await this.attendeeModel.countDocuments(filter);
+        const uniqueEmails = Array.from(
+          new Set(emails.map(normalizeEmail).filter((email) => email)),
+        );
 
-    if (emails.length !== count) {
+        // Transform input format: emails[] + tag -> [{ email, tags: [tag] }]
+        const payload = uniqueEmails.map((email) => ({
+          email,
+          tags: [tag],
+        }));
+
+        result =
+          await this.attendeeAssociationService.bulkUpsertAssociationsTags(
+            payload,
+            adminId,
+            currentSession,
+          );
+
+        // 📝 Create attendee logs for tag application
+        if (uniqueEmails.length > 0 && tag) {
+          // Fetch admin/user to include userName in the log, if available
+          let userName = 'Admin';
+          try {
+            if (!attributes?.isEmployee) {
+              const adminUser = await this.userService.getUserById(
+                adminId.toString(),
+              );
+              if (adminUser?.userName) {
+                userName = adminUser.userName;
+              }
+            } else if (
+              attributes?.isEmployee &&
+              mongoose.isValidObjectId(attributes?.employeeId)
+            ) {
+              const employee = await this.userService.getUserById(
+                attributes?.employeeId,
+              );
+              if (employee?.userName) {
+                userName = employee.userName;
+              }
+            }
+          } catch (e) {
+            // If lookup fails, fall back to generic label
+            userName = 'Admin';
+          }
+
+          const logs = uniqueEmails.map((email) => ({
+            attendee: email,
+            action: AttendeeAction.TAG_APPLIED,
+            item: 'Tag',
+            details: `<span>Tag <strong>${tag}</strong> has been applied by <strong>${userName}</strong> to this attendee.</span>`,
+            adminId,
+          }));
+
+          await this.attendeeLogService.createAttendeeLogs(
+            logs,
+            currentSession,
+          );
+        }
+      });
+
+      return result;
+    } catch (error) {
       throw new BadRequestException(
-        'Some or all of the specified attendees were not found for this webinar.',
+        error?.message || 'Failed to update attendee tags. Please try again.',
+      );
+    } finally {
+      session.endSession();
+    }
+  }
+
+  async applyTagsByFilters(
+    adminId: string,
+    webinarId: string,
+    isAttended: boolean,
+    filters: AttendeesFilterDto,
+    validCall?: string,
+    assignmentType?: string,
+    tag?: string,
+  ) {
+    try {
+      // Get all attendees matching the filters (using a very large limit to get all results)
+      const result = await this.getAttendees(
+        webinarId,
+        adminId,
+        isAttended,
+        1,
+        1000000, // Very large limit to get all matching attendees
+        {
+          filters,
+          validCall,
+          assignmentType,
+        },
+        false, // Don't use pagination
+      );
+
+      // Extract unique, non-empty emails from the results
+      const rawEmails = (result || [])
+        .map((attendee: any) => attendee?.email as string | undefined)
+        .filter(
+          (email): email is string =>
+            typeof email === 'string' && email.trim().length > 0,
+        );
+
+      const emails = Array.from(new Set<string>(rawEmails)) as string[];
+
+      if (emails.length === 0) {
+        return {
+          success: true,
+          message: 'No attendees found matching the filters.',
+          affectedCount: 0,
+        };
+      }
+
+      // Apply tags to all matching attendees
+      await this.updateAttendeeTags(new Types.ObjectId(adminId), emails, tag);
+
+      return {
+        success: true,
+        message: `Tag "${tag}" applied successfully to ${emails.length} attendee(s).`,
+        affectedCount: emails.length,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error?.message ||
+          'Failed to apply tags to filtered attendees. Please try again.',
       );
     }
+  }
 
-    const updateResult = await this.attendeeModel.updateMany(filter, {
-      $addToSet: { tags: tag.toLowerCase() },
-    });
+  async applyTagsToGroupedAttendees(
+    adminId: string,
+    filters: GroupedAttendeesFilterDto,
+    sort?: GroupedAttendeesSortObject,
+    tag?: string,
+  ) {
+    try {
+      const adminObjectId = new Types.ObjectId(adminId);
 
-    return updateResult; // Returns an object like { matchedCount, modifiedCount, ... }
+      // Fetch all grouped attendees matching the filters (very high limit)
+      const result = await this.fetchGroupedAttendeesForExport(
+        adminObjectId,
+        1,
+        1000000,
+        filters,
+        sort,
+      );
+
+      const data = (result as any)?.data || result || [];
+
+      // Extract unique, non-empty emails from grouped attendees (_id is email)
+      const rawEmails = (data as any[])
+        .map((item) => item?._id as string | undefined)
+        .filter(
+          (email): email is string =>
+            typeof email === 'string' && email.trim().length > 0,
+        );
+
+      const emails = Array.from(new Set<string>(rawEmails)) as string[];
+
+      if (emails.length === 0) {
+        return {
+          success: true,
+          message: 'No attendees found matching the filters.',
+          affectedCount: 0,
+        };
+      }
+
+      // Apply tags to all matching attendees (reuses logging etc.)
+      await this.updateAttendeeTags(adminObjectId, emails, tag);
+
+      return {
+        success: true,
+        message: `Tag "${tag}" applied successfully to ${emails.length} attendee(s).`,
+        affectedCount: emails.length,
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error?.message ||
+          'Failed to apply tags to grouped attendees. Please try again.',
+      );
+    }
   }
 
   async hideAttendees(
@@ -1062,6 +1170,38 @@ export class AttendeesService {
       }
     }
 
+    const associationFilter = [];
+
+    if (Array.isArray(filters.leadType) && filters.leadType.length > 0) {
+      associationFilter.push({
+        $in: [
+          '$leadType',
+          filters.leadType.map((item) => new Types.ObjectId(item)),
+        ],
+      });
+    }
+
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const normalizedTags = filters.tags
+        .map((item) => item?.trim().toLowerCase())
+        .filter((item) => Boolean(item));
+
+      if (normalizedTags.length > 0) {
+        associationFilter.push({
+          $gt: [
+            {
+              $size: {
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
+              },
+            },
+            0,
+          ],
+        });
+      }
+    }
+
+    console.log(`${JSON.stringify(associationFilter)}`);
+
     const basePipeline: PipelineStage[] = [
       {
         $match: {
@@ -1084,9 +1224,11 @@ export class AttendeesService {
                 }
               : { assignedTo: null }),
           }),
-          ...(emails && Array.isArray(emails) && emails.length > 0 && {
-            email: { $in: emails },
-          }),
+          ...(emails &&
+            Array.isArray(emails) &&
+            emails.length > 0 && {
+              email: { $in: emails },
+            }),
         },
       },
 
@@ -1166,9 +1308,6 @@ export class AttendeesService {
                 ...(filters.status && {
                   status: { $in: filters.status },
                 }),
-                ...(filters.tags && {
-                  tags: { $in: filters.tags },
-                }),
                 ...(Array.isArray(filters.isAssigned) &&
                   filters.isAssigned.length > 0 && {
                     lookupField: {
@@ -1182,7 +1321,7 @@ export class AttendeesService {
           ]
         : []),
 
-      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
+      ...(associationFilter.length > 0
         ? [
             {
               $lookup: {
@@ -1197,14 +1336,7 @@ export class AttendeesService {
                             $eq: ['$adminId', new Types.ObjectId(`${AdminId}`)],
                           },
                           { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $in: [
-                              '$leadType',
-                              filters.leadType.map(
-                                (item) => new Types.ObjectId(item),
-                              ),
-                            ],
-                          },
+                          ...associationFilter,
                         ],
                       },
                     },
@@ -1346,7 +1478,7 @@ export class AttendeesService {
           lookupField: 0,
         },
       },
-      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
+      ...(associationFilter.length > 0
         ? []
         : [
             {
@@ -1384,6 +1516,7 @@ export class AttendeesService {
             $arrayElemAt: ['$assignedToDetails.userName', 0],
           },
           leadType: '$attendeeAssociations.leadType',
+          tags: '$attendeeAssociations.tags',
         },
       },
       ...(filters?.enrollments?.length
@@ -1649,7 +1782,9 @@ export class AttendeesService {
   async getPostWebinarAttendee(webinarId: string, adminId?: string) {
     const result = await this.attendeeModel.findOne({
       webinar: new Types.ObjectId(`${webinarId}`),
-      ...(mongoose.isValidObjectId(adminId) ? { adminId: new Types.ObjectId(`${adminId}`) } : {}),
+      ...(mongoose.isValidObjectId(adminId)
+        ? { adminId: new Types.ObjectId(`${adminId}`) }
+        : {}),
       isAttended: true,
     });
 
@@ -1671,7 +1806,7 @@ export class AttendeesService {
     if (!attendeeBeforeUpdate) {
       throw new NotFoundException('Attendee not found.');
     }
-    console.log('attendee service ---- > ', attendeeBeforeUpdate , userId);
+    console.log('attendee service ---- > ', attendeeBeforeUpdate, userId);
 
     // Permission check: Allow if userId is the assignedTo, tempAssignedTo, or adminId of the *existing* attendee
     if (
@@ -2020,8 +2155,7 @@ export class AttendeesService {
       this.checkLength(filters.salesAssignedTo) ||
       this.checkLength(filters.salesLastStatus) ||
       this.checkLength(filters.reminderAssignedTo) ||
-      this.checkLength(filters.reminderLastStatus) ||
-      this.checkLength(filters.tags);
+      this.checkLength(filters.reminderLastStatus);
 
     const parseNum = (val) => {
       if (typeof val === 'number') return val;
@@ -2096,17 +2230,60 @@ export class AttendeesService {
       }
     }
 
+    const associationFilter = [];
+
+    if (Array.isArray(filters.leadType) && filters.leadType.length > 0) {
+      associationFilter.push({
+        $in: [
+          '$leadType',
+          filters.leadType.map((item) => new Types.ObjectId(item)),
+        ],
+      });
+    }
+
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const normalizedTags = filters.tags
+        .map((item) => item?.trim().toLowerCase())
+        .filter((item) => Boolean(item));
+
+      if (normalizedTags.length > 0) {
+        associationFilter.push({
+          $gt: [
+            {
+              $size: {
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
+              },
+            },
+            0,
+          ],
+        });
+      }
+    }
+    const createdAtFilter = {};
+    if (filters.createdAt) {
+      createdAtFilter['createdAt'] = {};
+      if (filters.createdAt.$gte) {
+        createdAtFilter['createdAt'].$gte = new Date(filters.createdAt.$gte);
+      }
+      if (filters.createdAt.$lte) {
+        createdAtFilter['createdAt'].$lte = new Date(filters.createdAt.$lte);
+      }
+    }
+
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
         $match: {
           adminId,
+          ...createdAtFilter,
           ...(filters.email && {
             email: { $regex: filters.email },
           }),
-          ...(filters.emails && Array.isArray(filters.emails) && filters.emails.length > 0 && {
-            email: { $in: filters.emails },
-          }),
+          ...(filters.emails &&
+            Array.isArray(filters.emails) &&
+            filters.emails.length > 0 && {
+              email: { $in: filters.emails },
+            }),
         },
       },
       {
@@ -2173,15 +2350,6 @@ export class AttendeesService {
               ],
             },
           },
-          tagsList: {
-            $push: {
-              $cond: [
-                { $gt: [{ $size: '$tags' }, 0] }, // Only if tags array has items
-                '$tags',
-                '$$REMOVE', // Skip empty arrays
-              ],
-            },
-          },
           adminId: {
             $first: '$adminId',
           },
@@ -2220,10 +2388,7 @@ export class AttendeesService {
             $addToSet: {
               $cond: [
                 {
-                  $and: [
-                    { $ne: ['$phone', null] },
-                    { $ne: ['$phone', ''] },
-                  ],
+                  $and: [{ $ne: ['$phone', null] }, { $ne: ['$phone', ''] }],
                 },
                 '$phone',
                 '$$REMOVE',
@@ -2267,7 +2432,7 @@ export class AttendeesService {
         },
       },
 
-      ...(this.checkLength(filters.leadType)
+      ...(this.checkLength(associationFilter)
         ? [
             {
               $lookup: {
@@ -2280,14 +2445,7 @@ export class AttendeesService {
                         $and: [
                           { $eq: ['$adminId', adminId] },
                           { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $in: [
-                              '$leadType',
-                              filters.leadType.map(
-                                (a) => new Types.ObjectId(a),
-                              ),
-                            ],
-                          },
+                          ...associationFilter,
                         ],
                       },
                     },
@@ -2310,13 +2468,6 @@ export class AttendeesService {
         ? [
             {
               $addFields: {
-                tags: {
-                  $reduce: {
-                    input: '$tagsList',
-                    initialValue: [],
-                    in: { $setUnion: ['$$value', '$$this'] },
-                  },
-                },
                 salesAssignedTo: {
                   $first: '$salesAssignedToList',
                 },
@@ -2355,17 +2506,6 @@ export class AttendeesService {
                 ...(this.checkLength(filters.reminderLastStatus) && {
                   reminderLastStatus: {
                     $in: filters.reminderLastStatus,
-                  },
-                }),
-
-                ...(this.checkLength(filters.tags) && {
-                  $expr: {
-                    $gt: [
-                      {
-                        $size: { $setIntersection: ['$tags', filters.tags] },
-                      },
-                      0,
-                    ],
                   },
                 }),
               },
@@ -2477,7 +2617,7 @@ export class AttendeesService {
       },
       { $skip: skip },
       ...(limit ? [{ $limit: limit }] : []),
-      ...(filters.leadType
+      ...(this.checkLength(associationFilter)
         ? []
         : [
             {
@@ -2511,13 +2651,6 @@ export class AttendeesService {
         ? [
             {
               $addFields: {
-                tags: {
-                  $reduce: {
-                    input: '$tagsList',
-                    initialValue: [],
-                    in: { $setUnion: ['$$value', '$$this'] },
-                  },
-                },
                 salesAssignedTo: {
                   $first: '$salesAssignedToList',
                 },
@@ -2625,7 +2758,7 @@ export class AttendeesService {
           salesLastStatus: 1,
           reminderAssignedTo: 1,
           salesAssignedTo: 1,
-          tags: 1,
+          tags: '$lead.tags',
           leadType: '$lead.leadType',
           adminId: 1,
           timeInSession: 1,
@@ -2670,8 +2803,37 @@ export class AttendeesService {
       this.checkLength(filters.salesAssignedTo) ||
       this.checkLength(filters.salesLastStatus) ||
       this.checkLength(filters.reminderAssignedTo) ||
-      this.checkLength(filters.reminderLastStatus) ||
-      this.checkLength(filters.tags);
+      this.checkLength(filters.reminderLastStatus);
+
+    const associationFilter = [];
+
+    if (Array.isArray(filters.leadType) && filters.leadType.length > 0) {
+      associationFilter.push({
+        $in: [
+          '$leadType',
+          filters.leadType.map((item) => new Types.ObjectId(item)),
+        ],
+      });
+    }
+
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const normalizedTags = filters.tags
+        .map((item) => item?.trim().toLowerCase())
+        .filter((item) => Boolean(item));
+
+      if (normalizedTags.length > 0) {
+        associationFilter.push({
+          $gt: [
+            {
+              $size: {
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
+              },
+            },
+            0,
+          ],
+        });
+      }
+    }
 
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
@@ -2747,15 +2909,6 @@ export class AttendeesService {
               ],
             },
           },
-          tagsList: {
-            $push: {
-              $cond: [
-                { $gt: [{ $size: '$tags' }, 0] }, // Only if tags array has items
-                '$tags',
-                '$$REMOVE', // Skip empty arrays
-              ],
-            },
-          },
           adminId: {
             $first: '$adminId',
           },
@@ -2824,7 +2977,7 @@ export class AttendeesService {
         },
       },
 
-      ...(this.checkLength(filters.leadType)
+      ...(this.checkLength(associationFilter)
         ? [
             {
               $lookup: {
@@ -2837,14 +2990,7 @@ export class AttendeesService {
                         $and: [
                           { $eq: ['$adminId', adminId] },
                           { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $in: [
-                              '$leadType',
-                              filters.leadType.map(
-                                (a) => new Types.ObjectId(a),
-                              ),
-                            ],
-                          },
+                          ...associationFilter,
                         ],
                       },
                     },
@@ -2867,13 +3013,6 @@ export class AttendeesService {
         ? [
             {
               $addFields: {
-                tags: {
-                  $reduce: {
-                    input: '$tagsList',
-                    initialValue: [],
-                    in: { $setUnion: ['$$value', '$$this'] },
-                  },
-                },
                 salesAssignedTo: {
                   $first: '$salesAssignedToList',
                 },
@@ -2912,17 +3051,6 @@ export class AttendeesService {
                 ...(this.checkLength(filters.reminderLastStatus) && {
                   reminderLastStatus: {
                     $in: filters.reminderLastStatus,
-                  },
-                }),
-
-                ...(this.checkLength(filters.tags) && {
-                  $expr: {
-                    $gt: [
-                      {
-                        $size: { $setIntersection: ['$tags', filters.tags] },
-                      },
-                      0,
-                    ],
                   },
                 }),
               },
@@ -3034,7 +3162,7 @@ export class AttendeesService {
       },
       { $skip: skip },
       ...(limit ? [{ $limit: limit }] : []),
-      ...(this.checkLength(filters.leadType)
+      ...(this.checkLength(associationFilter)
         ? []
         : [
             {
@@ -3068,13 +3196,6 @@ export class AttendeesService {
         ? [
             {
               $addFields: {
-                tags: {
-                  $reduce: {
-                    input: '$tagsList',
-                    initialValue: [],
-                    in: { $setUnion: ['$$value', '$$this'] },
-                  },
-                },
                 salesAssignedTo: {
                   $first: '$salesAssignedToList',
                 },
@@ -3175,6 +3296,21 @@ export class AttendeesService {
               },
             },
           ]),
+
+      {
+        $lookup: {
+          from: 'customleadtypes',
+          localField: 'lead.leadType',
+          foreignField: '_id',
+          as: 'leadTypeDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$leadTypeDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
       {
         $project: {
           reminderLastStatus: 1,
@@ -3182,7 +3318,7 @@ export class AttendeesService {
           salesLastStatus: 1,
           reminderAssignedTo: '$reminderAssignedToDetails.userName',
           salesAssignedTo: '$salesAssignedToDetails.userName',
-          tags: 1,
+          tags: '$lead.tags',
           leadType: '$leadTypeDetails.label',
           adminId: 1,
           timeInSession: 1,
@@ -3310,11 +3446,13 @@ export class AttendeesService {
     return this.attendeeModel.findById(new Types.ObjectId(`${attendee}`));
   }
 
-  async getAttendeeByWebinarAndEmail(webinarId: string, email: string): Promise<Attendee | null> {
+  async getAttendeeByWebinarAndEmail(
+    webinarId: string,
+    email: string,
+  ): Promise<Attendee | null> {
     return this.attendeeModel.findOne({
       webinar: new Types.ObjectId(webinarId),
       email,
-      
     });
   }
 
@@ -3366,42 +3504,782 @@ export class AttendeesService {
   async getInvalidTags(adminId: Types.ObjectId) {
     const tags = await this.tagService.getTagsArray(adminId);
 
-    const pipeline: PipelineStage[] = [
-      {
-        $match: {
-          adminId,
-          tags: { $exists: true, $ne: [] },
-        },
-      },
-
-      { $unwind: '$tags' },
-
-      {
-        $match: {
-          tags: { $nin: ['', null] },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          allTagsUsed: { $addToSet: '$tags' },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          invalidTags: {
-            $setDifference: ['$allTagsUsed', tags],
-          },
-        },
-      },
-    ];
-
-    const result = await this.attendeeModel.aggregate(pipeline);
+    const result = await this.attendeeAssociationService.getInvalidTags(
+      adminId,
+      tags,
+    );
     if (Array.isArray(result) && result.length > 0) {
       return result[0].invalidTags || [];
     }
 
     return [];
+  }
+
+  private escapeRegex(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  processAdvanceFilters(filters: AdvanceFilterUnitDTO[]): Record<string, any> {
+    if (!filters || filters.length === 0) {
+      return {};
+    }
+
+    const andConditions: any[] = [];
+    const orConditions: any[] = [];
+
+    for (const filter of filters) {
+      const {
+        field,
+        operator,
+        mode,
+        value,
+        fieldType,
+        isMultiple,
+        logicOperator,
+      } = filter;
+
+      let queryFragment: Record<string, any> = {};
+      let processedValue: any[];
+
+      // ---------------------------------------------------------
+      // 1. DATA TYPE CONVERSION
+      // ---------------------------------------------------------
+      try {
+        if (fieldType === AdvanceFilterFieldType.MONGODB_ID) {
+          processedValue = value.map((v) => new Types.ObjectId(v));
+        } else if (fieldType === AdvanceFilterFieldType.NUMBER) {
+          processedValue = value.map((v) => Number(v));
+        } else if (fieldType === AdvanceFilterFieldType.BOOLEAN) {
+          // specific check for string "true", everything else is false
+          processedValue = value.map((v) => v.toLowerCase() === 'true');
+        } else if (fieldType === AdvanceFilterFieldType.DATE) {
+          processedValue = value.map((v) => new Date(v));
+        } else {
+          // Default to String
+          processedValue = value;
+        }
+      } catch (e) {
+        // Fallback: if conversion fails (e.g. invalid ObjectId), ignore this filter or throw
+        console.warn(`Filter conversion failed for field ${field}`, e);
+        continue;
+      }
+
+      // ---------------------------------------------------------
+      // 2. BUILD QUERY FRAGMENT
+      // ---------------------------------------------------------
+
+      // CASE A: EQUALITY (Works for all data types)
+      if (operator === AdvanceFilterOperator.EQUALS) {
+        if (mode === AdvanceFilterMode.INCLUDE) {
+          // Use $in for multiple, $eq for single
+          queryFragment = isMultiple
+            ? { [field]: { $in: processedValue } }
+            : { [field]: { $eq: processedValue[0] } };
+        } else {
+          // EXCLUDE: Use $nin for multiple, $ne for single
+          queryFragment = isMultiple
+            ? { [field]: { $nin: processedValue } }
+            : { [field]: { $ne: processedValue[0] } };
+        }
+      }
+
+      // CASE B: RANGE / COMPARISON (Numbers, Dates)
+      else if (
+        operator === AdvanceFilterOperator.GREATER_THAN_OR_EQUAL ||
+        operator === AdvanceFilterOperator.LESS_THAN_OR_EQUAL
+      ) {
+        // Range operators usually apply to a single threshold value.
+        const singleVal = processedValue[0];
+        const mongoOp =
+          operator === AdvanceFilterOperator.GREATER_THAN_OR_EQUAL
+            ? '$gte'
+            : '$lte';
+
+        const rangeQuery = { [mongoOp]: singleVal };
+
+        if (mode === AdvanceFilterMode.INCLUDE) {
+          queryFragment = { [field]: rangeQuery };
+        } else {
+          // EXCLUDE: Logic "NOT >= 10" (which effectively means < 10)
+          queryFragment = { [field]: { $not: rangeQuery } };
+        }
+      }
+
+      // CASE C: STRING PATTERN MATCHING (Strings only)
+      else if (
+        operator === AdvanceFilterOperator.CONTAINS ||
+        operator === AdvanceFilterOperator.STARTS_WITH ||
+        operator === AdvanceFilterOperator.ENDS_WITH
+      ) {
+        // Ensure we are working with string values for Regex
+        const rawString = String(value[0] || '');
+        const escapedString = this.escapeRegex(rawString);
+        let regexPattern = '';
+
+        switch (operator) {
+          case AdvanceFilterOperator.STARTS_WITH:
+            regexPattern = `^${escapedString}`;
+            break;
+          case AdvanceFilterOperator.ENDS_WITH:
+            regexPattern = `${escapedString}$`;
+            break;
+          case AdvanceFilterOperator.CONTAINS:
+            regexPattern = escapedString;
+            break;
+        }
+
+        const regexQuery = { $regex: regexPattern, $options: 'i' };
+
+        if (mode === AdvanceFilterMode.INCLUDE) {
+          queryFragment = { [field]: regexQuery };
+        } else {
+          queryFragment = { [field]: { $not: regexQuery } };
+        }
+      }
+
+      // ---------------------------------------------------------
+      // 3. LOGIC GROUPING (AND / OR)
+      // ---------------------------------------------------------
+      if (Object.keys(queryFragment).length > 0) {
+        if (logicOperator === AdvanceFilterLogicOperator.OR) {
+          orConditions.push(queryFragment);
+        } else {
+          andConditions.push(queryFragment);
+        }
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 4. ASSEMBLE FINAL OBJECT
+    // ---------------------------------------------------------
+    const matchStage: Record<string, any> = {
+      $or: [],
+    };
+
+    if (andConditions.length > 0) {
+      matchStage.$or.push({ $and: andConditions });
+    }
+
+    if (orConditions.length > 0) {
+      matchStage.$or.push({ $or: orConditions });
+    }
+
+    return matchStage;
+  }
+
+  async preParseFilterClasses(payload: AdvanceFilterDTO) {
+    const { units } = payload;
+
+    const initialUnits: AdvanceFilterUnitDTO[] = [];
+
+    for (const unit of units) {
+      const { field } = unit;
+
+      switch (field) {
+        case 'email':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'firstName':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'lastName':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'phone':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'timeInSession':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.NUMBER,
+          });
+          break;
+
+        case 'gender':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'location':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'assignedTo':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.MONGODB_ID,
+          });
+          break;
+
+        case 'status':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'isPulledback':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.BOOLEAN,
+          });
+          break;
+
+        case 'source':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        default:
+          break;
+      }
+    }
+
+    return {
+      initialMatch: this.processAdvanceFilters(initialUnits),
+    };
+  }
+
+  async fetchAttendeesByAdvanceFilters(
+    payload: AdvanceFilterDTO,
+    adminId: string,
+  ) {
+    try {
+      const {
+        responseType = AdvanceFilterResponseType.DATA,
+        webinarId,
+        isAttended,
+      } = payload;
+
+      // Validate adminId
+      if (!mongoose.isValidObjectId(adminId)) {
+        throw new BadRequestException('Invalid Admin ID');
+      }
+
+      const adminObjectId = new Types.ObjectId(adminId);
+
+      // Get filter conditions from advance filters
+      const { initialMatch } = await this.preParseFilterClasses(payload);
+
+      // Build base match stage with security filters
+      // Always include adminId and isDeleted filters for security
+      const securityFilters = {
+        adminId: adminObjectId,
+        isDeleted: { $ne: true },
+        webinar: new Types.ObjectId(webinarId),
+        isAttended,
+      };
+
+      this.logger.log(`Security filters: ${JSON.stringify(securityFilters, null, 2)}`);
+      this.logger.log(`Initial match: ${JSON.stringify(initialMatch, null, 2)}`);
+
+      const basePipeline: PipelineStage[] = [
+        {
+          $match: securityFilters,
+        },
+        
+        {
+          $match: initialMatch,
+        },
+      ];
+      this.logger.log(`Base pipeline: ${JSON.stringify(basePipeline, null, 2)}`);
+
+      // Build count pipeline (always needed for accurate count)
+      const countPipeline: PipelineStage[] = [
+        ...basePipeline,
+        { $count: 'total' },
+      ];
+
+      // Get total count
+      const [countResult] = await this.attendeeModel
+        .aggregate(countPipeline)
+        .exec();
+      const totalCount = countResult?.total || 0;
+
+      // If only count is requested, return early
+      if (responseType === AdvanceFilterResponseType.COUNT) {
+        return {
+          data: [],
+          count: totalCount,
+          responseType,
+          message: 'Count fetched successfully',
+        };
+      }
+
+      // Execute data pipeline
+      const data = await this.attendeeModel.aggregate(basePipeline).exec();
+
+      return {
+        data,
+        count: totalCount,
+        responseType,
+        message: 'Data fetched successfully',
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      console.error('Error in fetchAttendeesByAdvanceFilters:', error);
+      throw new InternalServerErrorException(
+        'Failed to fetch attendees by advance filters',
+      );
+    }
+  }
+
+
+
+  async fetchGroupedAttendeesv2(
+    adminId: Types.ObjectId,
+    page: number = 1,
+    limit: number = 10,
+    filters: GroupedAttendeesFilterDto = {},
+    sort: GroupedAttendeesSortObject = {
+      sortBy: GroupedAttendeesSortBy.EMAIL,
+      sortOrder: SortOrder.ASC,
+    },
+  ) {
+    const isLastFilters =
+      this.checkLength(filters.salesAssignedTo) ||
+      this.checkLength(filters.salesLastStatus) ||
+      this.checkLength(filters.reminderAssignedTo) ||
+      this.checkLength(filters.reminderLastStatus);
+
+    const parseNum = (val) => {
+      if (typeof val === 'number') return val;
+      if (typeof val === 'string' && parseInt(val, 10) >= 0) {
+        return parseInt(val, 10);
+      }
+      return null;
+    };
+
+    const timeInSessionFilter = {};
+    const timeInSession = filters.timeInSession;
+
+    if (timeInSession) {
+      timeInSessionFilter['timeInSession'] = {};
+
+      if (timeInSession.$gte !== undefined) {
+        const gteValue = parseNum(timeInSession.$gte);
+        if (gteValue !== null) {
+          timeInSessionFilter['timeInSession'].$gte = gteValue;
+        }
+      }
+
+      if (timeInSession.$lte !== undefined) {
+        const lteValue = parseNum(timeInSession.$lte);
+        if (lteValue !== null) {
+          timeInSessionFilter['timeInSession'].$lte = lteValue;
+        }
+      }
+    }
+
+    const attendedWebinarCountFilter = {};
+    const attendedWebinarCount = filters.attendedWebinarCount;
+
+    if (attendedWebinarCount) {
+      attendedWebinarCountFilter['attendedWebinarCount'] = {};
+
+      if (attendedWebinarCount.$gte !== undefined) {
+        const gteValue = parseNum(attendedWebinarCount.$gte);
+        if (gteValue !== null) {
+          attendedWebinarCountFilter['attendedWebinarCount'].$gte = gteValue;
+        }
+      }
+
+      if (attendedWebinarCount.$lte !== undefined) {
+        const lteValue = parseNum(attendedWebinarCount.$lte);
+        if (lteValue !== null) {
+          attendedWebinarCountFilter['attendedWebinarCount'].$lte = lteValue;
+        }
+      }
+    }
+
+    const registeredWebinarCountFilter = {};
+    const registeredWebinarCount = filters.registeredWebinarCount;
+
+    if (registeredWebinarCount) {
+      registeredWebinarCountFilter['registeredWebinarCount'] = {};
+
+      if (registeredWebinarCount.$gte !== undefined) {
+        const gteValue = parseNum(registeredWebinarCount.$gte);
+        if (gteValue !== null) {
+          registeredWebinarCountFilter['registeredWebinarCount'].$gte =
+            gteValue;
+        }
+      }
+
+      if (registeredWebinarCount.$lte !== undefined) {
+        const lteValue = parseNum(registeredWebinarCount.$lte);
+        if (lteValue !== null) {
+          registeredWebinarCountFilter['registeredWebinarCount'].$lte =
+            lteValue;
+        }
+      }
+    }
+
+    const associationFilter = [];
+
+    if (Array.isArray(filters.leadType) && filters.leadType.length > 0) {
+      associationFilter.push({
+        $in: [
+          '$leadType',
+          filters.leadType.map((item) => new Types.ObjectId(item)),
+        ],
+      });
+    }
+
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const normalizedTags = filters.tags
+        .map((item) => item?.trim().toLowerCase())
+        .filter((item) => Boolean(item));
+
+      if (normalizedTags.length > 0) {
+        associationFilter.push({
+          $gt: [
+            {
+              $size: {
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
+              },
+            },
+            0,
+          ],
+        });
+      }
+    }
+    const createdAtFilter = {};
+    if (filters.createdAt) {
+      createdAtFilter['createdAt'] = {};
+      if (filters.createdAt.$gte) {
+        createdAtFilter['createdAt'].$gte = new Date(filters.createdAt.$gte);
+      }
+      if (filters.createdAt.$lte) {
+        createdAtFilter['createdAt'].$lte = new Date(filters.createdAt.$lte);
+      }
+    }
+
+    const basePipeline: PipelineStage[] = [
+      {
+        $match: {
+          adminId,
+          
+        },
+      },
+      {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+      {
+        $group: {
+          _id: '$email',
+          salesAssignedToList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $ne: ['$assignedTo', null] },
+                  ],
+                },
+                '$assignedTo',
+                '$$REMOVE',
+              ],
+            },
+          },
+          salesLastStatusList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $ne: ['$status', null] },
+                  ],
+                },
+                '$status',
+                '$$REMOVE',
+              ],
+            },
+          },
+          reminderAssignedToList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', false] },
+                    { $ne: ['$assignedTo', null] },
+                  ],
+                },
+                '$assignedTo',
+                '$$REMOVE',
+              ],
+            },
+          },
+          reminderLastStatusList: {
+            $push: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', false] },
+                    { $ne: ['$status', null] },
+                  ],
+                },
+                '$status',
+                '$$REMOVE',
+              ],
+            },
+          },
+          adminId: {
+            $first: '$adminId',
+          },
+          timeInSession: {
+            $sum: '$timeInSession',
+          },
+          attendeeId: {
+            $first: '$_id',
+          },
+          registeredWebinarCount: {
+            $sum: {
+              $cond: [{ $eq: ['$isAttended', false] }, 1, 0],
+            },
+          },
+          attendedWebinarCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$isAttended', true] },
+                    { $gt: ['$timeInSession', 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          locations: {
+            $addToSet: '$location',
+          },
+          sources: {
+            $addToSet: '$source',
+          },
+          phones: {
+            $addToSet: {
+              $cond: [
+                {
+                  $and: [{ $ne: ['$phone', null] }, { $ne: ['$phone', ''] }],
+                },
+                '$phone',
+                '$$REMOVE',
+              ],
+            },
+          },
+          fullNames: {
+            $addToSet: {
+              $trim: {
+                input: {
+                  $concat: [
+                    { $ifNull: ['$firstName', ''] },
+                    ' ',
+                    { $ifNull: ['$lastName', ''] },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+
+      {
+        $match: {
+          
+        },
+      },
+
+    ];
+
+    const countPipeline: PipelineStage[] = [
+      ...basePipeline,
+      { $count: 'total' },
+    ];
+
+    const mainPipeline: PipelineStage[] = [
+      ...basePipeline,
+      {
+        $lookup: {
+          from: 'attendeeassociations',
+          let: { tempMail: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$adminId', adminId] },
+                    { $eq: ['$email', '$$tempMail'] }, // Match email with attendee email
+                  ],
+                },
+              },
+            },
+          ],
+
+          as: 'lead',
+        },
+      },
+      {
+        $unwind: {
+          path: '$lead',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+          {
+            $addFields: {
+              salesAssignedTo: {
+                $first: '$salesAssignedToList',
+              },
+              salesLastStatus: {
+                $first: '$salesLastStatusList',
+              },
+              reminderAssignedTo: {
+                $first: '$reminderAssignedToList',
+              },
+              reminderLastStatus: {
+                $first: '$reminderLastStatusList',
+              },
+            },
+          },
+
+        {
+          $lookup: {
+            from: 'enrollments',
+            let: { tempMail: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      {
+                        $eq: ['$attendee', '$$tempMail'],
+                      },
+                      {
+                        $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
+                      },
+                    ],
+                  },
+                },
+              },
+              {
+                $group: {
+                  _id: {
+                    product: '$product',
+                    price: '$price',
+                  },
+                  count: {
+                    $sum: 1,
+                  },
+                },
+              },
+              {
+                $lookup: {
+                  from: 'products',
+                  localField: '_id.product',
+                  foreignField: '_id',
+                  as: 'product',
+                },
+              },
+              {
+                $unwind: {
+                  path: '$product',
+                  preserveNullAndEmptyArrays: true,
+                },
+              },
+              {
+                $addFields: {
+                  label: {
+                    $concat: [
+                      '$product.name',
+                      ' (',
+                      { $toString: '$count' },
+                      ') - ',
+                      { $toString: '$_id.price' },
+                    ],
+                  },
+                },
+              },
+              {
+                $group: {
+                  _id: null,
+                  labels: { $push: '$label' },
+                },
+              },
+              {
+                $project: {
+                  _id: 0,
+                  labels: 1,
+                },
+              },
+            ],
+            as: 'enrollments',
+          },
+        },
+        {
+          $unwind: {
+            path: '$enrollments',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+      {
+        $project: {
+          reminderLastStatus: 1,
+          enrollments: '$enrollments.labels',
+          salesLastStatus: 1,
+          reminderAssignedTo: 1,
+          salesAssignedTo: 1,
+          tags: '$lead.tags',
+          leadType: '$lead.leadType',
+          adminId: 1,
+          timeInSession: 1,
+          attendeeId: 1,
+          attendedWebinarCount: 1,
+          registeredWebinarCount: 1,
+          locations: 1,
+          sources: 1,
+          phones: 1,
+          fullNames: {
+            $filter: {
+              input: '$fullNames',
+              as: 'name',
+              cond: { $ne: ['$$name', ''] },
+            },
+          },
+        },
+      },
+    ];
+
+    const [countResult, mainResult] = await Promise.all([
+      this.attendeeModel.aggregate(countPipeline).exec(),
+      this.attendeeModel.aggregate(mainPipeline).exec(),
+    ]);
   }
 }

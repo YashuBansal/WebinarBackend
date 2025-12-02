@@ -70,4 +70,55 @@ export class WabaMessageController {
       count: eligibleContacts.length,
     };
   }
+
+  @Get('analytics')
+  async getAnalyticsSummary(
+    @Query('adminId') adminId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('projectId') projectId?: string,
+  ) {
+    const hasStart = !!startDate;
+    const hasEnd = !!endDate;
+    const hasRange = hasStart && hasEnd;
+
+    if ((hasStart && !hasEnd) || (!hasStart && hasEnd)) {
+      throw new BadRequestException(
+        'Both "startDate" and "endDate" are required when using a date range',
+      );
+    }
+
+    let parsedStartDate: Date | undefined;
+    let parsedEndDate: Date | undefined;
+
+    if (hasRange) {
+      parsedStartDate = new Date(startDate as string);
+      parsedEndDate = new Date(endDate as string);
+
+      if (isNaN(parsedStartDate.getTime()) || isNaN(parsedEndDate.getTime())) {
+        throw new BadRequestException('Invalid "startDate" or "endDate" format');
+      }
+
+      if (parsedStartDate > parsedEndDate) {
+        throw new BadRequestException(
+          '"startDate" must be before or equal to "endDate"',
+        );
+      }
+    }
+
+    if (projectId && !mongoose.Types.ObjectId.isValid(projectId)) {
+      throw new BadRequestException('Invalid "projectId"');
+    }
+
+    if (adminId && !mongoose.Types.ObjectId.isValid(adminId)) {
+      throw new BadRequestException('Invalid \"adminId\"');
+    }
+
+    return this.wabaMessageService.getAnalyticsSummary({
+      adminId,
+      startDate: hasRange ? parsedStartDate!.toISOString() : undefined,
+      endDate: hasRange ? parsedEndDate!.toISOString() : undefined,
+      projectId,
+    });
+  }
 }

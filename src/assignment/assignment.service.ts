@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   forwardRef,
+  Logger,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -16,6 +17,7 @@ import {
   RecordType,
 } from 'src/schemas/Assignments.schema';
 import {
+  ApplyTagsToEmployeeAssignmentsDTO,
   AssignmentDto,
   MoveToPullbacksDTO,
   ReAssignmentDTO,
@@ -49,6 +51,7 @@ import { AttendeeAssociationService } from 'src/attendee-association/attendee-as
 
 @Injectable()
 export class AssignmentService {
+  private readonly logger = new Logger(AssignmentService.name);
   constructor(
     @InjectModel(Assignments.name) private assignmentsModel: Model<Assignments>,
 
@@ -219,6 +222,39 @@ export class AssignmentService {
       }
     }
 
+    const associationFilter = [];
+
+    if (Array.isArray(filters.leadType) && filters.leadType.length > 0) {
+      associationFilter.push({
+        $in: [
+          '$leadType',
+          filters.leadType.map((item) => new Types.ObjectId(item)),
+        ],
+      });
+    }
+
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      const normalizedTags = filters.tags
+        .map((item) => item?.trim().toLowerCase())
+        .filter((item) => Boolean(item));
+
+      if (normalizedTags.length > 0) {
+        associationFilter.push({
+          $gt: [
+            {
+              $size: {
+                $setIntersection: [
+                  { $ifNull: ['$tags', []] },
+                  normalizedTags,
+                ],
+              },
+            },
+            0,
+          ],
+        });
+      }
+    }
+
     const skip = (page - 1) * limit;
     const basePipeline: PipelineStage[] = [
       {
@@ -313,7 +349,6 @@ export class AssignmentService {
           timeInSession: '$attendee.timeInSession',
           webinar: '$attendee.webinar',
           createdAt: '$createdAt',
-          tags: '$attendee.tags',
           source: '$attendee.source',
         },
       },
@@ -348,15 +383,12 @@ export class AssignmentService {
           ...(filters.status && {
             status: { $in: filters.status },
           }),
-          ...(filters.tags && {
-            tags: { $in: filters.tags },
-          }),
           ...(filters.source && {
             source: { $regex: filters.source, $options: 'i' },
           }),
         },
       },
-      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
+      ...(associationFilter.length > 0
         ? [
             {
               $lookup: {
@@ -371,14 +403,7 @@ export class AssignmentService {
                             $eq: ['$adminId', new Types.ObjectId(`${adminId}`)],
                           },
                           { $eq: ['$email', '$$tempMail'] },
-                          {
-                            $in: [
-                              '$leadType',
-                              filters.leadType.map(
-                                (a) => new Types.ObjectId(a),
-                              ),
-                            ],
-                          },
+                          ...associationFilter,
                         ],
                       },
                     },
@@ -408,8 +433,8 @@ export class AssignmentService {
       ...basePipeline,
       { $sort: { [sort.sortBy]: sort.sortOrder === SortOrder.ASC ? 1 : -1 } },
       { $skip: skip },
-      { $limit: limit },
-      ...(Array.isArray(filters.leadType) && filters.leadType.length > 0
+      ...(limit > 0 ? [{ $limit: limit }] : []),
+      ...(associationFilter.length > 0
         ? []
         : [
             {
@@ -447,6 +472,7 @@ export class AssignmentService {
       {
         $addFields: {
           leadType: '$attendeeAssociations.leadType',
+          tags: '$attendeeAssociations.tags',
         },
       },
       {
@@ -500,6 +526,77 @@ export class AssignmentService {
     };
 
     return { pagination, result };
+  }
+
+  async applyTagsToEmployeeAssignments(
+    adminId: string,
+    employeeId: string,
+    body: ApplyTagsToEmployeeAssignmentsDTO,
+    isEmployee: boolean,
+  ) {
+    const page = 1;
+    const limit = 1000000;
+
+    const {
+      filters = {} as AttendeesFilterDto,
+      webinarId,
+      validCall,
+      validCallFlag,
+      assignmentStatus,
+      sort,
+      tag,
+    } = body;
+
+    const assignmentStatusToUse =
+      assignmentStatus || AssignmentStatus.ACTIVE;
+
+    const { result } = await this.getAssignments(
+      adminId,
+      employeeId,
+      page,
+      limit,
+      filters,
+      {
+        webinarId: webinarId || '',
+        validCall,
+        assignmentStatus: assignmentStatusToUse,
+        sort,
+        validCallFlag,
+      },
+    );
+
+    const rawEmails = (result || [])
+      .map((row: any) => row?.email as string | undefined)
+      .filter(
+        (email): email is string =>
+          typeof email === 'string' && email.trim().length > 0,
+      );
+
+    const emails = Array.from(new Set<string>(rawEmails)) as string[];
+
+    if (emails.length === 0) {
+      return {
+        success: true,
+        message: 'No attendees found matching the filters.',
+        affectedCount: 0,
+      };
+    }
+
+    await this.attendeeService.updateAttendeeTags(
+      new Types.ObjectId(adminId),
+      emails,
+      tag,
+      {
+        isEmployee,
+        employeeId: employeeId,
+      },
+    );
+
+    return {
+      success: true,
+      message: `Tag "${tag}" applied successfully to ${emails.length} attendee(s).`,
+      affectedCount: emails.length,
+    };
   }
 
   async addAssignment(data: AssignmentDto, adminId: string, employee: User) {
@@ -747,7 +844,7 @@ export class AssignmentService {
 
         if (forceAssign) {
           // --- FORCE ASSIGNMENT LOGIC: Assign to Employee with Least Current Daily Count ---
-          console.log(
+          this.logger.error(
             `Force assigning attendee ${attendeeId.toString()} as standard assignment failed.`,
           );
 
@@ -775,21 +872,21 @@ export class AssignmentService {
           if (leastCountEmployee) {
             assignedEmployeeId = leastCountEmployee._id;
             assigned = true;
-            console.log(
+            this.logger.error(
               `Force assigned attendee ${attendeeId.toString()} to employee ${assignedEmployeeId.toString()} (effective count: ${minCount})`,
             );
             // Note: Force assignment doesn't change the `currentEmployeeIndex` which is used
             // for the *next* attendee's *standard* assignment attempt.
           } else {
             // This case should ideally not happen given the roleEmps check earlier, but added for robustness.
-            console.error(
+            this.logger.error(
               `Could not find a least count employee for attendee ${attendeeId.toString()} even with forceAssign (roleEmps empty?).`,
             );
             // Attendee remains unassigned in this scenario
           }
         } else {
           // Not force assign, and standard assignment failed
-          console.warn(
+          this.logger.warn(
             `Attendee ${attendeeId.toString()} could not be assigned due to employee daily limits (forceAssign is false).`,
           );
           // Attendee remains unassigned. Do not increment attendeesAssignedCount.
@@ -859,7 +956,7 @@ export class AssignmentService {
       // If totalAttendeesToAssign > 0 but no assignments were created, something prevented it.
       // This might happen if roleEmps was somehow empty or if there's another unexpected issue.
       // The check `assignmentsToCreate.length === 0` below is more reliable before the transaction.
-      console.warn(
+      this.logger.warn(
         'No assignments created despite input attendees and available employees:',
         { totalAttendeesToAssign, assignedCount: attendeesAssignedCount },
       );
@@ -895,7 +992,7 @@ export class AssignmentService {
           if (
             updateAttendeesResult.matchedCount !== attendeeBulkUpdates.length
           ) {
-            console.error(
+            this.logger.error(
               'Mismatch in attendee update matched count:',
               updateAttendeesResult,
               `Expected: ${attendeeBulkUpdates.length}, Matched: ${updateAttendeesResult.matchedCount}`,
@@ -917,7 +1014,7 @@ export class AssignmentService {
           !createdAssignments ||
           createdAssignments.length !== assignmentsToCreate.length
         ) {
-          console.error(
+          this.logger.error(
             'Mismatch in created assignments count:',
             createdAssignments ? createdAssignments.length : 0,
             assignmentsToCreate.length,
@@ -953,7 +1050,7 @@ export class AssignmentService {
           if (
             updateEmployeesResult.matchedCount !== employeeBulkUpdates.length
           ) {
-            console.warn(
+            this.logger.warn(
               'Mismatch in employee dailyContactCount update matched count:',
               updateEmployeesResult,
               `Expected: ${employeeBulkUpdates.length}, Matched: ${updateEmployeesResult.matchedCount}`,
@@ -975,7 +1072,7 @@ export class AssignmentService {
       // Transaction successful
     } catch (error) {
       // Transaction failed
-      console.error('Transaction failed during assignment creation:', error);
+      this.logger.error('Transaction failed during assignment creation:', error);
       // Re-throw the original error after logging
       throw error;
     } finally {
@@ -1166,26 +1263,28 @@ export class AssignmentService {
         webinarId,
       );
 
-    this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
-      fullName: attendee.firstName + ' ' + attendee.lastName,
-      phone: this.formatPhoneNumber(attendee.phone),
-      adminId: new Types.ObjectId(`${adminId}`),
-      email: attendee.email,
-    })
+    const updatedAssociation =
+      await this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
+        fullName: attendee.firstName + ' ' + attendee.lastName,
+        phone: this.formatPhoneNumber(attendee.phone),
+        adminId: new Types.ObjectId(`${adminId}`),
+        email: attendee.email,
+        tags: Array.isArray(attendee.tags) ? attendee.tags : [],
+      });
 
     if (existingAttendee) {
       if (
-        Array.isArray(existingAttendee.tags) &&
+        Array.isArray(updatedAssociation.tags) &&
         Array.isArray(attendee.tags)
       ) {
         const newTags = attendee.tags.filter(
-          (tag) => !existingAttendee.tags.includes(tag),
+          (tag) => !updatedAssociation.tags.includes(tag),
         );
 
-        if (existingAttendee.tags.length === 0) {
-          existingAttendee.tags = newTags;
+        if (updatedAssociation.tags.length === 0) {
+          updatedAssociation.tags = newTags;
         } else {
-          existingAttendee.tags = [...existingAttendee.tags, ...newTags];
+          updatedAssociation.tags = [...updatedAssociation.tags, ...newTags];
         }
         await this.handleTags(
           existingAttendee,
@@ -1196,12 +1295,12 @@ export class AssignmentService {
           webinar.productIds,
           webinar.assignedEmployees,
         );
-        if(attendee.firstName && attendee.lastName){
+        if (attendee.firstName && attendee.lastName) {
           existingAttendee.firstName = attendee.firstName.trim();
           existingAttendee.lastName = attendee.lastName.trim();
         }
 
-        if(attendee.phone){
+        if (attendee.phone) {
           existingAttendee.phone = this.formatPhoneNumber(attendee.phone);
         }
 
@@ -1272,26 +1371,6 @@ export class AssignmentService {
 
     const newAttendee = newAttendees[0];
 
-    // Fire-and-forget: auto message on registration (do not block assignment flow)
-    try {
-      const contactPhone = newAttendee.phone;
-      if (contactPhone) {
-      
-        this.autoMessageService
-        .sendForRegistration(
-          adminId,
-          webinarId,
-          {
-            phoneNumber: contactPhone,
-            email: newAttendee.email,
-            firstName: newAttendee.firstName,
-            lastName: newAttendee.lastName,
-          },
-        )
-        .catch(() => {});
-      }
-    } catch {}
-
     this.attendeeLogService.createSingleAttendeeLog({
       attendee: newAttendee.email,
       action: AttendeeAction.REGISTERED,
@@ -1300,12 +1379,27 @@ export class AssignmentService {
       adminId: new Types.ObjectId(adminId),
     });
 
+    // Fire-and-forget: auto message on registration (do not block assignment flow)
+    try {
+      const contactPhone = newAttendee.phone;
+      if (contactPhone) {
+        this.autoMessageService
+          .sendForRegistration(adminId, webinarId, {
+            phoneNumber: contactPhone,
+            email: newAttendee.email,
+            firstName: newAttendee.firstName,
+            lastName: newAttendee.lastName,
+          })
+          .catch(() => {});
+      }
+    } catch {}
+
     const { executeFurther, AssignmentResponse } = await this.handleTags(
       newAttendee,
       newAttendee.email,
       webinar,
       new Types.ObjectId(adminId),
-      newAttendee.tags,
+      updatedAssociation.tags,
       webinar.productIds,
       webinar.assignedEmployees,
     );
@@ -1337,7 +1431,7 @@ export class AssignmentService {
       newAttendee.email,
     );
 
-    console.log('last assigned --> ', lastAssigned);
+    this.logger.log('last assigned --> ', lastAssigned);
 
     const excludedEmployees = Array.isArray(webinar.excludedEmployees)
       ? webinar.excludedEmployees.map((a) => `${a}`)
@@ -2052,7 +2146,6 @@ export class AssignmentService {
   }
 
   async changeAssignment(data: ReAssignmentDTO, adminId: string) {
-    console.log(data);
     const session = await this.assignmentsModel.startSession();
     try {
       let updatedAssignmentsCount = 0;
@@ -2206,11 +2299,11 @@ export class AssignmentService {
         newAssignments,
       };
     } catch (error) {
-      console.error('Transaction failed during hideAttendees:', error);
+      this.logger.error('Transaction failed during hideAttendees:', error);
       throw new BadRequestException(error.message);
     } finally {
       await session.endSession();
-      console.log('Session ended.');
+      this.logger.log('Session ended.');
     }
   }
 
@@ -2497,16 +2590,6 @@ export class AssignmentService {
 
     // --- Logging for verification (optional) ---
     const formatDateUTC = (d) => d.toISOString(); // Simple UTC ISO string
-    console.log(
-      `Current Time (System UTC): ${new Date(nowUtcMs).toISOString()}`,
-    );
-    console.log(
-      `Start of Today (IST) in UTC: ${formatDateUTC(startOfTodayUTC)}`,
-    );
-    console.log(
-      `Start of Tomorrow (IST) in UTC: ${formatDateUTC(startOfTomorrowUTC)}`,
-    );
-    console.log('--- Querying MongoDB using UTC boundaries (No Library) ---');
     // --- End Logging ---
 
     // 7. Construct the Mongoose Query
@@ -2537,7 +2620,7 @@ export class AssignmentService {
     ];
 
     const assignments = await this.assignmentsModel.aggregate(pipeline);
-    console.log(
+    this.logger.log(
       `Found ${assignments.length} assignments created today (IST) without external library.`,
     );
 
@@ -3443,7 +3526,6 @@ export class AssignmentService {
 
     const result = await this.assignmentsModel.aggregate(pipeline).exec();
 
-    console.log(result);
 
     return await this.userService.updateDailyContactCount(
       result,

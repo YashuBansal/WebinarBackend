@@ -26,11 +26,14 @@ import {
   SwapAttendeeFieldsDTO,
   UpdateAttendeeDto,
   UpdateAttendeeTagDTO,
+  ApplyTagsByFiltersDTO,
+  ApplyTagsToGroupedAttendeesDTO,
 } from './dto/attendees.dto';
 import mongoose, { Types } from 'mongoose';
 import { WebinarService } from 'src/webinar/webinar.service';
 import { AssignmentService } from 'src/assignment/assignment.service';
 import { WebinarParticipantService } from 'src/webinar-participant/webinar-participant.service';
+import { AdvanceFilterDTO } from './dto/advance-attendee-filters.dto';
 
 @Controller('attendees')
 export class AttendeesController {
@@ -41,6 +44,14 @@ export class AttendeesController {
     private readonly webinarService: WebinarService,
     private readonly webinarParticipantService: WebinarParticipantService,
   ) {}
+
+  @Post('advance-filters')
+  async fetchAttendeesByAdvanceFilters(@Body() body: AdvanceFilterDTO, @Id() adminId: string) {
+    if (!mongoose.isValidObjectId(adminId)) {
+      throw new BadRequestException('Invalid Admin ID');
+    }
+    return await this.attendeesService.fetchAttendeesByAdvanceFilters(body, adminId);
+  }
 
   @Get('webinar')
   async getAttendees(@Id() adminId: string, @Query() query: GetAttendeesDTO) {
@@ -155,8 +166,36 @@ export class AttendeesController {
   ) {
     return await this.attendeesService.updateAttendeeTags(
       new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${body.webinar}`),
       body.emails,
+      body.tag,
+    );
+  }
+
+  @Put('tag-by-filters')
+  async applyTagsByFilters(
+    @Id() adminId: string,
+    @Body() body: ApplyTagsByFiltersDTO,
+  ) {
+    return await this.attendeesService.applyTagsByFilters(
+      adminId,
+      body.webinarId,
+      body.isAttended,
+      body.filters,
+      body.validCall,
+      body.assignmentType,
+      body.tag,
+    );
+  }
+
+  @Put('tag-grouped')
+  async applyTagsToGroupedAttendees(
+    @Id() adminId: string,
+    @Body() body: ApplyTagsToGroupedAttendeesDTO,
+  ) {
+    return await this.attendeesService.applyTagsToGroupedAttendees(
+      adminId,
+      body.filters,
+      body.sort,
       body.tag,
     );
   }

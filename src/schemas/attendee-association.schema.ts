@@ -34,6 +34,17 @@ export class AttendeeAssociation extends Document {
   })
   phones: string[]; //Phones
 
+
+  @Prop({
+    type: [String],
+    default: [],
+    set: (tags: string[]) =>
+      Array.from(
+        new Set(tags.map((tag) => tag.toLowerCase().trim()).filter(Boolean)),
+      ),
+  })
+  tags: string[]; //Tags
+
   @Prop({
     type: Types.ObjectId,
     ref: User.name,

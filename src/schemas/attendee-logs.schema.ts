@@ -18,6 +18,8 @@ export enum AttendeeAction {
   REASSIGNMENT = 'Reassignment',
   PULLBACK = 'Pullback',
   COlUMN_SWAP = 'Column Swapped',
+  TAG_APPLIED = 'Tag Applied',
+  TAG_REMOVED = 'Tag Removed',
 }
 
 @Schema({ timestamps: true })

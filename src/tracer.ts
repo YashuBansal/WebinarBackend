@@ -8,81 +8,98 @@ import {
   LoggerProvider,
   BatchLogRecordProcessor,
 } from '@opentelemetry/sdk-logs';
-import { logs } from '@opentelemetry/api-logs';
+import { logs, SeverityNumber } from '@opentelemetry/api-logs';
 import dotenv from 'dotenv';
+
 dotenv.config();
 
-const {
-  OTEL_EXPORTER_OTLP_ENDPOINT,
-  OTEL_SERVICE_NAME
-} = process.env;
+const { OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_SERVICE_NAME } = process.env;
 
-if (!OTEL_EXPORTER_OTLP_ENDPOINT) {
-  throw new Error('OTEL_EXPORTER_OTLP_ENDPOINT is not set in .env');
-}
+let loggerProvider: LoggerProvider | undefined;
+let sdk: NodeSDK | undefined;
 
-if (!OTEL_SERVICE_NAME) {
-  throw new Error('OTEL_SERVICE_NAME is not set in .env');
-}
- 
+function initOpenTelemetry() {
+  if (!OTEL_EXPORTER_OTLP_ENDPOINT || !OTEL_SERVICE_NAME) {
+    console.warn(
+      '[OTEL] Missing OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_SERVICE_NAME. OpenTelemetry is disabled for this process.',
+    );
+    return;
+  }
 
-const traceExporter = new OTLPTraceExporter({
-  url: `${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces`,
-});
+  const baseEndpoint = OTEL_EXPORTER_OTLP_ENDPOINT.replace(/\/+$/, '');
 
-const logExporter = new OTLPLogExporter({
-  url: `${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/logs`,
-});
+  const traceExporter = new OTLPTraceExporter({
+    url: `${baseEndpoint}/v1/traces`,
+  });
 
-// Create resource with service name
-// TODO: Change service name later
-const resource = resourceFromAttributes({
-  [ATTR_SERVICE_NAME]: OTEL_SERVICE_NAME,
-});
+  const logExporter = new OTLPLogExporter({
+    url: `${baseEndpoint}/v1/logs`,
+  });
 
-// Initialize Logger Provider
-const loggerProvider = new LoggerProvider({
-  resource,
-  processors: [new BatchLogRecordProcessor(logExporter)],
-});
+  // Create resource with service name
+  const resource = resourceFromAttributes({
+    [ATTR_SERVICE_NAME]: OTEL_SERVICE_NAME,
+  });
 
-// Register the logger provider globally
-logs.setGlobalLoggerProvider(loggerProvider);
+  // Initialize Logger Provider
+  loggerProvider = new LoggerProvider({
+    resource,
+    processors: [new BatchLogRecordProcessor(logExporter)],
+  });
 
-// Initialize Node SDK
-const sdk = new NodeSDK({
-  resource,
-  traceExporter,
-  instrumentations: [
-    getNodeAutoInstrumentations({
-      // Automatically instruments Express, HTTP, and other Node.js libraries
-      '@opentelemetry/instrumentation-fs': {
-        enabled: false, // Disable file system instrumentation if not needed
+  // Register the logger provider globally so `logs.getLogger(...)` works everywhere
+  logs.setGlobalLoggerProvider(loggerProvider);
+
+  // Initialize Node SDK
+  sdk = new NodeSDK({
+    resource,
+    traceExporter,
+    instrumentations: [
+      getNodeAutoInstrumentations({
+        // Automatically instruments Express, HTTP, and other Node.js libraries
+        '@opentelemetry/instrumentation-fs': {
+          enabled: false, // Disable file system instrumentation if not needed
+        },
+      }),
+    ],
+  });
+
+  try {
+    sdk.start();
+    console.log(
+      `[OTEL] OpenTelemetry instrumentation initialized (service=${OTEL_SERVICE_NAME})`,
+    );
+
+    // Minimal sanity OTEL log to verify connectivity
+    const startupLogger = logs.getLogger(OTEL_SERVICE_NAME);
+
+    startupLogger.emit({
+      severityNumber: SeverityNumber.INFO,
+      severityText: 'INFO',
+      body: 'OTEL startup sanity LOG from tracer.ts',
+      attributes: {
+        'otel.sanity': true,
+        'service.name': OTEL_SERVICE_NAME,
       },
-    }),
-    // Winston instrumentation is commented out since Winston was removed
-    // new WinstonInstrumentation({
-    //   logHook: (span, record) => {
-    //     record['resource.service.name'] = 'test-backend';
-    //   },
-    // }),
-  ],
-});
-
-// Start the SDK
-try {
-  sdk.start();
-  console.log('OpenTelemetry instrumentation initialized successfully');
-} catch (error) {
-  console.error('Error initializing OpenTelemetry:', error);
+    });
+  } catch (error) {
+    console.error('[OTEL] Error initializing OpenTelemetry:', error);
+  }
 }
+
+// Bootstrap immediately when this module is imported
+initOpenTelemetry();
 
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
+  if (!sdk || !loggerProvider) {
+    return process.exit(0);
+  }
+
   Promise.all([sdk.shutdown(), loggerProvider.shutdown()])
-    .then(() => console.log('OpenTelemetry SDK shut down successfully'))
+    .then(() => console.log('[OTEL] OpenTelemetry SDK shut down successfully'))
     .catch((error) =>
-      console.error('Error shutting down OpenTelemetry:', error),
+      console.error('[OTEL] Error shutting down OpenTelemetry:', error),
     )
     .finally(() => process.exit(0));
 });

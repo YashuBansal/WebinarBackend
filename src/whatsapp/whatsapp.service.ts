@@ -783,7 +783,7 @@ export class WhatsappService {
         !Array.isArray(response.data.data) ||
         response.data.data.length === 0
       ) {
-        throw new NotFoundException('No templates found for WABA ${wabaId}');
+        return [];
       }
 
       return response.data.data;
@@ -794,6 +794,7 @@ export class WhatsappService {
         data: axiosError.response?.data,
         message: axiosError.message,
       });
+      this.logger.log('axiosError', JSON.stringify(axiosError, null, 2));
 
       // Provide more specific error messages
       if (axiosError.response?.status === 401) {

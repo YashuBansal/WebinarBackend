@@ -27,6 +27,10 @@ import { EnrollmentsService } from 'src/enrollments/enrollments.service';
 import { Logger } from '@nestjs/common';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { MeetingEventConfigService } from 'src/meeting-event-config/meeting-event-config.service';
+import {
+  AttendeeFilterConditionDto,
+  GetAttendeeCountDto,
+} from './dto/attendee-count.dto';
 
 @Injectable()
 export class WebinarService {
@@ -94,9 +98,9 @@ export class WebinarService {
 
   async getPreWebinarAttendeeCount(
     adminId: string,
-    webinarIds: string[],
-    tags: string[]
+    filters: GetAttendeeCountDto,
   ): Promise<number> {
+    const { webinarIds, conditions = [] } = filters;
     // Validate that all webinars exist and belong to the admin
     const webinars = await this.webinarModel.find({
       _id: { $in: webinarIds.map(id => new Types.ObjectId(id)) },
@@ -111,11 +115,14 @@ export class WebinarService {
     const webinarObjectIds = webinarIds.map(id => new Types.ObjectId(id));
 
     // Get total count of attendees across all specified webinars
-    const attendees = await this.attendeesService.getAttendeesCountMultipleWebinars(
-      webinarObjectIds,
-      tags,
-      new Types.ObjectId(`${adminId}`)
-    );
+    const advancedQuery = this.buildAdvancedConditionsQuery(conditions);
+
+    const attendees =
+      await this.attendeesService.getAttendeesCountMultipleWebinars(
+        webinarObjectIds,
+        new Types.ObjectId(`${adminId}`),
+        advancedQuery,
+      );
     
     return attendees;
   }
@@ -701,5 +708,119 @@ export class WebinarService {
 
   async getWebinarRegistrations(webinarId: Types.ObjectId, adminId: Types.ObjectId) {
     return this.attendeesService.getAttendees(webinarId.toString(), adminId.toString(), false, 0,0,{filters: {}}, false);
+  }
+
+  private buildAdvancedConditionsQuery(
+    conditions?: AttendeeFilterConditionDto[],
+  ): Record<string, any> | null {
+    if (!conditions?.length) {
+      return null;
+    }
+
+    const compiled = conditions
+      .map((condition, index) => {
+        const expression = this.buildConditionExpression(condition);
+        if (!expression) {
+          return null;
+        }
+        return {
+          expression,
+          logicOperator: index === 0 ? 'AND' : condition.logicOperator ?? 'AND',
+        };
+      })
+      .filter(Boolean) as Array<{
+      expression: Record<string, any>;
+      logicOperator: 'AND' | 'OR';
+    }>;
+
+    if (!compiled.length) {
+      return null;
+    }
+
+    let combined = compiled[0].expression;
+
+    for (let i = 1; i < compiled.length; i++) {
+      const { expression, logicOperator } = compiled[i];
+      if (logicOperator === 'OR') {
+        combined = { $or: [combined, expression] };
+      } else {
+        combined = { $and: [combined, expression] };
+      }
+    }
+
+    return combined;
+  }
+
+  private buildConditionExpression(
+    condition: AttendeeFilterConditionDto,
+  ): Record<string, any> | null {
+    const values = (condition.value ?? [])
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (!values.length) {
+      return null;
+    }
+
+    const normalized =
+      condition.field === 'email' || condition.field === 'tags'
+        ? values.map((value) => value.toLowerCase())
+        : values;
+
+    let expression: Record<string, any>;
+
+    if (condition.field === 'email') {
+      expression =
+        condition.operator === 'equals'
+          ? { email: { $in: normalized } }
+          : {
+              $or: normalized.map((value) => ({
+                email: {
+                  $regex: this.escapeRegex(value),
+                  $options: 'i',
+                },
+              })),
+            };
+    } else if (condition.field === 'tags') {
+      expression =
+        condition.operator === 'equals'
+          ? { tags: { $in: normalized } }
+          : {
+              $or: normalized.map((value) => ({
+                tags: {
+                  $regex: this.escapeRegex(value),
+                  $options: 'i',
+                },
+              })),
+            };
+    } else {
+      // webinars field - filter by webinar ObjectId
+      const webinarObjectIds = values
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      
+      if (webinarObjectIds.length === 0) {
+        return null;
+      }
+
+      expression =
+        condition.operator === 'equals'
+          ? { webinar: { $in: webinarObjectIds } }
+          : {
+              $or: webinarObjectIds.map((id) => ({
+                webinar: id,
+              })),
+            };
+    }
+
+    if (condition.mode === 'exclude') {
+      return { $nor: [expression] };
+    }
+
+    return expression;
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

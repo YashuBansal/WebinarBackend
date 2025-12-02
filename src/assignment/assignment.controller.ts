@@ -21,6 +21,7 @@ import {
   preWebinarAssignmentDto,
   ReAssignmentDTO,
   RequestReAssignmentsDTO,
+  ApplyTagsToEmployeeAssignmentsDTO,
 } from './dto/Assignment.dto';
 import { UsersService } from 'src/users/users.service';
 import { AssignmentService } from './assignment.service';
@@ -84,6 +85,44 @@ export class AssignmentController {
       },
     );
     return result;
+  }
+
+  @Put('tag-employee-assignments/:empId')
+  async tagEmployeeAssignments(
+    @Param('empId') employee: string,
+    @AdminId() admin: string,
+    @Body() body: ApplyTagsToEmployeeAssignmentsDTO,
+    @Id() id: string,
+  ) {
+    let employeeId = '';
+    let adminId = '';
+    let isEmployee = false;
+
+    if (String(employee) === String(id)) {
+      employeeId = employee;
+      adminId = admin;
+      isEmployee = true;
+    } else {
+      const userEmployee = await this.usersService.getEmployee(employee);
+      if (!userEmployee) {
+        throw new NotFoundException('Employee not found');
+      }
+      if (String(userEmployee?.adminId) !== String(id)) {
+        throw new UnauthorizedException(
+          "You are not authorized to access this employee's data",
+        );
+      }
+      employeeId = employee;
+      adminId = id;
+      isEmployee = false;
+    }
+
+    return await this.assignmentService.applyTagsToEmployeeAssignments(
+      adminId,
+      employeeId,
+      body,
+      isEmployee,
+    );
   }
 
   @Post('fetch-reassignments')
