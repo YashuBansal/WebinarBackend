@@ -61,7 +61,8 @@ async function migrateTags() {
       processed += 1;
       const adminId = attendee.adminId as Types.ObjectId;
       const email = (attendee.email || '').toLowerCase().trim();
-      const normalizedTags = normalizeTags(attendee.tags);
+      // const normalizedTags = normalizeTags(attendee.tags);
+      const normalizedTags = [];
 
       if (!adminId || !email || normalizedTags.length === 0) {
         skipped += 1;
