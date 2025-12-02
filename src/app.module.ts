@@ -118,8 +118,12 @@ import { HealthModule } from './health/health.module';
     }),
     MongooseModule.forRoot(process.env.MONGO_URI),
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'uploads'),
+      // Use project root so uploads work correctly in both dev (src) and prod (dist)
+      rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',
+      serveStaticOptions: {
+        index: false, // don't look for /uploads/index.html
+      },
     }),
     AttendeeAssociationModule,
     HealthModule,

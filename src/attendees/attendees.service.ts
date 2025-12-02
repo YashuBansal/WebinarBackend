@@ -313,7 +313,13 @@ export class AttendeesService {
 
     const tagsPayload = attendees.map((a) => ({
       email: a.email,
-      tags: typeof a.tags === 'string' ? a.tags.split(',') : [],
+      tags:
+        typeof a.tags === 'string'
+          ? a.tags
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean)
+          : [],
     }));
 
     const session = await this.attendeeModel.startSession();
