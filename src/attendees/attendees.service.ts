@@ -157,6 +157,20 @@ export class AttendeesService {
     if (contactCountDiff <= 0) {
       throw new BadRequestException('Contact Limit Exceeded');
     }
+    // Sanitize incoming phone numbers: keep only numeric characters
+    const sanitizePhone = (phone?: string | null): string | null => {
+      if (!phone) return null;
+      // Keep only digits and enforce max length 20
+      const digits = phone.replace(/\D/g, '').slice(0, 20);
+      return digits || null;
+    };
+
+    // Apply phone sanitization to all incoming attendees
+    attendees = attendees.map((attendee) => ({
+      ...attendee,
+      phone: sanitizePhone(attendee.phone),
+    }));
+
     let tempAttendees = attendees;
 
     const socketId = this.websocketGateway.activeUsers.get(String(adminId));
@@ -3776,7 +3790,7 @@ export class AttendeesService {
     try {
       const {
         responseType = AdvanceFilterResponseType.DATA,
-        webinarId,
+        webinarIds,
         isAttended,
       } = payload;
 
@@ -3785,17 +3799,39 @@ export class AttendeesService {
         throw new BadRequestException('Invalid Admin ID');
       }
 
+      // Validate webinarIds array
+      if (!webinarIds || webinarIds.length === 0) {
+        throw new BadRequestException('At least one webinar ID is required');
+      }
+
+      // Validate all webinar IDs are valid MongoDB ObjectIds
+      const invalidWebinarIds = webinarIds.filter(
+        (id) => !mongoose.isValidObjectId(id),
+      );
+      if (invalidWebinarIds.length > 0) {
+        throw new BadRequestException(
+          `Invalid webinar IDs: ${invalidWebinarIds.join(', ')}`,
+        );
+      }
+
       const adminObjectId = new Types.ObjectId(adminId);
+
+      // Convert webinarIds to ObjectId array for MongoDB $in query
+      // Supports multiple webinars per campaign with a single global attendance segment
+      const webinarObjectIds = webinarIds.map(
+        (id) => new Types.ObjectId(id),
+      );
 
       // Get filter conditions from advance filters
       const { initialMatch } = await this.preParseFilterClasses(payload);
 
       // Build base match stage with security filters
       // Always include adminId and isDeleted filters for security
+      // Use $in to match multiple webinars
       const securityFilters = {
         adminId: adminObjectId,
         isDeleted: { $ne: true },
-        webinar: new Types.ObjectId(webinarId),
+        webinar: { $in: webinarObjectIds },
         isAttended,
       };
 
@@ -3809,6 +3845,21 @@ export class AttendeesService {
         
         {
           $match: initialMatch,
+        },
+        // Sort by _id to ensure consistent ordering (oldest first)
+        {
+          $sort: { _id: 1 },
+        },
+        // Group by email and keep only the first entry
+        {
+          $group: {
+            _id: '$email',
+            firstEntry: { $first: '$$ROOT' },
+          },
+        },
+        // Replace root to restore the original document structure
+        {
+          $replaceRoot: { newRoot: '$firstEntry' },
         },
       ];
       this.logger.log(`Base pipeline: ${JSON.stringify(basePipeline, null, 2)}`);

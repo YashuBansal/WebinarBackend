@@ -590,13 +590,14 @@ export class CampaignService {
       );
 
       // Fetch attendees using advance filters
+      // Supports multiple webinars per campaign with a single global attendance segment
       const advanceResult =
         await this.attendeesService.fetchAttendeesByAdvanceFilters(
           {
             isAttended: isAttended,
             responseType: responseType,
             units: conditions,
-            webinarId: webinarIds[0],
+            webinarIds: webinarIds,
           },
           adminId,
         );
