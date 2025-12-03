@@ -41,8 +41,10 @@ export class AdvanceFilterDTO {
   @IsOptional()
   responseType: AdvanceFilterResponseType = AdvanceFilterResponseType.DATA;
 
-  @IsMongoId()
-  webinarId: string;
+  @IsArray()
+  @IsNotEmpty({ message: 'At least one webinar ID is required' })
+  @IsMongoId({ each: true, message: 'Each webinar ID must be a valid MongoDB ObjectId' })
+  webinarIds: string[];
 
   @IsBoolean()
   isAttended: boolean;
