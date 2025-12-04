@@ -132,6 +132,35 @@ export class AutomationsProcessor {
 
         if (!phone || !templateName) throw new Error('Missing phone or templateName');
 
+        // Fetch template data from Meta to get the language
+        let templateLanguage = 'en_US'; // Default fallback
+        try {
+          const metaTemplates = await this.whatsappService.getTemplatesForWaba(
+            new Types.ObjectId(adminId),
+            new Types.ObjectId(projectId),
+            { name: templateName },
+          );
+
+          if (metaTemplates && metaTemplates.length > 0) {
+            const metaTemplate = metaTemplates.find(
+              (t) => t.name === templateName,
+            ) || metaTemplates[0];
+            templateLanguage = metaTemplate.language || 'en_US';
+            this.logger.log(
+              `Retrieved template language from Meta: ${templateLanguage} for template: ${templateName}`,
+            );
+          } else {
+            this.logger.warn(
+              `Template ${templateName} not found in Meta. Using default language: ${templateLanguage}`,
+            );
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Failed to fetch template language from Meta for ${templateName}. Using default: ${templateLanguage}`,
+            error.message,
+          );
+        }
+
         await this.whatsappService.sendSingleTemplateMessage({
           adminId: new Types.ObjectId(adminId),
           projectId: projectId,
@@ -139,7 +168,7 @@ export class AutomationsProcessor {
           templateName: templateName,
           bodyVariables: variables,
           headerMediaAssetId: undefined,
-          language: undefined,
+          language: templateLanguage,
           contactId: undefined,
           messageType: WabaMessageType.INDIVIDUAL,
           campaignId: undefined,

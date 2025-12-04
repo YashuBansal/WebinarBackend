@@ -496,6 +496,35 @@ export class CampaignService {
       );
     }
 
+    // Fetch template data from Meta to get the language
+    let templateLanguage = language || 'en_US'; // Default fallback
+    try {
+      const metaTemplates = await this.whatsappService.getTemplatesForWaba(
+        new Types.ObjectId(adminId),
+        campaign.project,
+        { name: campaign.messageTemplate.templateName },
+      );
+
+      if (metaTemplates && metaTemplates.length > 0) {
+        const metaTemplate = metaTemplates.find(
+          (t) => t.name === campaign.messageTemplate.templateName,
+        ) || metaTemplates[0];
+        templateLanguage = metaTemplate.language || language || 'en_US';
+        this.logger.log(
+          `Retrieved template language from Meta: ${templateLanguage} for template: ${campaign.messageTemplate.templateName}`,
+        );
+      } else {
+        this.logger.warn(
+          `Template ${campaign.messageTemplate.templateName} not found in Meta. Using ${templateLanguage}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to fetch template language from Meta for ${campaign.messageTemplate.templateName}. Using ${templateLanguage}`,
+        error.message,
+      );
+    }
+
     // Update campaign status to in-progress
     await this.update(
       campaignId,
@@ -551,7 +580,7 @@ export class CampaignService {
               templateName: campaign.messageTemplate.templateName,
               bodyVariables: processedBodyVariables,
               headerMediaAssetId,
-              language,
+              language: templateLanguage,
               contactId: contact._id.toString(),
               messageType: WabaMessageType.CAMPAIGN,
               campaignId,
@@ -647,7 +676,7 @@ export class CampaignService {
               templateName: campaign.messageTemplate.templateName,
               bodyVariables: processedBodyVariables,
               headerMediaAssetId,
-              language,
+              language: templateLanguage,
               attendeeId: contact._id,
               messageType: WabaMessageType.CAMPAIGN,
               campaignId,

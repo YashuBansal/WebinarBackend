@@ -138,6 +138,35 @@ export class WebinarAutoMessageService {
 
     const { values, dynamic } = this.resolveVariables(dto.variableMappings || [], {});
 
+    // Fetch template data from Meta to get the language
+    let templateLanguage = dto.language || 'en_US'; // Default fallback
+    try {
+      const metaTemplates = await this.whatsappService.getTemplatesForWaba(
+        new Types.ObjectId(adminId),
+        new Types.ObjectId(dto.projectId),
+        { name: dto.templateName },
+      );
+
+      if (metaTemplates && metaTemplates.length > 0) {
+        const metaTemplate = metaTemplates.find(
+          (t) => t.name === dto.templateName,
+        ) || metaTemplates[0];
+        templateLanguage = metaTemplate.language || dto.language || 'en_US';
+        this.logger.log(
+          `Retrieved template language from Meta: ${templateLanguage} for template: ${dto.templateName}`,
+        );
+      } else {
+        this.logger.warn(
+          `Template ${dto.templateName} not found in Meta. Using ${templateLanguage}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to fetch template language from Meta for ${dto.templateName}. Using ${templateLanguage}`,
+        error.message,
+      );
+    }
+
     const res = await this.whatsappService.sendSingleTemplateMessage(
       {
         adminId: new Types.ObjectId(adminId),
@@ -146,7 +175,7 @@ export class WebinarAutoMessageService {
         templateName: dto.templateName,
         bodyVariables: values,
         headerMediaAssetId: dto.headerMediaAssetId,
-        language: dto.language || 'en_US',
+        language: templateLanguage,
         contactId: undefined,
         messageType: WabaMessageType.INDIVIDUAL,
       }
@@ -161,6 +190,35 @@ export class WebinarAutoMessageService {
 
     const { values, dynamic } = this.resolveVariables(cfg.variableMappings as any, contact);
 
+    // Fetch template data from Meta to get the language
+    let templateLanguage = cfg.language || 'en_US'; // Default fallback
+    try {
+      const metaTemplates = await this.whatsappService.getTemplatesForWaba(
+        new Types.ObjectId(adminId),
+        cfg.projectId,
+        { name: cfg.templateName },
+      );
+
+      if (metaTemplates && metaTemplates.length > 0) {
+        const metaTemplate = metaTemplates.find(
+          (t) => t.name === cfg.templateName,
+        ) || metaTemplates[0];
+        templateLanguage = metaTemplate.language || cfg.language || 'en_US';
+        this.logger.log(
+          `Retrieved template language from Meta: ${templateLanguage} for template: ${cfg.templateName}`,
+        );
+      } else {
+        this.logger.warn(
+          `Template ${cfg.templateName} not found in Meta. Using ${templateLanguage}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to fetch template language from Meta for ${cfg.templateName}. Using ${templateLanguage}`,
+        error.message,
+      );
+    }
+
     try {
       const res = await this.whatsappService.sendSingleTemplateMessage(
       {
@@ -170,7 +228,7 @@ export class WebinarAutoMessageService {
         templateName: cfg.templateName,
         bodyVariables: values,
         headerMediaAssetId: cfg.headerMediaAssetId,
-        language: cfg.language || 'en_US',
+        language: templateLanguage,
         contactId: contact.contactId,
         messageType: WabaMessageType.AUTO_MESSAGE,
       }

@@ -55,3 +55,17 @@ export class AdvanceFilterDTO {
   @Type(() => AdvanceFilterUnitDTO)
   units: AdvanceFilterUnitDTO[];
 }
+
+// DTO variant that only carries responseType and units,
+// for cases where webinarIds / isAttended come from external context.
+export class AdvanceFilterUnitsDTO {
+  @IsEnum(AdvanceFilterResponseType)
+  @IsOptional()
+  responseType: AdvanceFilterResponseType = AdvanceFilterResponseType.DATA;
+
+  @IsArray()
+  @IsNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => AdvanceFilterUnitDTO)
+  units: AdvanceFilterUnitDTO[];
+}
