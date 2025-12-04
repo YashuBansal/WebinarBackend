@@ -2547,6 +2547,35 @@ export class WhatsappService {
       `Starting to send template messages to ${fetchedContacts.length} contacts using template: ${template.templateName}`,
     );
 
+    // Fetch template data from Meta to get the language
+    let templateLanguage = 'en_US'; // Default fallback
+    try {
+      const metaTemplates = await this.getTemplatesForWaba(
+        template.adminId,
+        template.project,
+        { name: template.templateName },
+      );
+
+      if (metaTemplates && metaTemplates.length > 0) {
+        const metaTemplate = metaTemplates.find(
+          (t) => t.name === template.templateName,
+        ) || metaTemplates[0];
+        templateLanguage = metaTemplate.language || 'en_US';
+        this.logger.log(
+          `Retrieved template language from Meta: ${templateLanguage} for template: ${template.templateName}`,
+        );
+      } else {
+        this.logger.warn(
+          `Template ${template.templateName} not found in Meta. Using default language: ${templateLanguage}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to fetch template language from Meta for ${template.templateName}. Using default: ${templateLanguage}`,
+        error.message,
+      );
+    }
+
     const timer = MonitoringUtil.createTimer();
     const results = {
       total: fetchedContacts.length,
@@ -2637,7 +2666,7 @@ export class WhatsappService {
             templateName: template.templateName,
             bodyVariables: processedBodyVariables,
             headerMediaAssetId: template.headerMediaAssetId?.toString(),
-            language: 'en_US',
+            language: templateLanguage,
             messageType: WabaMessageType.ZOOM_EVENT,
             meetingId,
           });
