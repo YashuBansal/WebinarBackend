@@ -77,16 +77,6 @@ export class WhatsappController {
     };
   }
 
-  @Post('templates')
-  async fetchwabaTemplates() {
-    const response = await this.whatsappService.getTemplatesForWabaTest();
-    return {
-      statusCode: HttpStatus.CREATED,
-      message: 'WhatsApp Business Account connected successfully!',
-      data: response,
-    };
-  }
-
   @Get('webhook')
   verifyWebhook(
     @Query('hub.mode') mode: string,
@@ -207,50 +197,6 @@ export class WhatsappController {
     }
   }
 
-  @Get('templates/:projectId')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async getTemplates(
-    @Param('projectId') projectId: string,
-    @Id() adminId: string,
-    @Query() query: GetTemplatesQueryDto,
-  ) {
-    if (!mongoose.isValidObjectId(projectId)) {
-      throw new NotAcceptableException('Invalid Project ID');
-    }
-
-    const templates = await this.whatsappService.getTemplatesForWaba(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      query,
-    );
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'Templates fetched successfully',
-      data: templates,
-    };
-  }
-
-  @Post('templates/:projectId')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async createTemplate(
-    @Param('projectId') projectId: string,
-    @Body() createTemplateDto: CreateTemplateDto,
-    @Id() adminId: string,
-  ) {
-    if (!mongoose.isValidObjectId(projectId)) {
-      throw new NotAcceptableException('Invalid Project ID');
-    }
-
-    await this.whatsappService.createTemplateForWaba(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      createTemplateDto,
-    );
-    return {
-      statusCode: HttpStatus.CREATED,
-      message: 'Template submitted for review successfully!',
-    };
-  }
 
   @Patch('templates/:projectId/:templateId')
   @UsePipes(new ValidationPipe({ transform: true }))
@@ -277,28 +223,6 @@ export class WhatsappController {
     };
   }
 
-  @Delete('templates/:projectId')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async deleteTemplate(
-    @Param('projectId') projectId: string,
-    @Query() deleteTemplateDto: DeleteTemplateDto,
-    @Id() adminId: string,
-  ) {
-    if (!mongoose.isValidObjectId(projectId)) {
-      throw new NotAcceptableException('Invalid Project ID');
-    }
-
-    const result = await this.whatsappService.deleteTemplateForWaba(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      deleteTemplateDto,
-    );
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'Template deleted successfully!',
-      data: result,
-    };
-  }
 
   @Get('templates/:projectId/:templateId')
   async getTemplateById(

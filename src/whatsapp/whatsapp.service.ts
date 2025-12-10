@@ -34,9 +34,7 @@ import {
   SendTemplateMessageDto,
   SendBulkTemplateMessageDto,
 } from './dto/msg.dto';
-import { v2 as cloudinary } from 'cloudinary';
 import { MediaAsset, MediaAssetDocument } from './schemas/media-asset.schema';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { ContactsService } from 'src/contacts/contacts.service';
 import { FileStorageService } from 'src/file-storage/file-storage.service';
 import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-template.schema';
@@ -48,7 +46,6 @@ import { CampaignStatus } from 'src/schemas/whatsapp-embed/campaign.schema';
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
   private readonly webhookVerifyToken: string;
-  private readonly ENCRYPTION_KEY: string;
   private readonly axiosInstance: AxiosInstance;
 
   constructor(
@@ -59,7 +56,6 @@ export class WhatsappService {
     @InjectModel(MediaAsset.name)
     private readonly mediaAssetModel: Model<MediaAssetDocument>,
     private readonly contactsService: ContactsService,
-    private readonly cloudinaryService: CloudinaryService,
     private readonly wabaMessageService: WabaMessageService,
     private readonly fileStorageService: FileStorageService,
     private readonly whatsAppGateway: WhatsAppGateway,
@@ -67,22 +63,6 @@ export class WhatsappService {
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
     );
-    const key = this.configService.get<string>('ENCRYPTION_KEY');
-    // Check if the encryption key is configured.
-    if (!key || key.length !== 32) {
-      throw new Error(
-        'ENCRYPTION_KEY is not defined or is not 32 characters long in .env file',
-      );
-    }
-
-    this.ENCRYPTION_KEY = key;
-
-    // Configure Cloudinary
-    cloudinary.config({
-      cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-      api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
-      api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
-    });
 
     // Initialize robust axios instance with IPv4 agent and retry logic
     const httpAgent = new http.Agent({ family: 4 });
@@ -1805,33 +1785,6 @@ export class WhatsappService {
       );
       // Re-throw the original error to be handled by the calling function
       throw error;
-    }
-  }
-
-  async getTemplatesForWabaTest(): Promise<any> {
-    const wabaId = '1055988183368296';
-    const accessToken =
-      'EAASkZB5UKWQ8BPWggi8ZCItaJoCIriKZCYKSsRQnCY8CpvIs681sYmlh1gHU15t72uziCDuUzpxkcxXAoplFwil1C4E5WiiilaEiKDzZBS4XaDrsGl2F8h2yTzHie8hIuREx6xA2oJ58fOD5Ivy79Bkby1l2yqWnpGnqeW8OYsMj53NuMJLKZBpQLGtMBCB6VaJ3TjoOTdTVBusB38g3ZBFbiZCQUEQvNiN1EYlN1KWZCaMZD';
-    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
-    const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/message_templates`;
-
-    try {
-      const response = await this.axiosInstance.get(url, {
-        params: {
-          access_token: accessToken,
-          fields: 'name,status,category,language,components',
-        },
-        timeout: 15000,
-      });
-      return response.data.data; // The templates are in the 'data' array
-    } catch (error) {
-      this.logger.error(
-        `Failed to fetch templates for WABA ${wabaId}`,
-        error.response?.data,
-      );
-      throw new InternalServerErrorException(
-        'Could not fetch templates from Meta.',
-      );
     }
   }
 
