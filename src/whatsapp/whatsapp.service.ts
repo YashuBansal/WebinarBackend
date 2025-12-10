@@ -805,24 +805,20 @@ export class WhatsappService {
     const account = await this.projectService.findOne(adminId, projectId);
 
     if (!account) {
-      throw new UnauthorizedException(
-        {
-          source: 'app',
-          message: 'You do not have permission to access this project.',
-        } as any,
-      );
+      throw new UnauthorizedException({
+        source: 'app',
+        message: 'You do not have permission to access this project.',
+      } as any);
     }
 
     // Check if WhatsApp credentials are configured
     if (!account.permanentAccessToken || !account.wabaId) {
-      throw new NotFoundException(
-        {
-          source: 'app',
-          message:
-            'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
-          code: 'WABA_NOT_CONFIGURED',
-        } as any,
-      );
+      throw new NotFoundException({
+        source: 'app',
+        message:
+          'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
+        code: 'WABA_NOT_CONFIGURED',
+      } as any);
     }
 
     const { permanentAccessToken, wabaId } = account;
@@ -1228,18 +1224,17 @@ export class WhatsappService {
     projectId: string;
     recipientPhoneNumber: string;
     templateName: string;
+    messageType: WabaMessageType;
     bodyVariables?: string[];
     headerMediaAssetId?: string;
     language?: string;
     contactId?: string;
-    messageType: WabaMessageType;
     campaignId?: string;
     attendeeId?: Types.ObjectId;
     meetingId?: string;
     media?: { url: string; filename: string };
     apiCampaignId?: string;
   }): Promise<any> {
-    this.logger.log('payload', payload);
 
     const {
       adminId,
@@ -1980,12 +1975,6 @@ export class WhatsappService {
     return this.subscribeAppToWaba(wabaId, permanentAccessToken);
   }
 
-  /**
-   * Checks if the app is subscribed to a WhatsApp Business Account for webhook notifications
-   * @param wabaId The WhatsApp Business Account ID
-   * @param accessToken The access token for authentication
-   * @returns Promise with subscription status and app list
-   */
   async checkAppSubscriptionToWaba(
     wabaId: string,
     accessToken: string,
@@ -2052,13 +2041,6 @@ export class WhatsappService {
     }
   }
 
-  /**
-   * Uploads a sample file to Meta using WhatsApp Media Upload API to get a media ID for templates
-   * @param fileBuffer The file buffer to upload
-   * @param mimeType The MIME type of the file
-   * @param originalName The original filename
-   * @returns The media ID from Meta for use in template header_handle field
-   */
   async getMetaHeaderHandle(
     fileBuffer: Buffer,
     mimeType: string,
@@ -2160,13 +2142,6 @@ export class WhatsappService {
     }
   }
 
-  /**
-   * Gets Meta header handle for generic media by uploading it from server
-   * @param adminId The admin ID
-   * @param projectId The project ID
-   * @param mediaType The type of media ('image', 'video', 'document')
-   * @returns The Meta header handle for the generic media
-   */
   private async getGenericMediaMetaHandle(
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
@@ -2246,13 +2221,6 @@ export class WhatsappService {
     }
   }
 
-  /**
-   * Uploads a media asset for sending in messages
-   * @param file The uploaded file
-   * @param userId The user ID
-   * @param projectId The project ID
-   * @returns The created MediaAsset document
-   */
   async uploadMediaAsset(
     file: Express.Multer.File,
     userId: Types.ObjectId,
@@ -2302,14 +2270,6 @@ export class WhatsappService {
     }
   }
 
-  /**
-   * Get media assets for a specific user and project
-   * @param userId The user ID
-   * @param projectId The project ID
-   * @param page The page number for pagination
-   * @param limit The number of items per page
-   * @returns Paginated media assets
-   */
   async getMediaAssets(
     userId: Types.ObjectId,
     projectId: Types.ObjectId,
@@ -2391,13 +2351,6 @@ export class WhatsappService {
       .lean<MediaAsset & { _id: Types.ObjectId }>();
   }
 
-  /**
-   * Delete a media asset by ID
-   * @param userId The user ID
-   * @param projectId The project ID
-   * @param mediaAssetId The media asset ID to delete
-   * @returns Deleted media asset
-   */
   async deleteMediaAsset(
     userId: Types.ObjectId,
     projectId: Types.ObjectId,
@@ -2510,9 +2463,9 @@ export class WhatsappService {
       );
 
       if (metaTemplates && metaTemplates.length > 0) {
-        const metaTemplate = metaTemplates.find(
-          (t) => t.name === template.templateName,
-        ) || metaTemplates[0];
+        const metaTemplate =
+          metaTemplates.find((t) => t.name === template.templateName) ||
+          metaTemplates[0];
         templateLanguage = metaTemplate.language || 'en_US';
         this.logger.log(
           `Retrieved template language from Meta: ${templateLanguage} for template: ${template.templateName}`,
@@ -2677,5 +2630,393 @@ export class WhatsappService {
         'Failed to process template messages',
       );
     }
+  }
+
+  async optimizedSendSingleTemplateMessage(payload: {
+    adminId: Types.ObjectId;
+    projectId: string;
+    recipientPhoneNumber: string;
+    templateName: string;
+    fromPhoneNumberId: string;
+    permanentAccessToken: string;
+    messageType: WabaMessageType;
+    templateStructure: {
+      name: string;
+      language: string;
+      components: {
+        type: string;
+        parameters: {
+          type: string;
+          value: string;
+        }[];
+      }[];
+    }
+    bodyVariables?: string[];
+    headerMediaAssetId?: string;
+    language?: string;
+    contactId?: string;
+    campaignId?: string;
+    attendeeId?: Types.ObjectId;
+    meetingId?: string;
+    media?: { url: string; filename: string };
+    apiCampaignId?: string;
+  }): Promise<any> {
+
+    const {
+      adminId,
+      projectId,
+      meetingId,
+      recipientPhoneNumber,
+      templateName,
+      bodyVariables,
+      templateStructure,
+      headerMediaAssetId,
+      language,
+      contactId,
+      attendeeId,
+      messageType = WabaMessageType.INDIVIDUAL,
+      campaignId,
+      media,
+      apiCampaignId,
+      fromPhoneNumberId,
+      permanentAccessToken,
+    } = payload;
+
+    // Normalize and validate recipient phone number per India format rules
+    const formatted = this.formatIndianRecipient(recipientPhoneNumber);
+
+    const normalizedRecipientPhoneNumber = formatted.phoneNumber;
+    this.logger.log(
+      `Attempting to send template '${templateName}' from WABA ${projectId} to ${normalizedRecipientPhoneNumber}`,
+    );
+
+    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
+
+
+    const metaPayload = {
+      messaging_product: 'whatsapp',
+      to: normalizedRecipientPhoneNumber,
+      type: 'template',
+      template: templateStructure,
+    };
+    this.logger.log('metaPayload', metaPayload);
+
+    try {
+
+      if (!formatted.digitsOnly)
+        throw new BadRequestException('Invalid phone number');
+
+      this.logger.log('Sending template message to Meta', metaPayload);
+      const response = await this.axiosInstance.post(url, metaPayload, {
+        headers: {
+          Authorization: `Bearer ${permanentAccessToken}`,
+        },
+        timeout: 15000, // 15 second timeout
+      });
+
+      this.logger.log(
+        `Message sent successfully to ${normalizedRecipientPhoneNumber}. Message ID: ${response.data.messages[0].id}`,
+      );
+
+      // Create WABA message record
+      if (response.data?.messages[0]?.id) {
+        
+           this.wabaMessageService.create({
+            projectId: projectId,
+            adminId: adminId.toString(),
+            phoneNumber: normalizedRecipientPhoneNumber,
+            contactId: contactId,
+            wabaMessageId: response.data.messages[0].id,
+            messageType,
+            templateName: templateName,
+            templateLanguage: language || 'en_US',
+            messageFormat: 'template',
+            templateComponents: templateStructure.components || [],
+            displayText: this.renderDisplayText(
+              templateStructure.components || [],
+            ),
+            campaignId,
+            attendeeId: attendeeId?.toString(),
+            apiCampaignId,
+            meetingId,
+            direction: 'outbound' as any,
+          }).catch((error) => {
+          this.logger.error('Failed to create WABA message record:', error);
+          });
+      }
+
+      return response.data;
+    } catch (error) {
+      this.createErrorMessage({
+        projectId: projectId,
+        adminId: adminId.toString(),
+        normalizedRecipientPhoneNumber,
+        contactId: contactId,
+        messageType,
+        templateName: templateName,
+        language: language || 'en_US',
+        messageFormat: 'template',
+        templateStructure: templateStructure.components || [],
+        campaignId,
+        attendeeId: attendeeId?.toString(),
+        apiCampaignId,
+        meetingId,
+        error: error,
+      });
+      // Enhanced error handling for axios errors
+      if (axios.isAxiosError(error)) {
+        this.logger.error(`Axios request failed: ${error.message}`, {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          url: error.config?.url,
+          method: error.config?.method,
+        });
+
+        // Provide more specific error messages based on status codes
+        if (error.response?.status === 401) {
+          throw new UnauthorizedException(
+            'Invalid access token or expired credentials',
+          );
+        } else if (error.response?.status === 400) {
+          throw new BadRequestException(
+            error.response?.data?.error?.message ||
+              'Invalid request parameters',
+          );
+        } else if (error.response?.status === 429) {
+          throw new InternalServerErrorException(
+            'Rate limit exceeded. Please try again later',
+          );
+        } else if (error.code === 'ETIMEDOUT') {
+          throw new InternalServerErrorException(
+            'Request timeout. Please try again',
+          );
+        }
+      } else {
+        this.logger.error(
+          'An unexpected error occurred while sending message',
+          error,
+        );
+      }
+    }
+  }
+
+  async sendTemplateMessagev2(
+    payload: {
+      adminId: Types.ObjectId,
+    sendTemplateDto: SendTemplateMessageDto,
+    messageType: WabaMessageType,
+    campaignId?: string,
+    media?: { url: string; filename: string };
+    }
+  ): Promise<any> {
+
+    const {
+      adminId,
+      sendTemplateDto,
+      messageType,
+      campaignId,
+      media,
+    } = payload;
+
+
+    
+    const {
+      projectId,
+      recipientPhoneNumber,
+      templateName,
+      bodyVariables,
+      headerMediaAssetId,
+      language,
+      contactId,
+    } = sendTemplateDto;
+
+    const account = await this.projectService.findOne(adminId, new Types.ObjectId(projectId));
+    if (!account) {
+      throw new UnauthorizedException(
+        'You do not have permission to access this WABA.',
+      );
+    }
+    const fromPhoneNumberId = account.phoneNumberId;
+    const permanentAccessToken = account.permanentAccessToken;
+
+
+    const templateStructure: any = {
+      name: templateName,
+      language: {
+        code: language || 'en_US',
+      },
+      components: [],
+    };
+    const resolvedVariables = bodyVariables || [];
+
+
+    // Add body component with resolved variables
+    if (resolvedVariables.length > 0) {
+      templateStructure.components.push({
+        type: 'body',
+        parameters: resolvedVariables.map((variable) => ({
+          type: 'text',
+          text: variable,
+        })),
+      });
+    }
+
+    // Add header component if media asset is provided
+    if (headerMediaAssetId) {
+      const mediaAsset =
+        await this.mediaAssetModel.findById(headerMediaAssetId);
+      this.logger.log('mediaAsset', mediaAsset);
+      if (!mediaAsset) {
+        throw new NotFoundException('Media asset not found');
+      }
+
+      // Get template details to determine header format
+      const templates = await this.getTemplatesForWaba(
+        adminId,
+        new Types.ObjectId(projectId),
+        { name: templateName },
+      );
+
+      const ourTemplate = templates.find(
+        (template: any) => template.name === templateName,
+      );
+
+      if (!ourTemplate) {
+        throw new NotFoundException(`Template '${templateName}' not found`);
+      }
+
+      this.logger.log('templateDetails', ourTemplate);
+      const headerComponent = ourTemplate.components.find(
+        (c) => c.type === 'HEADER',
+      );
+
+      if (headerComponent) {
+        const headerFormat = headerComponent.format;
+        let headerParameter: any;
+
+        switch (headerFormat) {
+          case 'IMAGE':
+            headerParameter = {
+              type: 'image',
+              image: {
+                link: mediaAsset.filePath,
+              },
+            };
+            break;
+          case 'VIDEO':
+            headerParameter = {
+              type: 'video',
+              video: {
+                link: mediaAsset.filePath,
+              },
+            };
+            break;
+          case 'DOCUMENT':
+            headerParameter = {
+              type: 'document',
+              document: {
+                link: mediaAsset.filePath,
+                filename: mediaAsset.fileName,
+              },
+            };
+            break;
+          default:
+            this.logger.log('Unsupported header format', headerFormat);
+            throw new BadRequestException(
+              `Unsupported header format: ${headerFormat}`,
+            );
+        }
+
+        templateStructure.components.push({
+          type: 'header',
+          parameters: [headerParameter],
+        });
+      }
+    } else if (media) {
+      this.logger.log('mediaAsset', media);
+
+      // Get template details to determine header format
+      const templates = await this.getTemplatesForWaba(
+        adminId,
+        new Types.ObjectId(projectId),
+        { name: templateName },
+      );
+
+      const ourTemplate = templates.find(
+        (template: any) => template.name === templateName,
+      );
+
+      if (!ourTemplate) {
+        throw new NotFoundException(`Template '${templateName}' not found`);
+      }
+
+      this.logger.log('templateDetails', ourTemplate);
+      const headerComponent = ourTemplate.components.find(
+        (c) => c.type === 'HEADER',
+      );
+
+      if (headerComponent) {
+        const headerFormat = headerComponent.format;
+        let headerParameter: any;
+
+        switch (headerFormat) {
+          case 'IMAGE':
+            headerParameter = {
+              type: 'image',
+              image: {
+                link: media.url,
+              },
+            };
+            break;
+          case 'VIDEO':
+            headerParameter = {
+              type: 'video',
+              video: {
+                link: media.url,
+              },
+            };
+            break;
+          case 'DOCUMENT':
+            headerParameter = {
+              type: 'document',
+              document: {
+                link: media.url,
+                filename: media.filename,
+              },
+            };
+            break;
+          default:
+            this.logger.log('Unsupported header format', headerFormat);
+            throw new BadRequestException(
+              `Unsupported header format: ${headerFormat}`,
+            );
+        }
+
+        templateStructure.components.push({
+          type: 'header',
+          parameters: [headerParameter],
+        });
+      }
+    }
+
+    // Remove components if empty
+    if (templateStructure.components.length === 0) {
+      delete templateStructure.components;
+    }
+
+    
+
+    return this.optimizedSendSingleTemplateMessage({
+      adminId,
+    projectId,
+    recipientPhoneNumber,
+    templateName,
+    fromPhoneNumberId,
+    permanentAccessToken,
+    messageType,
+    templateStructure,
+    });
   }
 }
