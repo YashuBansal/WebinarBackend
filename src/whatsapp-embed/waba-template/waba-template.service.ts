@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -25,6 +25,7 @@ export class WabaTemplateService {
   constructor(
     @InjectModel(WabaTemplate.name)
     private wabaTemplateModel: Model<WabaTemplateDocument>,
+    @Inject(forwardRef(() => WhatsappService))
     private readonly whatsappService: WhatsappService,
   ) {}
 
@@ -219,8 +220,16 @@ export class WabaTemplateService {
     await this.syncWabaTemplates(adminId, projectId);
   }
 
-  async deleteTemplate(adminId: Types.ObjectId, projectId: Types.ObjectId, deleteTemplateDto: DeleteTemplateDto) {
-    await this.whatsappService.deleteTemplateForWaba(adminId, projectId, deleteTemplateDto);
+  async deleteTemplate(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    deleteTemplateDto: DeleteTemplateDto,
+  ) {
+    await this.whatsappService.deleteTemplateForWaba(
+      adminId,
+      projectId,
+      deleteTemplateDto,
+    );
     await this.syncWabaTemplates(adminId, projectId);
   }
 
@@ -318,5 +327,22 @@ export class WabaTemplateService {
     if (!text) return 0;
     const matches = text.match(/{{\d+}}/g);
     return matches ? matches.length : 0;
+  }
+
+  async getByTemplateName(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    templateName: string,
+  )
+  : Promise<WabaTemplateDocument | null> 
+  
+  {
+    return this.wabaTemplateModel
+      .findOne({
+        projectId,
+        adminId,
+        name: templateName,
+      })
+      .lean();
   }
 }

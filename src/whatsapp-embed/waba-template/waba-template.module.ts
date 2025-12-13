@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module } from '@nestjs/common';
+import { forwardRef, MiddlewareConsumer, Module } from '@nestjs/common';
 import { WabaTemplateController } from './waba-template.controller';
 import { WabaTemplateService } from './waba-template.service';
 import { WabaTemplateSchema, WabaTemplate } from './waba-template.schema';
@@ -13,9 +13,10 @@ import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
     MongooseModule.forFeature([
       { name: WabaTemplate.name, schema: WabaTemplateSchema },
     ]),
-    UsersModule,
-    ProjectsModule,
-    WhatsappModule
+    forwardRef(() => UsersModule),
+    forwardRef(() => ProjectsModule),
+
+    forwardRef(() => WhatsappModule)
   ],
   controllers: [WabaTemplateController],
   providers: [WabaTemplateService],

@@ -110,11 +110,6 @@ export class AttendeeAssociationService {
     try {
       const { fullName = '', phone = '', adminId, email, tags } = payload;
 
-      const association = await this.attendeeAssociationModel.findOne({
-        adminId: adminId,
-        email: email,
-      });
-
       const trimmedFullName = fullName?.trim() || '';
       const trimmedPhone = phone?.trim() || '';
       const normalizedTags = Array.isArray(tags)
@@ -127,48 +122,34 @@ export class AttendeeAssociationService {
           )
         : [];
 
-      if (!association) {
-        const newAssociation = await this.attendeeAssociationModel.create({
-          email: email,
-          adminId: adminId,
-          fullNames: trimmedFullName ? [trimmedFullName] : [],
-          phones: trimmedPhone ? [trimmedPhone] : [],
-          tags: normalizedTags,
-        });
-        return newAssociation;
-      }
-
-      const associatedFullNames = association.fullNames || [];
-      const associatedPhones = association.phones || [];
-      const associatedTags = association.tags || [];
-
-      // Add new full names and phones to the association but remove duplicates
-
-      if (trimmedFullName && !associatedFullNames.includes(trimmedFullName)) {
-        associatedFullNames.push(trimmedFullName);
-      }
-
-      if (trimmedPhone && !associatedPhones.includes(trimmedPhone)) {
-        associatedPhones.push(trimmedPhone);
-      }
-
-      normalizedTags.forEach((tag) => {
-        if (tag && !associatedTags.includes(tag)) {
-          associatedTags.push(tag);
-        }
-      });
-
+      // Use findOneAndUpdate with upsert to reduce from 2 queries to 1
       const updatedAssociation =
-        await this.attendeeAssociationModel.findByIdAndUpdate(
-          association._id,
+        await this.attendeeAssociationModel.findOneAndUpdate(
           {
-            $set: {
-              fullNames: associatedFullNames,
-              phones: associatedPhones,
-              tags: associatedTags,
+            adminId: adminId,
+            email: email,
+          },
+          {
+            $setOnInsert: {
+              email: email,
+              adminId: adminId,
+              fullNames: trimmedFullName ? [trimmedFullName] : [],
+              phones: trimmedPhone ? [trimmedPhone] : [],
+              tags: normalizedTags,
+            },
+            $addToSet: {
+              ...(trimmedFullName ? { fullNames: trimmedFullName } : {}),
+              ...(trimmedPhone ? { phones: trimmedPhone } : {}),
+              ...(normalizedTags.length > 0
+                ? { tags: { $each: normalizedTags } }
+                : {}),
             },
           },
-          { new: true },
+          {
+            upsert: true,
+            new: true,
+            setDefaultsOnInsert: true,
+          },
         );
 
       return updatedAssociation;

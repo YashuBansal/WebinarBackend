@@ -18,6 +18,10 @@ import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
 import { ContactsModule } from 'src/contacts/contacts.module';
 import { FileStorageService } from 'src/file-storage/file-storage.service';
 import { WebsocketModule } from 'src/websocket/websocket.module';
+import { WhatsappQueueModule } from './whatsapp.queue.module';
+import { WhatsappQueueProcessor } from './whatsapp.queue.processor';
+import { WhatsappWebhookProcessor } from './whatsapp.webhook.processor';
+import { WabaTemplateModule } from 'src/whatsapp-embed/waba-template/waba-template.module';
 
 @Module({
   imports: [
@@ -30,8 +34,16 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
     MongooseModule.forFeature([
       { name: MediaAsset.name, schema: MediaAssetSchema },
     ]),
+    WhatsappQueueModule,
+    forwardRef(() => WabaTemplateModule)
   ],
-  providers: [WhatsappService, CloudinaryService, FileStorageService],
+  providers: [
+    WhatsappService,
+    CloudinaryService,
+    FileStorageService,
+    WhatsappQueueProcessor,
+    WhatsappWebhookProcessor,
+  ],
   exports: [WhatsappService],
   controllers: [WhatsappController],
 })

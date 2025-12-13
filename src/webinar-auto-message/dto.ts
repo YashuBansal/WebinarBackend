@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString, ValidateIf, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class VariableMappingDto {
@@ -9,16 +9,19 @@ export class VariableMappingDto {
   @IsBoolean()
   isDynamic: boolean;
 
-  @IsOptional()
+  @ValidateIf((o) => o.isDynamic === true)
   @IsString()
+  @IsNotEmpty()
   contactField?: string;
 
-  @IsOptional()
+  @ValidateIf((o) => o.isDynamic === false)
   @IsString()
+  @IsNotEmpty()
   staticValue?: string;
 
-  @IsOptional()
+  @ValidateIf((o) => o.isDynamic === true)
   @IsString()
+  @IsNotEmpty()
   fallbackValue?: string;
 }
 

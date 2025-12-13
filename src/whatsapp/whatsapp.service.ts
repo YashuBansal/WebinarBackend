@@ -16,6 +16,7 @@ import * as http from 'http';
 import axiosRetry from 'axios-retry';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { Queue } from 'bullmq';
 import { ProjectsService } from 'src/projects/projects.service';
 import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
 import * as fs from 'fs';
@@ -33,6 +34,8 @@ import {
 import {
   SendTemplateMessageDto,
   SendBulkTemplateMessageDto,
+  ISendSingleTemplateMessagePayload,
+  IFormattedPhoneData,
 } from './dto/msg.dto';
 import { MediaAsset, MediaAssetDocument } from './schemas/media-asset.schema';
 import { ContactsService } from 'src/contacts/contacts.service';
@@ -41,6 +44,12 @@ import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-t
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { CampaignStatus } from 'src/schemas/whatsapp-embed/campaign.schema';
+import {
+  WHATSAPP_TEMPLATE_QUEUE,
+  WHATSAPP_TEMPLATE_QUEUE_NAME,
+  WHATSAPP_WEBHOOK_QUEUE,
+} from './whatsapp.queue.module';
+import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-template.service';
 
 @Injectable()
 export class WhatsappService {
@@ -59,6 +68,12 @@ export class WhatsappService {
     private readonly wabaMessageService: WabaMessageService,
     private readonly fileStorageService: FileStorageService,
     private readonly whatsAppGateway: WhatsAppGateway,
+    @Inject(WHATSAPP_TEMPLATE_QUEUE)
+    private readonly whatsappTemplateQueue: Queue,
+    @Inject(WHATSAPP_WEBHOOK_QUEUE)
+    private readonly whatsappWebhookQueue: Queue,
+    @Inject(forwardRef(() => WabaTemplateService))
+    private readonly wabaTemplateService: WabaTemplateService,
   ) {
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
@@ -120,11 +135,28 @@ export class WhatsappService {
   }
 
   /**
+   * Enqueues the webhook payload for background processing.
+   * This ensures the controller can respond with 200 OK immediately.
+   */
+  async enqueueWebhookProcessing(payload: any) {
+    // Add to webhook queue
+    await this.whatsappWebhookQueue.add('process-webhook', payload, {
+      removeOnComplete: { age: 24 * 3600 },
+      removeOnFail: { count: 1000 },
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 1000,
+      },
+    });
+  }
+
+  /**
    * Processes the incoming data payload from Meta.
-   * This method will be expanded to handle message statuses, new messages, etc.
+   * Executed by the worker.
    * @param payload The body of the POST request from Meta's webhook.
    */
-  async processWebhookPayload(payload: any): Promise<void> {
+  async processWebhookPayloadLogic(payload: any): Promise<void> {
     this.logger.log('Processing webhook payload for WhatsApp messages');
 
     // axios.post('http://localhost:3002/api/v1/whatsapp/webhook', payload).then((response) => {
@@ -170,13 +202,6 @@ export class WhatsappService {
             const msgId = msg.id;
 
             if (!from || !msgId) continue;
-            console.log('from ------------------------- > ', from);
-            console.log(
-              'fromPhoneNumberId ------------------------- > ',
-              fromPhoneNumberId,
-            );
-            console.log('textBody ------------------------- > ', textBody);
-            console.log('wabaMessageId ------------------------- > ', msgId);
             await this.handleInboundTextMessage({
               from,
               fromPhoneNumberId,
@@ -190,6 +215,8 @@ export class WhatsappService {
       }
     } catch (error) {
       this.logger.error('Error processing webhook payload', error);
+      // Rethrow error to trigger BullMQ retry mechanism
+      throw error;
     }
   }
 
@@ -701,12 +728,6 @@ export class WhatsappService {
       // Re-throw the original error to be handled by the calling function
       throw error;
     }
-  }
-
-  async getWabaUserById(adminId: Types.ObjectId) {
-    // return this.wabaAccountModel.find({
-    //   adminId,
-    // });
   }
 
   async getTemplatesForWaba(
@@ -1235,7 +1256,6 @@ export class WhatsappService {
     media?: { url: string; filename: string };
     apiCampaignId?: string;
   }): Promise<any> {
-
     const {
       adminId,
       projectId,
@@ -1457,7 +1477,7 @@ export class WhatsappService {
     this.logger.log('metaPayload', metaPayload);
 
     try {
-      console.log(
+      this.logger.log(
         'formatted.digitsOnly ------------------------- > ',
         formatted.digitsOnly.length,
       );
@@ -1582,7 +1602,7 @@ export class WhatsappService {
     adminId: string;
     campaignId?: string;
     normalizedRecipientPhoneNumber: string;
-    contactId: string;
+    contactId?: string;
     templateName: string;
     error: any;
     language: string;
@@ -1621,14 +1641,9 @@ export class WhatsappService {
     }
   }
 
-  private formatIndianRecipient(input: string): {
-    phoneNumber: string;
-    digitsOnly: string;
-    isValid: boolean;
-  } {
+  private formatIndianRecipient(input: string): IFormattedPhoneData {
     const raw = `${input || ''}`.trim();
     const digitsOnly = raw.replace(/\D/g, '');
-    console.log('digitsOnly ------------------------- > ', digitsOnly);
     let candidate = '';
 
     if (/^0\d{10}$/.test(digitsOnly)) {
@@ -1645,105 +1660,151 @@ export class WhatsappService {
     return { phoneNumber: isValid ? candidate : input, digitsOnly, isValid };
   }
 
-  async sendTemplateMessage(
-    adminId: Types.ObjectId,
-    sendTemplateDto: SendTemplateMessageDto,
-    messageType: WabaMessageType = WabaMessageType.INDIVIDUAL,
-    campaignId?: string,
-  ): Promise<any> {
-    const {
-      projectId,
-      recipientPhoneNumber,
+  async checkVariableMappingLength({
+    adminId,
+    projectId,
+    templateName,
+    givenVariableLength,
+    headerMediaAssetId,
+  }: {
+    adminId: string;
+    projectId: string;
+    templateName: string;
+    givenVariableLength: number;
+    headerMediaAssetId?: string;
+  }): Promise<void> {
+    const template = await this.wabaTemplateService.getByTemplateName(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
       templateName,
-      bodyVariables,
-      headerMediaAssetId,
-      language,
-      contactId,
-    } = sendTemplateDto;
+    );
 
-    return this.sendSingleTemplateMessage({
-      adminId,
-      projectId,
-      recipientPhoneNumber,
-      templateName,
-      bodyVariables,
-      headerMediaAssetId,
-      language,
-      contactId,
-      messageType,
-      campaignId,
-    });
+    if (!template) {
+      throw new NotFoundException('Template not found');
+    }
+
+    // we need to check if the given variable length is equal to the template variable length
+    const bodyComponent = template.components?.find(
+      (component) => component.type === 'BODY' || component.type === 'body',
+    );
+    if (!bodyComponent) {
+      throw new BadRequestException('Template body components are required');
+    }
+
+    let variableLength = 0;
+
+    const exampleBodyText = bodyComponent?.example?.body_text?.[0];
+
+    if (Array.isArray(exampleBodyText)) {
+      variableLength = exampleBodyText.length;
+    }
+
+    if (variableLength !== givenVariableLength) {
+      throw new BadRequestException(
+        'Variable length is not equal to the template variable length',
+      );
+    }
+
+    const headerComponent = template.components?.find(
+      (c) => c.type === 'HEADER',
+    );
+
+    if (headerComponent) {
+      const headerFormat = headerComponent.format;
+      const mediaHeaderFormats = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+
+      if (!mediaHeaderFormats.includes(headerFormat)) {
+        this.logger.log('Header format does not require media', headerFormat);
+      } else {
+        if (headerMediaAssetId) {
+          const mediaAsset =
+            await this.mediaAssetModel.findById(headerMediaAssetId);
+          if (!mediaAsset) {
+            throw new NotFoundException('Media asset not found');
+          }
+        } else {
+          throw new BadRequestException(
+            `Template header (${headerFormat}) requires media, but none provided`,
+          );
+        }
+      }
+    }
   }
 
   async sendBulkTemplateMessage(
-    adminId: Types.ObjectId,
+    adminId: string,
     sendBulkTemplateDto: SendBulkTemplateMessageDto,
   ): Promise<any> {
     const {
       projectId,
       contacts,
       templateName,
-      bodyVariables,
-      dynamicVariables,
+      variableMappings = [],
       headerMediaAssetId,
       language,
     } = sendBulkTemplateDto;
 
-    this.logger.log(
-      `Attempting to send bulk template '${templateName}' from WABA ${projectId} to ${contacts.length} contacts`,
+    let recipients: {
+      recipientPhoneNumber: string;
+      contactId: string;
+      bodyVariables: string[];
+    }[] = [];
+
+    await this.checkVariableMappingLength({
+      adminId,
+      projectId,
+      templateName,
+      givenVariableLength: variableMappings.length,
+      headerMediaAssetId,
+    });
+
+    const contactData = await this.contactsService.getContactByIds(
+      new Types.ObjectId(adminId),
+      contacts.map((contact) => new Types.ObjectId(contact.contactId)),
     );
 
-    const results = {
-      sent: 0,
-      failed: 0,
-      errors: [] as any[],
-      messageIds: [] as string[],
-    };
-
-    // Send messages to each contact using the unified helper
-    for (const contact of contacts) {
-      try {
-        const response = await this.sendSingleTemplateMessage({
-          adminId,
-          projectId,
-          recipientPhoneNumber: contact.phoneNumber,
-          templateName,
-          bodyVariables,
-          headerMediaAssetId,
-          language,
-          contactId: contact.contactId,
-          messageType: WabaMessageType.INDIVIDUAL,
-          campaignId: undefined,
-        });
-
-        results.sent++;
-        results.messageIds.push(response.messages[0].id);
-
-        // Add a small delay between messages to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } catch (error) {
-        results.failed++;
-        results.errors.push({
-          contactId: contact.contactId,
-          phoneNumber: contact.phoneNumber,
-          error: error.response?.data?.error || error.message,
-        });
-
-        this.logger.error(
-          `Failed to send template message to ${contact.phoneNumber} (Contact ID: ${contact.contactId})`,
-          error.response?.data?.error,
-        );
-      }
+    if (!Array.isArray(contactData)) {
+      throw new BadRequestException('Invalid contact IDs');
     }
 
-    this.logger.log(
-      `Bulk message sending completed. Sent: ${results.sent}, Failed: ${results.failed}`,
-    );
+    for (const contact of contactData) {
+      const bodyVariables: string[] = [];
+      variableMappings?.forEach((mapping) => {
+        if (mapping.isDynamic) {
+          if (!mapping.contactField) {
+            throw new BadRequestException('Contact field is required');
+          }
+          const key = mapping.contactField.replace(/^\$/, ''); // remove "$" from the start
+          const value = contact[key as keyof typeof contact];
+          bodyVariables.push(
+            value || mapping.fallbackValue || mapping.contactField,
+          );
+        } else {
+          if (!mapping.staticValue) {
+            throw new BadRequestException('Static value is required');
+          }
+          bodyVariables.push(mapping.staticValue);
+        }
+      });
 
-    return {
-      ...results,
-      totalContacts: contacts.length,
-    };
+      recipients.push({
+        recipientPhoneNumber: contact.phone,
+        contactId: contact._id.toString(),
+        bodyVariables,
+      });
+    }
+
+    return this.sendTemplateMessagev2({
+      adminId,
+      messageType: WabaMessageType.INDIVIDUAL,
+      sendTemplateDto: {
+        projectId,
+        recipients,
+        templateName,
+        headerMediaAssetId,
+        language,
+      },
+    });
   }
 
   async getWabaDetailsTest(): Promise<any> {
@@ -2632,60 +2693,195 @@ export class WhatsappService {
     }
   }
 
-  async optimizedSendSingleTemplateMessage(payload: {
-    adminId: Types.ObjectId;
-    projectId: string;
-    recipientPhoneNumber: string;
-    templateName: string;
-    fromPhoneNumberId: string;
-    permanentAccessToken: string;
-    messageType: WabaMessageType;
-    templateStructure: {
-      name: string;
-      language: string;
-      components: {
-        type: string;
-        parameters: {
-          type: string;
-          value: string;
-        }[];
-      }[];
-    }
-    bodyVariables?: string[];
-    headerMediaAssetId?: string;
-    language?: string;
-    contactId?: string;
-    campaignId?: string;
-    attendeeId?: Types.ObjectId;
-    meetingId?: string;
-    media?: { url: string; filename: string };
-    apiCampaignId?: string;
-  }): Promise<any> {
+  /**
+   * Constructs a unique job ID for template sending.
+   *
+   * Strategy:
+   * Uses UUID to ensure every job is unique, allowing multiple identical messages
+   * to be sent to the same user immediately if requested.
+   *
+   * @param payload - The message payload
+   * @returns A unique string ID
+   */
+  private buildTemplateJobId(payload: ISendSingleTemplateMessagePayload) {
+    return `waba_${payload.fromPhoneNumberId}_${payload.formattedPhoneData?.phoneNumber}_${payload.templateName}_${uuidv4()}`;
+  }
 
+  /**
+   * Enqueues a template send job into the Redis-backed BullMQ queue.
+   *
+   * Features:
+   * - Deduplication via custom Job ID (prevent duplicates in 5m window)
+   * - Configurable retries (default 3) and exponential backoff
+   * - Job retention settings (keep completed for 1h, keep failed for inspection)
+   * - Rate limiting is enforced by the worker consuming this queue
+   *
+   * @param payload - The full payload required to send the message
+   * @param options - Optional overrides for jobId or retention
+   * @returns Object containing success status, jobId, and queue name
+   */
+  /**
+   * Enqueue a template send job with deduplication and sensible defaults.
+   * This handles the "Producer" role in the queue architecture.
+   */
+  async enqueueTemplateSendJob(
+    payload: ISendSingleTemplateMessagePayload,
+    options?: {
+      jobId?: string;
+      removeOnCompleteAgeSeconds?: number;
+    },
+  ) {
+    // 1. Determine Job ID
+    // Use provided ID or generate a time-bucketed idempotent ID (default)
+    // This prevents duplicate sends within the bucket window (e.g., 5 mins)
+    const jobId = options?.jobId || this.buildTemplateJobId(payload);
+
+    // 2. Configure Retention
+    // How long to keep completed jobs in Redis (default 1 hour)
+    // Failed jobs are kept indefinitely (removeOnFail: false) for manual inspection
+    const removeOnCompleteAgeSeconds =
+      options?.removeOnCompleteAgeSeconds || 3600;
+
+    // 3. Configure Backoff Strategy
+    // If the job fails (e.g., Rate Limit, Network Error), wait before retrying.
+    // Exponential: 2s -> 4s -> 8s ...
+    const backoff = {
+      type: 'exponential',
+      delay:
+        this.configService.get<number>('WHATSAPP_QUEUE_BACKOFF_MS') || 2000,
+    } as const;
+
+    // 4. Configure Retry Attempts
+    // Maximum number of times to try processing this job before failing permanently
+    const attempts =
+      this.configService.get<number>('WHATSAPP_QUEUE_ATTEMPTS') || 1;
+
+    // 5. Add to BullMQ Queue
+    // Pushes the job to Redis. The 'send-template' is the job name.
+    const job = await this.whatsappTemplateQueue.add('send-template', payload, {
+      jobId, // Idempotency key
+      attempts, // Max retries
+      backoff, // Retry delay strategy
+      removeOnComplete: { age: removeOnCompleteAgeSeconds }, // Auto-cleanup success
+      removeOnFail: false, // Keep failures for debugging
+    });
+
+    // 6. Return Job Details
+    // Return success immediately (async). The status can be tracked via jobId.
+    return {
+      success: true,
+      jobId: job.id,
+      queue: WHATSAPP_TEMPLATE_QUEUE_NAME,
+    };
+  }
+
+  /**
+   * Core logic to send a single template message via Meta Graph API.
+   * This method is typically called by the Queue Worker, but can be called directly.
+   *
+   * Flow:
+   * 1. Validates all inputs (Project, Phone, Template Structure, Token)
+   * 2. Normalizes phone number to Indian format (+91...)
+   * 3. Constructs the Meta Graph API payload
+   * 4. Sends HTTP POST to Meta
+   * 5. Logs success/failure securely (scrubbing sensitive tokens)
+   * 6. Creates a WABA Message record in DB for tracking
+   * 7. Handles specific Axios errors (401, 403, 429, etc.) with structured responses
+   *
+   * @param payload - All data needed to send the message
+   * @returns Structured success/error response (never throws)
+   */
+  async optimizedSendSingleTemplateMessage(
+    payload: ISendSingleTemplateMessagePayload,
+  ): Promise<any> {
     const {
-      adminId,
       projectId,
-      meetingId,
-      recipientPhoneNumber,
+      formattedPhoneData,
       templateName,
-      bodyVariables,
       templateStructure,
-      headerMediaAssetId,
       language,
-      contactId,
-      attendeeId,
-      messageType = WabaMessageType.INDIVIDUAL,
-      campaignId,
-      media,
-      apiCampaignId,
       fromPhoneNumberId,
       permanentAccessToken,
+      adminId,
     } = payload;
 
-    // Normalize and validate recipient phone number per India format rules
-    const formatted = this.formatIndianRecipient(recipientPhoneNumber);
+    // Helper to build consistent error responses
+    const buildErrorResponse = (
+      code: string,
+      message: string,
+      details?: any,
+    ) => {
+      this.logger.warn(
+        `optimizedSendSingleTemplateMessage failed: ${message}`,
+        {
+          code,
+          details,
+        },
+      );
+      return { success: false, code, message, details };
+    };
 
-    const normalizedRecipientPhoneNumber = formatted.phoneNumber;
+    // Input validation - return structured errors instead of throwing
+    if (!projectId) {
+      return buildErrorResponse('VALIDATION_ERROR', 'Project ID is required');
+    }
+    if (!formattedPhoneData) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Recipient phone number is required',
+      );
+    }
+    if (!templateName) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Template name is required',
+      );
+    }
+    if (!templateStructure) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Template structure is required',
+      );
+    }
+    if (!fromPhoneNumberId) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'From phone number ID is required',
+      );
+    }
+    if (!permanentAccessToken) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Permanent access token is required',
+      );
+    }
+    if (!adminId) {
+      return buildErrorResponse('VALIDATION_ERROR', 'Admin ID is required');
+    }
+
+    // Validate template structure consistency
+    if (!templateStructure.name) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Template structure must have a name property',
+      );
+    }
+    if (templateStructure.name !== templateName) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        `Template structure name '${templateStructure.name}' does not match template name '${templateName}'`,
+      );
+    }
+    if (!templateStructure.language && !language) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Template language is required in template structure or language parameter',
+      );
+    }
+
+    // Normalize and validate recipient phone number per India format rules
+
+    const normalizedRecipientPhoneNumber = formattedPhoneData.phoneNumber;
     this.logger.log(
       `Attempting to send template '${templateName}' from WABA ${projectId} to ${normalizedRecipientPhoneNumber}`,
     );
@@ -2693,146 +2889,240 @@ export class WhatsappService {
     const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
     const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
 
-
     const metaPayload = {
       messaging_product: 'whatsapp',
       to: normalizedRecipientPhoneNumber,
       type: 'template',
       template: templateStructure,
     };
-    this.logger.log('metaPayload', metaPayload);
+
+    // Log payload without sensitive data
+    this.logger.log('Sending template message to Meta', {
+      to: normalizedRecipientPhoneNumber,
+      templateName: templateStructure.name,
+      templateLanguage: templateStructure.language || language,
+      url,
+      metaPayload,
+    });
 
     try {
-
-      if (!formatted.digitsOnly)
+      if (!formattedPhoneData.digitsOnly)
         throw new BadRequestException('Invalid phone number');
 
-      this.logger.log('Sending template message to Meta', metaPayload);
       const response = await this.axiosInstance.post(url, metaPayload, {
         headers: {
           Authorization: `Bearer ${permanentAccessToken}`,
+          'Content-Type': 'application/json',
         },
         timeout: 15000, // 15 second timeout
       });
 
+      // Validate response structure
+      if (!response?.data) {
+        return buildErrorResponse(
+          'META_RESPONSE_ERROR',
+          'Invalid response from Meta API: missing data',
+        );
+      }
+
+      if (!response.data.messages || !Array.isArray(response.data.messages)) {
+        return buildErrorResponse(
+          'META_RESPONSE_ERROR',
+          'Invalid response from Meta API: missing messages array',
+        );
+      }
+
+      if (response.data.messages.length === 0) {
+        return buildErrorResponse(
+          'META_RESPONSE_ERROR',
+          'Invalid response from Meta API: empty messages array',
+        );
+      }
+
+      const messageId = response.data.messages[0]?.id;
+      if (!messageId) {
+        return buildErrorResponse(
+          'META_RESPONSE_ERROR',
+          'Invalid response from Meta API: missing message ID',
+        );
+      }
+
       this.logger.log(
-        `Message sent successfully to ${normalizedRecipientPhoneNumber}. Message ID: ${response.data.messages[0].id}`,
+        `Message sent successfully to ${normalizedRecipientPhoneNumber}. Message ID: ${messageId}`,
       );
 
-      // Create WABA message record
-      if (response.data?.messages[0]?.id) {
-        
-           this.wabaMessageService.create({
-            projectId: projectId,
-            adminId: adminId.toString(),
+      // Create WABA message record with proper error handling
+      if (messageId) {
+        try {
+          // Exclude sensitive data from payload
+          const { permanentAccessToken, ...safePayload } = payload;
+          await this.wabaMessageService.create({
+            ...safePayload,
             phoneNumber: normalizedRecipientPhoneNumber,
-            contactId: contactId,
-            wabaMessageId: response.data.messages[0].id,
-            messageType,
-            templateName: templateName,
-            templateLanguage: language || 'en_US',
+            wabaMessageId: messageId,
+            templateLanguage: language || templateStructure.language || 'en_US',
             messageFormat: 'template',
             templateComponents: templateStructure.components || [],
             displayText: this.renderDisplayText(
               templateStructure.components || [],
             ),
-            campaignId,
-            attendeeId: attendeeId?.toString(),
-            apiCampaignId,
-            meetingId,
-            direction: 'outbound' as any,
-          }).catch((error) => {
-          this.logger.error('Failed to create WABA message record:', error);
+            direction: 'outbound',
           });
+        } catch (error) {
+          this.logger.error('Failed to create WABA message record:', error);
+          // Don't throw error here as the message was sent successfully
+          // This is a non-critical operation
+        }
       }
 
-      return response.data;
+      return { success: true, data: response.data, messageId };
     } catch (error) {
-      this.createErrorMessage({
-        projectId: projectId,
-        adminId: adminId.toString(),
-        normalizedRecipientPhoneNumber,
-        contactId: contactId,
-        messageType,
-        templateName: templateName,
-        language: language || 'en_US',
-        messageFormat: 'template',
-        templateStructure: templateStructure.components || [],
-        campaignId,
-        attendeeId: attendeeId?.toString(),
-        apiCampaignId,
-        meetingId,
-        error: error,
-      });
+      // Handle error message creation with proper error handling
+      try {
+        // Exclude sensitive data from payload
+        const { permanentAccessToken, ...safePayload } = payload;
+        await this.createErrorMessage({
+          ...safePayload,
+          normalizedRecipientPhoneNumber,
+          messageFormat: 'template',
+          templateStructure: templateStructure.components || [],
+          error: error,
+        });
+      } catch (errorLogError) {
+        this.logger.error(
+          'Failed to create error message record:',
+          errorLogError,
+        );
+        // Continue with error handling even if logging fails
+      }
+
       // Enhanced error handling for axios errors
       if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const errorData = error.response?.data;
+        const errorMessage =
+          errorData?.error?.message || error.message || 'Unknown error';
+
         this.logger.error(`Axios request failed: ${error.message}`, {
-          status: error.response?.status,
+          status,
           statusText: error.response?.statusText,
-          data: error.response?.data,
+          errorMessage,
           url: error.config?.url,
           method: error.config?.method,
+          // Don't log full error data to avoid sensitive info
         });
 
         // Provide more specific error messages based on status codes
-        if (error.response?.status === 401) {
-          throw new UnauthorizedException(
+        if (status === 401) {
+          return buildErrorResponse(
+            'AUTH_ERROR',
             'Invalid access token or expired credentials',
           );
-        } else if (error.response?.status === 400) {
-          throw new BadRequestException(
-            error.response?.data?.error?.message ||
-              'Invalid request parameters',
+        } else if (status === 400) {
+          return buildErrorResponse('BAD_REQUEST', errorMessage);
+        } else if (status === 403) {
+          return buildErrorResponse(
+            'FORBIDDEN',
+            errorMessage || 'Access forbidden. Check permissions.',
           );
-        } else if (error.response?.status === 429) {
-          throw new InternalServerErrorException(
+        } else if (status === 404) {
+          return buildErrorResponse(
+            'NOT_FOUND',
+            errorMessage || 'Resource not found. Check phone number ID.',
+          );
+        } else if (status === 429) {
+          return buildErrorResponse(
+            'RATE_LIMIT',
             'Rate limit exceeded. Please try again later',
           );
-        } else if (error.code === 'ETIMEDOUT') {
-          throw new InternalServerErrorException(
+        } else if (status === 500 || status === 502 || status === 503) {
+          return buildErrorResponse(
+            'META_SERVER_ERROR',
+            `Meta API server error (${status}). Please try again later`,
+          );
+        } else if (
+          error.code === 'ETIMEDOUT' ||
+          error.code === 'ECONNABORTED'
+        ) {
+          return buildErrorResponse(
+            'TIMEOUT',
             'Request timeout. Please try again',
           );
+        } else if (
+          error.code === 'ECONNREFUSED' ||
+          error.code === 'ENOTFOUND'
+        ) {
+          return buildErrorResponse(
+            'NETWORK_ERROR',
+            'Network error. Unable to connect to Meta API',
+          );
+        } else if (error.code === 'ECONNRESET') {
+          return buildErrorResponse(
+            'NETWORK_ERROR',
+            'Connection reset. Please try again',
+          );
         }
-      } else {
-        this.logger.error(
-          'An unexpected error occurred while sending message',
-          error,
+        // If we don't have a specific handler, return generic axios error
+        return buildErrorResponse(
+          'META_ERROR',
+          `Failed to send message: ${errorMessage}`,
         );
       }
+
+      // Handle unexpected errors without throwing
+      this.logger.error('An unexpected error occurred while sending message', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      return buildErrorResponse(
+        'UNEXPECTED_ERROR',
+        'An unexpected error occurred while sending the message',
+      );
     }
   }
 
-  async sendTemplateMessagev2(
-    payload: {
-      adminId: Types.ObjectId,
-    sendTemplateDto: SendTemplateMessageDto,
-    messageType: WabaMessageType,
-    campaignId?: string,
+  /**
+   * High-level method to prepare and enqueue a template message.
+   *
+   * Responsibilities:
+   * 1. Fetches Project/WABA details to get credentials (token, phone ID).
+   * 2. Resolves the Template from DB to validate structure and headers.
+   * 3. Constructs the final `templateStructure` with body params and media headers.
+   * 4. Delegates actual sending to the Queue via `enqueueTemplateSendJob`.
+   *
+   * @param payload - High level inputs: recipient, template name, variables, media
+   * @returns Queue job details { success, jobId, queue }
+   */
+  async sendTemplateMessagev2(payload: {
+    adminId: string;
+    messageType: WabaMessageType;
+    sendTemplateDto: {
+      projectId: string;
+      recipients: {
+        recipientPhoneNumber: string;
+        contactId?: string;
+        bodyVariables?: string[];
+      }[];
+      templateName: string;
+      headerMediaAssetId?: string;
+      language?: string;
+    };
     media?: { url: string; filename: string };
-    }
-  ): Promise<any> {
+  }): Promise<any> {
+    const { adminId, sendTemplateDto, messageType, media } = payload;
 
-    const {
-      adminId,
-      sendTemplateDto,
-      messageType,
-      campaignId,
-      media,
-    } = payload;
-
-
-    
     const {
       projectId,
-      recipientPhoneNumber,
+      recipients,
       templateName,
-      bodyVariables,
       headerMediaAssetId,
       language,
-      contactId,
     } = sendTemplateDto;
 
-    const account = await this.projectService.findOne(adminId, new Types.ObjectId(projectId));
+    const account = await this.projectService.findOne(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+    );
     if (!account) {
       throw new UnauthorizedException(
         'You do not have permission to access this WABA.',
@@ -2841,67 +3131,69 @@ export class WhatsappService {
     const fromPhoneNumberId = account.phoneNumberId;
     const permanentAccessToken = account.permanentAccessToken;
 
+    // Fetch template once to determine header requirements
+    const template = await this.wabaTemplateService.getByTemplateName(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+      templateName,
+    );
+    if (!template) {
+      throw new NotFoundException(`Template '${templateName}' not found`);
+    }
+    const headerComponent = template.components?.find(
+      (c) => c.type === 'HEADER',
+    );
 
-    const templateStructure: any = {
+    // Build base template structure (shared across all recipients)
+    const baseTemplateStructure: any = {
       name: templateName,
       language: {
         code: language || 'en_US',
       },
       components: [],
     };
-    const resolvedVariables = bodyVariables || [];
 
+    // Add header component if template requires media header (shared for all recipients)
+    if (headerComponent) {
+      const headerFormat = headerComponent.format;
+      const mediaHeaderFormats = ['IMAGE', 'VIDEO', 'DOCUMENT'];
 
-    // Add body component with resolved variables
-    if (resolvedVariables.length > 0) {
-      templateStructure.components.push({
-        type: 'body',
-        parameters: resolvedVariables.map((variable) => ({
-          type: 'text',
-          text: variable,
-        })),
-      });
-    }
+      if (!mediaHeaderFormats.includes(headerFormat)) {
+        this.logger.log('Header format does not require media', headerFormat);
+      } else {
+        // Resolve media source based on priority: assetId -> direct media -> error
+        let mediaSource: { link: string; filename?: string } | undefined;
 
-    // Add header component if media asset is provided
-    if (headerMediaAssetId) {
-      const mediaAsset =
-        await this.mediaAssetModel.findById(headerMediaAssetId);
-      this.logger.log('mediaAsset', mediaAsset);
-      if (!mediaAsset) {
-        throw new NotFoundException('Media asset not found');
-      }
+        if (headerMediaAssetId) {
+          const mediaAsset =
+            await this.mediaAssetModel.findById(headerMediaAssetId);
+          this.logger.log('mediaAsset', mediaAsset);
+          if (!mediaAsset) {
+            throw new NotFoundException('Media asset not found');
+          }
+          mediaSource = {
+            link: mediaAsset.filePath,
+            filename: mediaAsset.fileName,
+          };
+        } else if (media) {
+          this.logger.log('mediaAsset', media);
+          mediaSource = {
+            link: media.url,
+            filename: media.filename,
+          };
+        } else {
+          throw new BadRequestException(
+            `Template header (${headerFormat}) requires media, but none provided`,
+          );
+        }
 
-      // Get template details to determine header format
-      const templates = await this.getTemplatesForWaba(
-        adminId,
-        new Types.ObjectId(projectId),
-        { name: templateName },
-      );
-
-      const ourTemplate = templates.find(
-        (template: any) => template.name === templateName,
-      );
-
-      if (!ourTemplate) {
-        throw new NotFoundException(`Template '${templateName}' not found`);
-      }
-
-      this.logger.log('templateDetails', ourTemplate);
-      const headerComponent = ourTemplate.components.find(
-        (c) => c.type === 'HEADER',
-      );
-
-      if (headerComponent) {
-        const headerFormat = headerComponent.format;
         let headerParameter: any;
-
         switch (headerFormat) {
           case 'IMAGE':
             headerParameter = {
               type: 'image',
               image: {
-                link: mediaAsset.filePath,
+                link: mediaSource.link,
               },
             };
             break;
@@ -2909,7 +3201,7 @@ export class WhatsappService {
             headerParameter = {
               type: 'video',
               video: {
-                link: mediaAsset.filePath,
+                link: mediaSource.link,
               },
             };
             break;
@@ -2917,8 +3209,8 @@ export class WhatsappService {
             headerParameter = {
               type: 'document',
               document: {
-                link: mediaAsset.filePath,
-                filename: mediaAsset.fileName,
+                link: mediaSource.link,
+                filename: mediaSource.filename,
               },
             };
             break;
@@ -2929,94 +3221,112 @@ export class WhatsappService {
             );
         }
 
-        templateStructure.components.push({
+        baseTemplateStructure.components.push({
           type: 'header',
           parameters: [headerParameter],
         });
       }
-    } else if (media) {
-      this.logger.log('mediaAsset', media);
+    }
 
-      // Get template details to determine header format
-      const templates = await this.getTemplatesForWaba(
-        adminId,
-        new Types.ObjectId(projectId),
-        { name: templateName },
+    // Helper function to build template structure per recipient with their body variables
+    const buildTemplateStructureForRecipient = (
+      bodyVariables?: string[],
+    ): any => {
+      const templateStructure = JSON.parse(
+        JSON.stringify(baseTemplateStructure),
       );
 
-      const ourTemplate = templates.find(
-        (template: any) => template.name === templateName,
-      );
-
-      if (!ourTemplate) {
-        throw new NotFoundException(`Template '${templateName}' not found`);
+      // Add body component with recipient-specific variables
+      if (bodyVariables && bodyVariables.length > 0) {
+        templateStructure.components.push({
+          type: 'body',
+          parameters: bodyVariables.map((variable) => ({
+            type: 'text',
+            text: variable,
+          })),
+        });
       }
 
-      this.logger.log('templateDetails', ourTemplate);
-      const headerComponent = ourTemplate.components.find(
-        (c) => c.type === 'HEADER',
-      );
+      // Remove components if empty
+      if (templateStructure.components.length === 0) {
+        delete templateStructure.components;
+      }
 
-      if (headerComponent) {
-        const headerFormat = headerComponent.format;
-        let headerParameter: any;
+      return templateStructure;
+    };
 
-        switch (headerFormat) {
-          case 'IMAGE':
-            headerParameter = {
-              type: 'image',
-              image: {
-                link: media.url,
-              },
-            };
-            break;
-          case 'VIDEO':
-            headerParameter = {
-              type: 'video',
-              video: {
-                link: media.url,
-              },
-            };
-            break;
-          case 'DOCUMENT':
-            headerParameter = {
-              type: 'document',
-              document: {
-                link: media.url,
-                filename: media.filename,
-              },
-            };
-            break;
-          default:
-            this.logger.log('Unsupported header format', headerFormat);
-            throw new BadRequestException(
-              `Unsupported header format: ${headerFormat}`,
+    const uniquePhoneNumbers = new Set<string>();
+    const results = {
+      total: recipients.length,
+      enqueued: 0,
+      failed: 0,
+      duplicates: 0,
+      invalid: 0,
+      errors: [] as string[],
+    };
+
+    // Process recipients in chunks to optimize enqueueing speed while managing memory/load
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
+      const chunk = recipients.slice(i, i + CHUNK_SIZE);
+
+      await Promise.all(
+        chunk.map(async (recipient) => {
+          try {
+            const { recipientPhoneNumber, contactId, bodyVariables } =
+              recipient;
+            const formatted = this.formatIndianRecipient(recipientPhoneNumber);
+
+            if (!formatted.isValid) {
+              results.invalid++;
+              results.errors.push(
+                `${recipientPhoneNumber}: Invalid phone format`,
+              );
+              return;
+            }
+
+            if (uniquePhoneNumbers.has(formatted.phoneNumber)) {
+              results.duplicates++;
+              return;
+            }
+            uniquePhoneNumbers.add(formatted.phoneNumber);
+
+            // Build template structure with recipient-specific body variables
+            const templateStructure =
+              buildTemplateStructureForRecipient(bodyVariables);
+
+            await this.enqueueTemplateSendJob({
+              adminId,
+              projectId,
+              formattedPhoneData: formatted,
+              templateName,
+              language,
+              fromPhoneNumberId,
+              permanentAccessToken,
+              messageType,
+              templateStructure,
+              contactId,
+            });
+            results.enqueued++;
+          } catch (error) {
+            results.failed++;
+            const msg =
+              error instanceof Error ? error.message : String(error || '');
+            results.errors.push(
+              `${recipient.recipientPhoneNumber}: Enqueue failed - ${msg}`,
             );
-        }
-
-        templateStructure.components.push({
-          type: 'header',
-          parameters: [headerParameter],
-        });
-      }
+            this.logger.error(`Failed to enqueue message for recipient`, error);
+          }
+        }),
+      );
     }
 
-    // Remove components if empty
-    if (templateStructure.components.length === 0) {
-      delete templateStructure.components;
-    }
+    this.logger.log(' Send Template Message Stats: ', results);
 
-    
-
-    return this.optimizedSendSingleTemplateMessage({
-      adminId,
-    projectId,
-    recipientPhoneNumber,
-    templateName,
-    fromPhoneNumberId,
-    permanentAccessToken,
-    messageType,
-    templateStructure,
-    });
+    return {
+      success: true,
+      message: `Processing completed. Enqueued: ${results.enqueued}, Duplicates: ${results.duplicates}, Invalid: ${results.invalid}, Failed: ${results.failed}`,
+      stats: results,
+    };
   }
 }

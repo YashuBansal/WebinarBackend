@@ -18,6 +18,7 @@ import {
   AdvanceFilterMode,
   AdvanceFilterOperator,
 } from 'src/schemas/advance-filter.schema';
+import { VariableMappingDto } from 'src/webinar-auto-message/dto';
 
 export class MessageTemplateDto {
   @IsString()
@@ -29,27 +30,6 @@ export class MessageTemplateDto {
   body: string;
 }
 
-export class VariableMappingDto {
-  @IsString()
-  @IsNotEmpty()
-  variable: string; // e.g., "{{1}}", "{{name}}"
-
-  @IsString()
-  @IsNotEmpty()
-  contactField: string; // e.g., "firstName", "lastName", "phone"
-
-  @IsOptional()
-  @IsBoolean()
-  isDynamic?: boolean; // Whether to use contact field or static value
-
-  @IsOptional()
-  @IsString()
-  staticValue?: string; // Static value when not using contact field
-
-  @IsOptional()
-  @IsString()
-  fallbackValue?: string; // Fallback value when contact field is empty
-}
 
 export class ContactSelectionDto {
   @IsString()

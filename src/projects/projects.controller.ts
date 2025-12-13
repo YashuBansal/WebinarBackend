@@ -67,7 +67,6 @@ export class ProjectsController {
     paginationQuery: CampaignPaginationQueryDto,
     @Id() adminId: string,
   ) {
-    console.log(paginationQuery);
     const {
       page,
       limit,

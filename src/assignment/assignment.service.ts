@@ -243,10 +243,7 @@ export class AssignmentService {
           $gt: [
             {
               $size: {
-                $setIntersection: [
-                  { $ifNull: ['$tags', []] },
-                  normalizedTags,
-                ],
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
               },
             },
             0,
@@ -547,8 +544,7 @@ export class AssignmentService {
       tag,
     } = body;
 
-    const assignmentStatusToUse =
-      assignmentStatus || AssignmentStatus.ACTIVE;
+    const assignmentStatusToUse = assignmentStatus || AssignmentStatus.ACTIVE;
 
     const { result } = await this.getAssignments(
       adminId,
@@ -1072,7 +1068,10 @@ export class AssignmentService {
       // Transaction successful
     } catch (error) {
       // Transaction failed
-      this.logger.error('Transaction failed during assignment creation:', error);
+      this.logger.error(
+        'Transaction failed during assignment creation:',
+        error,
+      );
       // Re-throw the original error after logging
       throw error;
     } finally {
@@ -1220,10 +1219,12 @@ export class AssignmentService {
   ) {
     const recordType = 'preWebinar';
 
-    const postWebinarExists = await this.attendeeService.getPostWebinarAttendee(
-      webinarId,
-      adminId,
-    );
+    // Parallelize initial validation queries
+    const [postWebinarExists, webinar, subscription] = await Promise.all([
+      this.attendeeService.getPostWebinarAttendee(webinarId, adminId),
+      this.webinarService.getWebinar(webinarId, adminId),
+      this.subscriptionService.getSubscription(adminId),
+    ]);
 
     if (postWebinarExists) {
       throw new NotAcceptableException(
@@ -1231,16 +1232,9 @@ export class AssignmentService {
       );
     }
 
-    // Fetch the webinar details for the given webinar ID and admin ID
-    const webinar = await this.webinarService.getWebinar(webinarId, adminId);
-
     if (!webinar) {
       throw new NotFoundException('Webinar not found.');
     }
-
-    // Fetch the subscription details for the admin
-    const subscription =
-      await this.subscriptionService.getSubscription(adminId);
 
     if (!subscription) {
       throw new ForbiddenException('Subscription not found.');
@@ -3525,7 +3519,6 @@ export class AssignmentService {
     ];
 
     const result = await this.assignmentsModel.aggregate(pipeline).exec();
-
 
     return await this.userService.updateDailyContactCount(
       result,

@@ -33,11 +33,12 @@ import {
   SendTemplateMessageDto,
   SendBulkTemplateMessageDto,
 } from './dto/msg.dto';
+import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
 @Controller('whatsapp')
 export class WhatsappController {
   constructor(private readonly whatsappService: WhatsappService) {}
- 
+
   @Post('exchange-code')
   async exchangeCode(
     @Body('code') code: string,
@@ -99,26 +100,14 @@ export class WhatsappController {
       throw error;
     }
   }
- 
+
   @Post('webhook')
   @HttpCode(HttpStatus.OK) // Always respond with 200 OK immediately
   handleWebhookEvents(@Body() body: any) {
-    // We will build the logic for this in the service
-    this.whatsappService.processWebhookPayload(body);
-    // Meta doesn't care what's in the body, only that it gets a 200 OK
-    // to acknowledge receipt. The actual processing should be done asynchronously.
+    // Enqueue webhook processing to background queue
+    // This allows responding with 200 OK immediately to Meta
+    this.whatsappService.enqueueWebhookProcessing(body);
     return;
-  }
-
-  @Get('data')
-  async getWABAUsers(@Id() adminId: string) {
-    if (!mongoose.isValidObjectId(adminId)) {
-      throw new NotAcceptableException('Invalid Admin ID');
-    }
-
-    return await this.whatsappService.getWabaUserById(
-      new Types.ObjectId(`${adminId}`),
-    );
   }
 
   @Post('templates/:projectId/upload-sample-media')
@@ -197,7 +186,6 @@ export class WhatsappController {
     }
   }
 
-
   @Patch('templates/:projectId/:templateId')
   @UsePipes(new ValidationPipe({ transform: true }))
   async updateTemplate(
@@ -222,7 +210,6 @@ export class WhatsappController {
       data: result,
     };
   }
-
 
   @Get('templates/:projectId/:templateId')
   async getTemplateById(
@@ -252,10 +239,33 @@ export class WhatsappController {
     @Body() sendTemplateDto: SendTemplateMessageDto,
     @Id() adminId: string,
   ) {
-    const result = await this.whatsappService.sendTemplateMessage(
-      new Types.ObjectId(`${adminId}`),
-      sendTemplateDto,
-    );
+    await this.whatsappService.checkVariableMappingLength({
+      adminId,
+      projectId: sendTemplateDto.projectId,
+      templateName: sendTemplateDto.templateName,
+      givenVariableLength: Array.isArray(sendTemplateDto.bodyVariables)
+        ? sendTemplateDto.bodyVariables.filter((a) => Boolean(a)).length
+        : 0,
+      headerMediaAssetId: sendTemplateDto.headerMediaAssetId,
+    });
+
+    const result = await this.whatsappService.sendTemplateMessagev2({
+      adminId,
+      sendTemplateDto: {
+        projectId: sendTemplateDto.projectId,
+        recipients: [
+          {
+            recipientPhoneNumber: sendTemplateDto.recipientPhoneNumber,
+            contactId: sendTemplateDto.contactId,
+            bodyVariables: sendTemplateDto.bodyVariables,
+          },
+        ],
+        templateName: sendTemplateDto.templateName,
+        headerMediaAssetId: sendTemplateDto.headerMediaAssetId,
+        language: sendTemplateDto.language,
+      },
+      messageType: WabaMessageType.INDIVIDUAL,
+    });
     return {
       statusCode: HttpStatus.OK,
       message: 'Template message sent successfully!',
@@ -270,7 +280,7 @@ export class WhatsappController {
     @Id() adminId: string,
   ) {
     const result = await this.whatsappService.sendBulkTemplateMessage(
-      new Types.ObjectId(`${adminId}`),
+      adminId,
       sendBulkTemplateDto,
     );
     return {
@@ -380,9 +390,7 @@ export class WhatsappController {
 
     try {
       // Normalize type filter if provided
-      const normalizedType = type
-        ? String(type).toLowerCase()
-        : undefined;
+      const normalizedType = type ? String(type).toLowerCase() : undefined;
 
       const result = await this.whatsappService.getMediaAssets(
         new Types.ObjectId(adminId),

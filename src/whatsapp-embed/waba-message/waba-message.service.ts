@@ -116,7 +116,6 @@ export class WabaMessageService {
   }
 
   async findAllRange(query: any) {
-    console.log(query);
     return this.wabaMessageModel.find(query).sort({ createdAt: -1 }).exec();
   }
 
@@ -192,7 +191,6 @@ export class WabaMessageService {
     failureReason?: string,
   ): Promise<WabaMessage> {
     const updateData: any = { status };
-    console.log(wabaMessageId, status, failureReason);
 
     // Set timestamp fields based on status
     const now = new Date();
@@ -262,7 +260,7 @@ export class WabaMessageService {
     }
     const result = await this.wabaMessageModel.aggregate([
       {
-        $match: filter
+        $match: filter,
       },
       {
         $group: {
