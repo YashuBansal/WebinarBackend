@@ -536,29 +536,50 @@ export class WebinarService {
     );
   }
 
-  async updateWebinarMeetingId(webinarId: string, meetingId: string, adminId: string): Promise<any> {
+  async updateWebinarMeetingId(webinarId: string, meetingId: string, adminId: string, occurrenceId?: string): Promise<any> {
     const session = await this.webinarModel.startSession();
-    this.logger.log(`Updating webinar meetingId: ${meetingId} for webinarId: ${webinarId} and adminId: ${adminId}`);
+    this.logger.log(`Updating webinar meetingId: ${meetingId}${occurrenceId ? `, occurrenceId: ${occurrenceId}` : ''} for webinarId: ${webinarId} and adminId: ${adminId}`);
     try {
       await session.withTransaction(async (currentSession) => {
-        // First, remove meetingId from any existing webinar that has it
+        // Build query to find webinars with the same meetingId and occurrenceId (if provided)
+        const query: any = {
+          adminId: new Types.ObjectId(adminId),
+          meetingId: meetingId,
+          _id: { $ne: new Types.ObjectId(webinarId) }
+        };
+
+        // If occurrenceId is provided, match by both meetingId and occurrenceId
+        // Otherwise, match by meetingId only (for backward compatibility)
+        if (occurrenceId) {
+          query.occurrenceId = occurrenceId;
+        }
+
+        // First, remove meetingId (and occurrenceId if provided) from any existing webinar that has it
+        const unsetFields: any = { meetingId: 1 };
+        if (occurrenceId) {
+          unsetFields.occurrenceId = 1;
+        }
         await this.webinarModel.updateMany(
-          { 
-            adminId: new Types.ObjectId(adminId),
-            meetingId: meetingId,
-            _id: { $ne: new Types.ObjectId(webinarId) }
-          },
-          { $unset: { meetingId: 1 } },
+          query,
+          { $unset: unsetFields },
           { session: currentSession }
         );
 
-        // Then update the target webinar with the meetingId
+        // Then update the target webinar with the meetingId and occurrenceId (if provided)
+        const updateFields: any = { meetingId };
+        if (occurrenceId) {
+          updateFields.occurrenceId = occurrenceId;
+        } else {
+          // If occurrenceId is not provided, unset it to clear any previous occurrenceId
+          updateFields.$unset = { occurrenceId: 1 };
+        }
+
         const result = await this.webinarModel.findOneAndUpdate(
           {
             _id: new Types.ObjectId(webinarId),
             adminId: new Types.ObjectId(adminId),
           },
-          { $set: { meetingId } },
+          occurrenceId ? { $set: updateFields } : { $set: { meetingId }, $unset: { occurrenceId: 1 } },
           { new: true, session: currentSession }
         );
 
@@ -592,7 +613,7 @@ export class WebinarService {
         _id: new Types.ObjectId(webinarId),
         adminId: new Types.ObjectId(adminId),
       },
-      { $unset: { meetingId: 1 } },
+      { $unset: { meetingId: 1, occurrenceId: 1 } },
       { new: true }
     );
 
@@ -624,81 +645,80 @@ export class WebinarService {
       last_name: string;
       email: string;
       phone: string;
-    }
+    },
+    occurrenceId?: string
   ): Promise<any> {
     try {
-      // Step 1: Check if meetingId is associated with a webinar
-      const webinar = await this.webinarModel.findOne({ meetingId });
-      
-      if (!webinar) {
+      const normalizedEmail = (registrant.email || '').toLowerCase();
+
+      // Helper to upsert into a single webinar
+      const upsertIntoWebinar = async (webinar: any) => {
+        const { action, attendee } =
+          await this.attendeesService.upsertAttendeeByWebinarEmailNotAttended({
+            webinarId: webinar._id.toString(),
+            adminId: webinar.adminId.toString(),
+            email: normalizedEmail,
+            firstName: registrant.first_name,
+            lastName: registrant.last_name,
+            phone: registrant.phone,
+            source: 'zoom',
+          });
+
+        this.logger.log(
+          `Upserted attendee ${normalizedEmail} for webinar: ${webinar.webinarName} (action: ${action})`,
+        );
+
+        return { webinar, action, attendee };
+      };
+
+      if (occurrenceId) {
+        // If occurrenceId is provided, match specific occurrence
+        const webinar = await this.webinarModel.findOne({
+          meetingId,
+          occurrenceId,
+        });
+
+        if (!webinar) {
+          this.logger.log(
+            `No webinar found for meetingId: ${meetingId}, occurrenceId: ${occurrenceId}`,
+          );
+          return {
+            message: 'No webinar associated with this meeting occurrence',
+            webinar: null,
+          };
+        }
+
+        const result = await upsertIntoWebinar(webinar);
+        return {
+          message: 'Registration processed',
+          webinar: webinar.webinarName,
+          action: result.action,
+          attendee: result.attendee,
+        };
+      }
+
+      // No occurrenceId: upsert into all webinars that share this meetingId
+      const webinars = await this.webinarModel.find({ meetingId });
+
+      if (!webinars || webinars.length === 0) {
         this.logger.log(`No webinar found for meetingId: ${meetingId}`);
         return { message: 'No webinar associated with this meeting', webinar: null };
       }
 
-      this.logger.log(`Found webinar: ${webinar.webinarName} for meetingId: ${meetingId}`);
-
-      const postWebinarExists =
-      await this.attendeesService.getPostWebinarAttendee(
-        webinar._id.toString(),
-      );  
-
-      if (postWebinarExists) {
-        this.logger.log(`Post webinar already exists for webinar: ${webinar.webinarName}`);
-        return { message: 'Post webinar already exists', webinar: webinar.webinarName, attendee: postWebinarExists, action: 'exists' };
+      const results = [];
+      for (const webinar of webinars) {
+        const result = await upsertIntoWebinar(webinar);
+        results.push({
+          webinarId: webinar._id.toString(),
+          webinarName: webinar.webinarName,
+          action: result.action,
+          attendee: result.attendee,
+        });
       }
 
-      // Step 2: Check if attendee with this email already exists for this webinar
-      const webinarAttendee = await this.attendeesService.getAttendeeByWebinarAndEmail(
-        webinar._id.toString(),
-        registrant.email
-      );
-      console.log('webinarAttendee', webinarAttendee);
-
-      if (webinarAttendee) {
-        // Update existing attendee data
-        const updatedAttendee = await this.attendeesService.updateAttendee(
-          webinarAttendee._id.toString(),
-          webinar.adminId.toString(),
-          webinar.adminId.toString(),  
-          {
-            firstName: registrant.first_name,
-            lastName: registrant.last_name,
-            isAttended: false, // Registration means not yet attended
-            phone: registrant.phone,
-            source: 'zoom',
-          }
-        );
-        
-        this.logger.log(`Updated existing attendee: ${registrant.email} for webinar: ${webinar.webinarName}`);
-        return { 
-          message: 'Attendee updated successfully', 
-          webinar: webinar.webinarName,
-          attendee: updatedAttendee,
-          action: 'updated'
-        };
-      }
-
-      // Create new attendee
-      const newAttendeeData = {
-        email: registrant.email,
-        firstName: registrant.first_name,
-        lastName: registrant.last_name,
-        phone: registrant.phone,
-        webinar: webinar._id as Types.ObjectId,
-        adminId: webinar.adminId,
-        isAttended: false, // Registration means not yet attended
-        timeInSession: 0,
-        source: 'zoom'
-      };
-
-      const newAttendee = await this.attendeesService.addAttendees([newAttendeeData]);
-
-      this.logger.log(`Created new attendee: ${registrant.email} for webinar: ${webinar.webinarName}`);
-      return { 
-        message: 'Attendee created successfully', 
-        webinar: webinar.webinarName,
-        attendee: newAttendee[0],
-        action: 'created'
+      return {
+        message: 'Registrations processed for associated webinars',
+        results,
       };
     } catch (error) {
       this.logger.error(`Error handling meeting registration for meetingId: ${meetingId}`, error);

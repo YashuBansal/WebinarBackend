@@ -20,6 +20,10 @@ export class ZoomMeetingEvent {
   @Prop({ type: String, required: true, index: true })
   meetingId: string;
 
+  // Zoom occurrence id for recurring meetings/webinars (optional)
+  @Prop({ type: String, required: false, index: true })
+  occurrenceId?: string;
+
   @Prop({
     type: String,
     enum: Object.values(ZoomMeetingEventType),
@@ -54,6 +58,7 @@ ZoomMeetingEventSchema.index({
   projectId: 1,
   accountId: 1,
   meetingId: 1,
+  occurrenceId: 1,
   eventType: 1,
   createdAt: -1,
 });

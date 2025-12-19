@@ -39,6 +39,10 @@ export class FindPaginatedWabaMessageDto {
   @IsOptional()
   @IsString()
   meetingId?: string;
+
+  @IsOptional()
+  @IsString()
+  occurrenceId?: string;
 }
 
 

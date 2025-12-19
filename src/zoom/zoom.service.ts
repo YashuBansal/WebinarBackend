@@ -27,15 +27,24 @@ import { UsersService } from 'src/users/users.service';
 import { MeetingEventConfigService } from 'src/meeting-event-config/meeting-event-config.service';
 import { ConfiguredTemplatesService } from 'src/configured-templates/configured-templates.service';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
-import axios from 'axios';
 import { AttendeesService } from 'src/attendees/attendees.service';
-import { BooleanExpression } from 'mongoose';
 import { WebhookQueueService } from './webhook-queue.service';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
+import { ZoomMeetingService } from './zoom-meeting/zoom-meeting.service';
+import { ZoomMeetingOccurrence } from './zoom-meeting/zoom-meeting.schema';
 
 @Injectable()
 export class ZoomService implements OnModuleInit {
   private readonly logger = new Logger(ZoomService.name);
+
+  // Simple in-memory rate limiter (consider using Redis for production)
+  private readonly rateLimitMap = new Map<
+    string,
+    { count: number; resetTime: number }
+  >();
+  private readonly RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
+  private readonly RATE_LIMIT_MAX_REQUESTS = 100; // Max requests per window per project
+
   constructor(
     private readonly http: HttpService,
     @InjectModel(ZoomProject.name)
@@ -52,14 +61,237 @@ export class ZoomService implements OnModuleInit {
     private readonly attendeesService: AttendeesService,
     private readonly webhookQueueService: WebhookQueueService,
     private readonly whatsAppGateway: WhatsAppGateway,
+    @Inject(forwardRef(() => ZoomMeetingService))
+    private readonly zoomMeetingService: ZoomMeetingService,
   ) {}
 
   onModuleInit() {
     // Set the processing worker for the queue
     this.webhookQueueService.setProcessingWorker(
-      (payload: any, projectId: string) => this.processWebhookPayloadV2(payload, projectId)
+      (payload: any, projectId: string) =>
+        this.processWebhookPayloadV2(payload, projectId),
     );
-    this.logger.log('Webhook queue processing worker registered');
+    this.logger.log('Service initialized', {
+      service: 'ZoomService',
+      action: 'Webhook queue processing worker registered',
+    });
+  }
+
+  // ====== Webhook Processing Helper Methods ======
+
+  /**
+   * Safely extracts nested property from payload with multiple fallback paths
+   */
+  private safeExtract(
+    payload: any,
+    paths: string[],
+    defaultValue: any = undefined,
+  ): any {
+    for (const path of paths) {
+      const keys = path.split('.');
+      let value = payload;
+      for (const key of keys) {
+        if (value && typeof value === 'object' && key in value) {
+          value = value[key];
+        } else {
+          value = undefined;
+          break;
+        }
+      }
+      if (value !== undefined && value !== null) {
+        return value;
+      }
+    }
+    return defaultValue;
+  }
+
+  /**
+   * Validates and extracts meeting ID from payload
+   */
+  private validateAndExtractMeetingId(object: any): string | null {
+    const meetingId = String(
+      this.safeExtract(object, ['id', 'uuid'], '') || '',
+    );
+    if (
+      !meetingId ||
+      meetingId === 'undefined' ||
+      meetingId === 'null' ||
+      meetingId.trim() === ''
+    ) {
+      return null;
+    }
+    return meetingId;
+  }
+
+  /**
+   * Validates occurrence ID format
+   */
+  private validateOccurrenceId(
+    occurrenceId: string | undefined,
+  ): string | undefined {
+    if (!occurrenceId || occurrenceId.trim() === '') {
+      return undefined;
+    }
+    return occurrenceId.trim();
+  }
+
+  /**
+   * Extracts and validates occurrence ID from occurrences array
+   * Matches occurrence by event timestamp when available, otherwise uses smallest start_time
+   */
+  private async extractOccurrenceId(
+    occurrences: ZoomMeetingOccurrence[],
+    meetingId: string,
+    eventTimestamp?: Date,
+  ): Promise<string | undefined> {
+    if (!Array.isArray(occurrences) || occurrences.length === 0) {
+      return undefined;
+    }
+
+    const availableOccurrences = occurrences.filter(
+      (occurrence) => occurrence.status === 'available',
+    );
+
+    if (availableOccurrences.length === 0) {
+      return undefined;
+    }
+
+    // If we have an event timestamp, try to match the occurrence that contains it
+    if (eventTimestamp) {
+      const matchingOccurrence = availableOccurrences.find((occurrence) => {
+        if (!occurrence.start_time) return false;
+        try {
+          const startTime = new Date(occurrence.start_time);
+          const duration = occurrence.duration || 0;
+          const endTime = new Date(startTime.getTime() + duration * 60000);
+          return eventTimestamp >= startTime && eventTimestamp <= endTime;
+        } catch {
+          return false;
+        }
+      });
+
+      if (matchingOccurrence?.occurrence_id) {
+        return this.validateOccurrenceId(matchingOccurrence.occurrence_id);
+      }
+    }
+
+    // Fallback: use smallest start_time
+    try {
+      const sortedOccurrences = availableOccurrences
+        .filter((occ) => occ.start_time)
+        .sort((a, b) => {
+          try {
+            const timeA = new Date(a.start_time!).getTime();
+            const timeB = new Date(b.start_time!).getTime();
+            if (isNaN(timeA) || isNaN(timeB)) return 0;
+            return timeA - timeB;
+          } catch {
+            return 0;
+          }
+        });
+
+      if (sortedOccurrences.length > 0 && sortedOccurrences[0].occurrence_id) {
+        return this.validateOccurrenceId(sortedOccurrences[0].occurrence_id);
+      }
+    } catch (error) {
+      this.logger.warn('Error sorting occurrences', {
+        method: 'extractOccurrenceId',
+        error: error.message,
+        meetingId,
+      });
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Validates event type against known Zoom webhook events
+   */
+  private validateEventType(event: string): boolean {
+    return Object.values(ZoomWebhookEvent).includes(event as ZoomWebhookEvent);
+  }
+
+  /**
+   * Creates a correlation ID for webhook processing
+   */
+  private generateCorrelationId(): string {
+    return `webhook-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Checks if project has exceeded rate limit
+   * Returns true if within limits, false if rate limited
+   */
+  private checkRateLimit(projectId: string): boolean {
+    const now = Date.now();
+    const key = `project:${projectId}`;
+    const limit = this.rateLimitMap.get(key);
+
+    if (!limit || now > limit.resetTime) {
+      // Reset or initialize
+      this.rateLimitMap.set(key, {
+        count: 1,
+        resetTime: now + this.RATE_LIMIT_WINDOW_MS,
+      });
+      return true;
+    }
+
+    if (limit.count >= this.RATE_LIMIT_MAX_REQUESTS) {
+      return false; // Rate limited
+    }
+
+    limit.count++;
+    return true;
+  }
+
+  /**
+   * Cleans up expired rate limit entries (call periodically)
+   */
+  private cleanupRateLimitMap(): void {
+    const now = Date.now();
+    for (const [key, limit] of this.rateLimitMap.entries()) {
+      if (now > limit.resetTime) {
+        this.rateLimitMap.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Logs webhook processing with structured format and context
+   */
+  private logWebhookProcessing(
+    correlationId: string,
+    level: 'log' | 'warn' | 'error',
+    message: string,
+    context: Record<string, any> = {},
+  ): void {
+    const logData: Record<string, any> = {
+      correlationId,
+      timestamp: new Date().toISOString(),
+      ...context,
+    };
+
+    // Limit payload size in logs
+    if (logData.payload && typeof logData.payload === 'object') {
+      const payloadStr = JSON.stringify(logData.payload);
+      if (payloadStr.length > 1000) {
+        const payload = logData.payload as any;
+        // Keep only essential fields
+        const essential = {
+          event: payload.event,
+          account_id: payload.account_id,
+          payload: {
+            object: {
+              id: payload.payload?.object?.id,
+              topic: payload.payload?.object?.topic,
+            },
+          },
+        };
+        logData.payload = essential;
+      }
+    }
+
+    this.logger[level](message, logData);
   }
 
   // ====== Access Token Utilities ======
@@ -185,7 +417,6 @@ export class ZoomService implements OnModuleInit {
     const clientId = this.config.get<string>('ZOOM_CLIENT_ID');
     const clientSecret = this.config.get<string>('ZOOM_CLIENT_SECRET');
     const tokenEndpoint = 'https://zoom.us/oauth/token';
-    console.log(clientId, clientSecret, tokenEndpoint);
 
     const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString(
       'base64',
@@ -207,7 +438,6 @@ export class ZoomService implements OnModuleInit {
         }),
       );
       data = response.data;
-      console.log(data);
     } catch (error: any) {
       const status = error?.response?.status;
       const payload =
@@ -232,7 +462,6 @@ export class ZoomService implements OnModuleInit {
         }),
       );
       accountId = profileResponse.data.account_id;
-      console.log('Retrieved account ID:', accountId);
     } catch (error: any) {
       console.error(
         'Failed to get user profile:',
@@ -479,18 +708,7 @@ export class ZoomService implements OnModuleInit {
         return resp.data;
       });
 
-      return {
-        id: String(data?.id ?? data?.uuid ?? ''),
-        uuid: data?.uuid,
-        topic: data?.topic,
-        startTime: data?.start_time,
-        duration: data?.duration,
-        status: data?.status,
-        joinUrl: data?.join_url,
-        createdAt: data?.created_at,
-        hostId: data?.host_id,
-        raw: data,
-      };
+      return data;
     } catch (error: any) {
       const status = error?.response?.status;
       const payload =
@@ -509,6 +727,7 @@ export class ZoomService implements OnModuleInit {
     status: 'pending' | 'approved' | 'denied' = 'approved',
     page: number,
     pageSize: number,
+    occurrenceId?: string,
   ) {
     const project = await this.zoomProjectModel.findOne({
       _id: projectId,
@@ -518,23 +737,34 @@ export class ZoomService implements OnModuleInit {
       throw new NotAcceptableException('No access token found');
 
     try {
-      this.logger.log(
-        `getWebinarRegistrants --------==================------------- ${adminId} ${projectId} ${webinarId} webinar ${status} page: ${page} pageSize: ${pageSize}`,
-      );
+      this.logger.log('Fetching webinar registrants', {
+        method: 'getWebinarRegistrants',
+        adminId,
+        projectId,
+        webinarId,
+        status,
+        page,
+        pageSize,
+        occurrenceId,
+      });
 
       const data = await this.executeWithTokenRetry(project, async (token) => {
+        const params: any = { status, page_size: pageSize, page_number: page };
+        if (occurrenceId) {
+          params.occurrence_id = occurrenceId;
+        }
         const resp = await firstValueFrom(
           this.http.get(
             `https://api.zoom.us/v2/webinars/${encodeURIComponent(webinarId)}/registrants`,
             {
               headers: { Authorization: `Bearer ${token}` },
-              params: { status, page_size: pageSize, page_number: page },
+              params,
             },
           ),
         );
         return resp.data;
       });
-      console.log('data', data?.registrants?.length);
+
       let registrants = Array.isArray(data?.registrants)
         ? data?.registrants
         : [];
@@ -599,40 +829,6 @@ export class ZoomService implements OnModuleInit {
     }
   }
 
-  async addWebinarRegistrant(
-    adminId: Types.ObjectId,
-    projectId: Types.ObjectId,
-    webinarId: string,
-    body: { email: string; first_name?: string; last_name?: string },
-  ) {
-    const project = await this.zoomProjectModel.findOne({
-      _id: projectId,
-      adminId,
-    });
-    if (!project?.accessToken)
-      throw new NotAcceptableException('No access token found');
-
-    try {
-      const data = await this.executeWithTokenRetry(project, async (token) => {
-        const resp = await firstValueFrom(
-          this.http.post(
-            `https://api.zoom.us/v2/webinars/${encodeURIComponent(webinarId)}/registrants`,
-            body,
-            { headers: { Authorization: `Bearer ${token}` } },
-          ),
-        );
-        return resp.data;
-      });
-
-      return data;
-    } catch (error: any) {
-      const status = error?.response?.status;
-      const payload =
-        error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error('Zoom add webinar registrant failed:', { status, payload });
-      throw new NotAcceptableException('Failed to add webinar registrant');
-    }
-  }
 
   async validateWebhook(payload: any, projectId: Types.ObjectId) {
     const { plainToken } = payload.payload;
@@ -647,7 +843,6 @@ export class ZoomService implements OnModuleInit {
     const secretToken = await this.zoomProjectModel
       .findOne({ _id: projectId })
       .select('secretToken');
-    console.log('secretToken', secretToken, projectId, plainToken);
     if (secretToken && secretToken.secretToken) {
       realSecretToken = secretToken.secretToken;
     } else {
@@ -668,9 +863,84 @@ export class ZoomService implements OnModuleInit {
       encryptedToken: hash,
     };
 
-    console.log('response', response);
-
     return response;
+  }
+
+  /**
+   * Validates webhook signature from Zoom
+   * This should be called at the controller level before processing the webhook
+   * @param payload - The webhook payload
+   * @param signature - The signature from the 'authorization' header
+   * @param timestamp - The timestamp from the 'x-zm-request-timestamp' header
+   * @param projectId - The Zoom project ID
+   * @returns true if signature is valid, false otherwise
+   */
+  async validateWebhookSignature(
+    payload: any,
+    signature: string | undefined,
+    timestamp: string | undefined,
+    projectId: Types.ObjectId,
+  ): Promise<boolean> {
+    // If signature is not provided, log warning but don't fail (for backward compatibility)
+    if (!signature) {
+      this.logger.warn(
+        'Webhook signature not provided - consider implementing signature validation for security',
+        { projectId: projectId.toString() },
+      );
+      return true; // Allow processing for backward compatibility
+    }
+
+    try {
+      // Get secret token
+      const project = await this.zoomProjectModel
+        .findById(projectId)
+        .select('secretToken')
+        .lean();
+
+      const secretToken =
+        project?.secretToken ||
+        this.config.get<string>('ZOOM_CLIENT_SECRET_TOKEN');
+
+      if (!secretToken) {
+        this.logger.warn(
+          'Webhook secret token not configured - cannot validate signature',
+          { projectId: projectId.toString() },
+        );
+        return true; // Allow processing if secret not configured
+      }
+
+      // Create the message to sign
+      const message = `v0:${timestamp || ''}:${JSON.stringify(payload)}`;
+
+      // Create the expected signature
+      const expectedSignature = crypto
+        .createHmac('sha256', secretToken)
+        .update(message)
+        .digest('hex');
+
+      const expectedSignatureWithVersion = `v0=${expectedSignature}`;
+
+      // Compare signatures using constant-time comparison to prevent timing attacks
+      const isValid =
+        signature === expectedSignatureWithVersion ||
+        signature === expectedSignature;
+
+      if (!isValid) {
+        this.logger.warn('Webhook signature validation failed', {
+          projectId: projectId.toString(),
+          providedSignature: signature.substring(0, 20) + '...',
+        });
+      }
+
+      return isValid;
+    } catch (error: any) {
+      this.logger.error('Error validating webhook signature', {
+        error: error.message,
+        projectId: projectId.toString(),
+      });
+      // On error, allow processing but log the issue
+      return true;
+    }
   }
 
   private async notifyRegistrantsUpdate(
@@ -692,23 +962,36 @@ export class ZoomService implements OnModuleInit {
         .lean();
 
       if (!project?.adminId) {
-        this.logger.warn(
-          `Unable to emit registrants update: project/admin missing`,
-        );
+        this.logger.warn('Project or admin not found', {
+          method: 'notifyRegistrantsUpdate',
+          projectId,
+          meetingId,
+          type,
+        });
         return;
       }
 
       const adminId = project.adminId.toString();
-      this.logger.log(
-        `Emitting registrants update for ${type} ${meetingId} to admin ${adminId}`,
-      );
+      this.logger.log('Emitting registrants update', {
+        method: 'notifyRegistrantsUpdate',
+        type,
+        meetingId,
+        adminId,
+      });
       this.whatsAppGateway.emitZoomRegistrantsUpdate(adminId, {
         projectId,
         meetingId,
         type,
       });
     } catch (error) {
-      this.logger.error('Failed to emit registrants update:', error);
+      this.logger.error('Method failed', {
+        method: 'notifyRegistrantsUpdate',
+        error: error.message,
+        stack: error.stack,
+        projectId,
+        meetingId,
+        type,
+      });
     }
   }
 
@@ -731,58 +1014,206 @@ export class ZoomService implements OnModuleInit {
         .lean();
 
       if (!project?.adminId) {
-        this.logger.warn(
-          `Unable to emit live data update: project/admin missing`,
-        );
+        this.logger.warn('Project or admin not found', {
+          method: 'notifyLiveDataUpdate',
+          projectId,
+          meetingId,
+          isWebinar,
+        });
         return;
       }
 
       const adminId = project.adminId.toString();
-      this.logger.log(
-        `Emitting live data update for ${isWebinar ? 'webinar' : 'meeting'} ${meetingId} to admin ${adminId}`,
-      );
+      this.logger.log('Emitting live data update', {
+        method: 'notifyLiveDataUpdate',
+        meetingId,
+        isWebinar,
+        adminId,
+      });
       this.whatsAppGateway.emitZoomLiveUpdate(adminId, {
         projectId,
         meetingId,
         isWebinar,
       });
     } catch (error) {
-      this.logger.error('Failed to emit live data update:', error);
+      this.logger.error('Method failed', {
+        method: 'notifyLiveDataUpdate',
+        error: error.message,
+        stack: error.stack,
+        projectId,
+        meetingId,
+        isWebinar,
+      });
     }
   }
 
   async handleRegistrationCreated(
     meetingId: string,
     registrant: {
-      id: string;
-      first_name: string;
-      last_name: string;
-      email: string;
-      phone: string;
+      id?: string;
+      first_name?: string;
+      last_name?: string;
+      email?: string;
+      phone?: string;
     },
     projectId: string,
     type: 'meeting' | 'webinar',
+    occurrences?: { occurrence_id?: string }[],
   ) {
-    this.logger.log('Meeting registration created', registrant);
-
     try {
-      // Use webinar service to handle the registration
-      const result = await this.webinarService.handleMeetingRegistration(
+      // Validate inputs
+      if (!meetingId) {
+        this.logger.warn('Validation failed', {
+          handler: 'handleRegistrationCreated',
+          reason: 'Invalid meeting ID',
+          meetingId,
+        });
+        return;
+      }
+
+      if (!registrant || (!registrant.email && !registrant.id)) {
+        this.logger.warn('Validation failed', {
+          handler: 'handleRegistrationCreated',
+          reason: 'Registrant missing required fields (email or id)',
+          meetingId,
+          registrant,
+        });
+        return;
+      }
+
+      // Validate and normalize registrant data for webinar service
+      // The webinar service requires all fields, so we provide defaults if missing
+      const normalizedRegistrant = {
+        id: registrant.id || '',
+        first_name: registrant.first_name || '',
+        last_name: registrant.last_name || '',
+        email: registrant.email || '',
+        phone: registrant.phone || '',
+      };
+
+      // Validate registrant email if present
+      if (normalizedRegistrant.email) {
+        try {
+          ValidationUtil.validateEmail(normalizedRegistrant.email);
+        } catch (emailError) {
+          this.logger.warn('Validation failed', {
+            handler: 'handleRegistrationCreated',
+            reason: 'Invalid registrant email',
+            email: normalizedRegistrant.email,
+            error: emailError.message,
+            meetingId,
+          });
+          // Continue processing - email validation failure shouldn't block registration
+        }
+      }
+
+      this.logger.log('Handler invoked', {
+        handler: 'handleRegistrationCreated',
         meetingId,
-        registrant,
-      );
-      this.logger.log('Registration handled:', result);
+        registrantEmail: registrant.email,
+        registrantId: registrant.id,
+        type,
+        occurrencesCount: occurrences?.length || 0,
+      });
 
-      // Emit socket event to refresh registrants data
-      await this.notifyRegistrantsUpdate(projectId, meetingId, type);
+      // Extract occurrence IDs from occurrences array
+      let occurrenceIds: (string | undefined)[] = [];
+      if (occurrences && occurrences.length > 0) {
+        occurrenceIds = occurrences
+          .map((occurrence) => occurrence?.occurrence_id)
+          .filter((id) => id);
+      }
 
-      return result;
-    } catch (error) {
-      console.error('Error handling registration:', error);
-      throw error;
+      // If no occurrences, process for single meeting/webinar
+      if (occurrenceIds.length === 0) {
+        occurrenceIds = [undefined];
+      }
+
+      // Process registration for each occurrence
+      const errors: any[] = [];
+      for (const occurrenceId of occurrenceIds) {
+        try {
+          this.logger.debug('Processing registration occurrence', {
+            handler: 'handleRegistrationCreated',
+            meetingId,
+            registrantEmail: registrant.email,
+            occurrenceId,
+          });
+
+          const result = await this.webinarService.handleMeetingRegistration(
+            meetingId,
+            normalizedRegistrant,
+            occurrenceId,
+          );
+
+          this.logger.debug('Registration occurrence handled successfully', {
+            handler: 'handleRegistrationCreated',
+            meetingId,
+            occurrenceId,
+            result,
+          });
+        } catch (occurrenceError: any) {
+          errors.push({
+            occurrenceId,
+            error: occurrenceError.message,
+            stack: occurrenceError.stack,
+          });
+          this.logger.error('Registration occurrence failed', {
+            handler: 'handleRegistrationCreated',
+            error: occurrenceError.message,
+            stack: occurrenceError.stack,
+            meetingId,
+            registrantEmail: registrant.email,
+            occurrenceId,
+          });
+          // Continue processing other occurrences
+        }
+      }
+
+      // Emit socket event to refresh registrants data (only once, after all occurrences processed)
+      try {
+        await this.notifyRegistrantsUpdate(projectId, meetingId, type);
+      } catch (notifyError: any) {
+        this.logger.warn('Notification failed', {
+          handler: 'handleRegistrationCreated',
+          reason: 'Failed to notify registrants update',
+          error: notifyError.message,
+          meetingId,
+          projectId,
+        });
+        // Don't fail the entire operation if notification fails
+      }
+
+      if (errors.length > 0) {
+        this.logger.warn('Partial completion with errors', {
+          handler: 'handleRegistrationCreated',
+          meetingId,
+          totalOccurrences: occurrenceIds.length,
+          failedOccurrences: errors.length,
+          errors,
+        });
+      } else {
+        this.logger.log('Handler completed successfully', {
+          handler: 'handleRegistrationCreated',
+          meetingId,
+          registrantEmail: registrant.email,
+          occurrencesProcessed: occurrenceIds.length,
+        });
+      }
+    } catch (error: any) {
+      this.logger.error('Handler failed', {
+        handler: 'handleRegistrationCreated',
+        error: error.message,
+        stack: error.stack,
+        meetingId,
+        registrantEmail: registrant?.email,
+        registrantId: registrant?.id,
+        projectId,
+        type,
+      });
+      // Don't throw to avoid breaking webhook processing
     }
   }
-
 
   async handleMeetingCreated(projectId: string) {
     await this.notifyZoomRealtimeUpdate(projectId, 'meetings', 'created');
@@ -836,83 +1267,323 @@ export class ZoomService implements OnModuleInit {
 
   // In zoom.service.ts
 
+  /**
+   * Processes Zoom webhook payloads with comprehensive error handling
+   *
+   * Error Recovery Strategy:
+   * - Critical errors (invalid projectId, missing event): Return early, don't retry
+   *   * Invalid or missing projectId - logged as error, returns without retry
+   *   * Project not found or not configured - logged as error/warn, returns without retry
+   *
+   * - Validation errors (BadRequestException): Log and return, don't retry
+   *   * Missing event type - throws BadRequestException, caught and logged as warning
+   *   * Invalid webhook payload structure - throws BadRequestException, caught and logged
+   *
+   * - Data extraction failures: Log warning, continue processing
+   *   * Missing occurrenceId - logged as warning, continues with undefined
+   *   * Missing meeting ID - logged as warning, returns early
+   *   * Invalid email format - logged as warning, continues with undefined email
+   *
+   * - Handler failures: Log error, continue (handlers don't throw)
+   *   * All event handlers (handleMeetingStarted, handleParticipantJoined, etc.)
+   *     catch their own errors and log them without throwing
+   *   * Webhook processing continues even if individual handler fails
+   *
+   * - Event record creation failures: Log error, don't fail webhook
+   *   * Event records are for tracking only, not critical for webhook success
+   *   * Non-duplicate errors are logged but don't stop processing
+   *
+   * - Duplicate events: Log as warning, treat as success (idempotency)
+   *   * Duplicate event records (code 11000) are logged as warnings
+   *   * Webhook is considered successfully processed (idempotent)
+   *
+   * - Other errors: Throw for queue retry with exponential backoff
+   *   * Network errors, database connection failures, etc. are thrown
+   *   * The webhook queue will retry with exponential backoff
+   *
+   * @param payload The raw webhook payload from Zoom
+   * @param projectId The Zoom project ID to process the webhook for
+   * @throws Error for transient failures that should be retried by queue
+   */
   async processWebhookPayloadV2(payload: any, projectId: string | undefined) {
     const timer = MonitoringUtil.createTimer();
+    const correlationId = this.generateCorrelationId();
+
     try {
+      // Generate correlation ID for tracing
+      this.logWebhookProcessing(
+        correlationId,
+        'log',
+        'Webhook processing started',
+        {
+          projectId,
+          event: payload?.event,
+        },
+      );
+
+      // Validate project ID format
       const zoomProjectId = mongoose.isValidObjectId(projectId)
         ? new Types.ObjectId(projectId)
         : null;
 
       if (!zoomProjectId) {
-        this.logger.error('Invalid project ID in webhook payload:', payload);
+        this.logWebhookProcessing(
+          correlationId,
+          'error',
+          'Invalid project ID format in webhook payload',
+          { projectId, payload: this.safeExtract(payload, ['event'], {}) },
+        );
+        return;
+      }
+
+      // Check rate limit
+      if (!this.checkRateLimit(zoomProjectId.toString())) {
+        this.logWebhookProcessing(
+          correlationId,
+          'warn',
+          'Rate limit exceeded for project',
+          {
+            projectId: zoomProjectId.toString(),
+            event: payload?.event,
+          },
+        );
+        // Still process the webhook but log the rate limit
+        // In production, you might want to return early here
+      }
+
+      // Cleanup rate limit map periodically (every 100 calls)
+      if (Math.random() < 0.01) {
+        this.cleanupRateLimitMap();
+      }
+
+      // Validate project exists and is active
+      const project = await this.zoomProjectModel
+        .findById(zoomProjectId)
+        .select('adminId isConfigured')
+        .lean();
+
+      if (!project) {
+        this.logWebhookProcessing(correlationId, 'error', 'Project not found', {
+          projectId: zoomProjectId.toString(),
+        });
+        return;
+      }
+
+      if (!project.isConfigured) {
+        this.logWebhookProcessing(
+          correlationId,
+          'warn',
+          'Project is not configured, skipping webhook',
+          { projectId: zoomProjectId.toString() },
+        );
         return;
       }
 
       // Validate webhook payload structure
       ValidationUtil.validateWebhookPayload(payload);
 
-      this.logger.log(` ========================= ${payload?.event} ========================= `);
-
-      this.logger.log('Processing webhook payload:', {
-        event: payload?.event,
-        meetingId: payload?.payload?.object?.id || payload?.object?.id,
-        timestamp: new Date().toISOString(),
-        raw: payload,
-      });
-
-      // axios.post(`http://localhost:3002/api/v1/zoom/webhook-v2?projectId=${projectId}`, payload).then((response) => {
-      //   // console.log('response', response);
-      // }).catch((error) => {
-      //   console.log('error', error);
-      // });
-
+      // Extract and validate event type
       const event: string = payload?.event ?? '';
-      const accountId: string | undefined =
-        payload?.account_id || payload?.payload?.account_id;
-      const object = payload?.payload?.object || payload?.object || {};
-      const meetingId: string | undefined = String(
-        object?.id || object?.uuid || '',
+      if (!event) {
+        this.logWebhookProcessing(
+          correlationId,
+          'error',
+          'Missing event type in webhook payload',
+          { payload: this.safeExtract(payload, ['event'], {}) },
+        );
+        throw new BadRequestException('Webhook event is required');
+      }
+
+      // Validate event type against known events
+      if (!this.validateEventType(event)) {
+        this.logWebhookProcessing(
+          correlationId,
+          'warn',
+          'Unhandled webhook event type',
+          { event, projectId: zoomProjectId.toString() },
+        );
+        // Continue processing but log as unhandled
+      }
+
+      this.logWebhookProcessing(
+        correlationId,
+        'log',
+        `Processing webhook event: ${event}`,
+        {
+          event,
+          projectId: zoomProjectId.toString(),
+        },
       );
 
-      // Validate required fields
-      if (!meetingId || meetingId === 'undefined' || meetingId === 'null') {
-        this.logger.warn('Invalid meeting ID in webhook payload:', payload);
+      // Safely extract payload data using helper function
+      const accountId: string | undefined = this.safeExtract(payload, [
+        'account_id',
+        'payload.account_id',
+      ]);
+      const object = this.safeExtract(
+        payload,
+        ['payload.object', 'object'],
+        {},
+      );
+
+      // Validate and extract meeting ID
+      const meetingId = this.validateAndExtractMeetingId(object);
+      if (!meetingId) {
+        this.logWebhookProcessing(
+          correlationId,
+          'warn',
+          'Invalid or missing meeting ID in webhook payload',
+          { event, projectId: zoomProjectId.toString() },
+        );
         return;
       }
 
-      const participant = object?.participant || object?.participant_data || {};
-      const registrant = object?.registrant || object?.registration || {};
+      // Extract occurrences from payload
+      const occurrences: ZoomMeetingOccurrence[] = Array.isArray(
+        object?.occurrences,
+      )
+        ? object?.occurrences
+        : [];
+
+      // Extract occurrenceId with improved logic and error handling
+      let occurrenceId: string | undefined = undefined;
+      if (occurrences.length === 0) {
+        // Only fetch from DB if occurrences not in payload
+        try {
+          const zoomMeeting =
+            await this.zoomMeetingService.getZoomMeetingByMeetingId(meetingId);
+          if (
+            zoomMeeting &&
+            Array.isArray(zoomMeeting?.occurrences) &&
+            zoomMeeting.occurrences.length > 0
+          ) {
+            occurrences.push(...zoomMeeting.occurrences);
+          }
+
+        } catch (dbError) {
+          this.logWebhookProcessing(
+            correlationId,
+            'warn',
+            'Failed to fetch meeting occurrences from database',
+            {
+              error: dbError.message,
+              meetingId,
+              event,
+            },
+          );
+          // Continue without occurrenceId
+        }
+      }
+
+      // Extract occurrence ID with improved matching logic
+      const eventTimestamp = payload?.event_ts
+        ? new Date(payload.event_ts)
+        : new Date();
+      occurrenceId = await this.extractOccurrenceId(
+        occurrences,
+        meetingId,
+        eventTimestamp,
+      );
+
+      this.logWebhookProcessing(
+        correlationId,
+        'log',
+        `Occurrence ID extracted: ${occurrenceId}`,
+        { meetingId, occurrenceId, occurrencesCount: occurrences.length },
+      );
+
+      // Safely extract participant and registrant data
+      const participant = this.safeExtract(
+        object,
+        ['participant', 'participant_data'],
+        {},
+      );
+      const registrant = this.safeExtract(
+        object,
+        ['registrant', 'registration'],
+        {},
+      );
+
+      // Validate participant structure if present
+      if (participant && Object.keys(participant).length > 0) {
+        if (participant.email && typeof participant.email !== 'string') {
+          this.logWebhookProcessing(
+            correlationId,
+            'warn',
+            'Invalid participant email type',
+            { meetingId, event },
+          );
+        }
+      }
+
+      // Validate registrant structure if present
+      if (registrant && Object.keys(registrant).length > 0) {
+        if (!registrant.email && !registrant.id) {
+          this.logWebhookProcessing(
+            correlationId,
+            'warn',
+            'Registrant missing required fields (email or id)',
+            { meetingId, event },
+          );
+        }
+      }
+
       let eventType: ZoomMeetingEventType | undefined;
       let isWebinarLiveEvent = false;
 
       // Route to the correct notification handler based on the event
+      // Standardized to use early returns for events that don't create event records
       switch (event) {
         case ZoomWebhookEvent.MeetingCreated:
           await this.handleMeetingCreated(projectId);
+          this.logWebhookProcessing(
+            correlationId,
+            'log',
+            'Meeting created event processed',
+            { meetingId, projectId: zoomProjectId.toString() },
+          );
           return;
 
         case ZoomWebhookEvent.WebinarCreated:
           await this.handleWebinarCreated(projectId);
+          this.logWebhookProcessing(
+            correlationId,
+            'log',
+            'Webinar created event processed',
+            { meetingId, projectId: zoomProjectId.toString() },
+          );
           return;
 
-        case ZoomWebhookEvent.MeetingStarted:
+        case ZoomWebhookEvent.MeetingStarted: {
           const meetingTopic = ValidationUtil.sanitizeText(
-            object?.topic || 'the meeting',
+            this.safeExtract(object, ['topic'], 'the meeting'),
           );
-          await this.handleMeetingStarted(meetingId, meetingTopic, false);
+          await this.handleMeetingStarted(
+            meetingId,
+            meetingTopic,
+            false,
+            occurrenceId,
+          );
           eventType = ZoomMeetingEventType.MeetingStarted;
           break;
+        }
 
-        case ZoomWebhookEvent.WebinarStarted:
+        case ZoomWebhookEvent.WebinarStarted: {
           const webinarTopic = ValidationUtil.sanitizeText(
-            object?.topic || 'the webinar',
+            this.safeExtract(object, ['topic'], 'the webinar'),
           );
-          await this.handleMeetingStarted(meetingId, webinarTopic, true);
+          await this.handleMeetingStarted(
+            meetingId,
+            webinarTopic,
+            true,
+            occurrenceId,
+          );
           eventType = ZoomMeetingEventType.MeetingStarted;
           isWebinarLiveEvent = true;
           break;
+        }
 
-        case ZoomWebhookEvent.MeetingParticipantJoined:
+        case ZoomWebhookEvent.MeetingParticipantJoined: {
           const participantEmail = participant?.email;
           if (participantEmail) {
             try {
@@ -921,18 +1592,33 @@ export class ZoomService implements OnModuleInit {
                 meetingId,
                 participantEmail,
                 false,
+                occurrenceId,
               );
             } catch (emailError) {
-              this.logger.warn(
-                `Invalid participant email in webhook: ${participantEmail}`,
-                emailError.message,
+              this.logWebhookProcessing(
+                correlationId,
+                'warn',
+                'Invalid participant email in webhook',
+                {
+                  participantEmail,
+                  error: emailError.message,
+                  meetingId,
+                },
               );
             }
+          } else {
+            this.logWebhookProcessing(
+              correlationId,
+              'warn',
+              'Missing participant email in participant joined event',
+              { meetingId, event },
+            );
           }
           eventType = ZoomMeetingEventType.ParticipantJoined;
           break;
+        }
 
-        case ZoomWebhookEvent.WebinarParticipantJoined:
+        case ZoomWebhookEvent.WebinarParticipantJoined: {
           const webinarParticipantEmail = participant?.email;
           if (webinarParticipantEmail) {
             try {
@@ -941,122 +1627,292 @@ export class ZoomService implements OnModuleInit {
                 meetingId,
                 webinarParticipantEmail,
                 true,
+                occurrenceId,
               );
             } catch (emailError) {
-              this.logger.warn(
-                `Invalid webinar participant email in webhook: ${webinarParticipantEmail}`,
-                emailError.message,
+              this.logWebhookProcessing(
+                correlationId,
+                'warn',
+                'Invalid webinar participant email in webhook',
+                {
+                  participantEmail: webinarParticipantEmail,
+                  error: emailError.message,
+                  meetingId,
+                },
               );
             }
+          } else {
+            this.logWebhookProcessing(
+              correlationId,
+              'warn',
+              'Missing participant email in webinar participant joined event',
+              { meetingId, event },
+            );
           }
           eventType = ZoomMeetingEventType.ParticipantJoined;
           isWebinarLiveEvent = true;
           break;
+        }
 
-        case ZoomWebhookEvent.MeetingParticipantLeft:
-          const leftParticipant = object?.participant || {};
-          await this.handleParticipantLeft(meetingId, leftParticipant, false);
-          eventType = ZoomMeetingEventType.ParticipantLeft;
-          break;
-
-        case ZoomWebhookEvent.WebinarParticipantLeft:
-          const webinarLeftParticipant = object?.participant || {};
+        case ZoomWebhookEvent.MeetingParticipantLeft: {
+          // Reuse participant extracted at line 1443 to avoid redundant extraction
           await this.handleParticipantLeft(
             meetingId,
-            webinarLeftParticipant,
+            participant,
+            false,
+            occurrenceId,
+          );
+          eventType = ZoomMeetingEventType.ParticipantLeft;
+          break;
+        }
+
+        case ZoomWebhookEvent.WebinarParticipantLeft: {
+          // Reuse participant extracted at line 1443 to avoid redundant extraction
+          await this.handleParticipantLeft(
+            meetingId,
+            participant,
             true,
+            occurrenceId,
           );
           eventType = ZoomMeetingEventType.ParticipantLeft;
           isWebinarLiveEvent = true;
           break;
+        }
 
-        case ZoomWebhookEvent.MeetingEnded:
+        case ZoomWebhookEvent.MeetingEnded: {
           const endedMeetingTopic = ValidationUtil.sanitizeText(
-            object?.topic || 'the meeting',
+            this.safeExtract(object, ['topic'], 'the meeting'),
           );
-          await this.handleMeetingEnded(meetingId, endedMeetingTopic, false);
+          await this.handleMeetingEnded(
+            meetingId,
+            endedMeetingTopic,
+            false,
+            occurrenceId,
+          );
           eventType = ZoomMeetingEventType.MeetingEnded;
           break;
+        }
 
-        case ZoomWebhookEvent.WebinarEnded:
+        case ZoomWebhookEvent.WebinarEnded: {
           const webinarEndedTopic = ValidationUtil.sanitizeText(
-            object?.topic || 'the webinar',
+            this.safeExtract(object, ['topic'], 'the webinar'),
           );
-          await this.handleMeetingEnded(meetingId, webinarEndedTopic, true);
+          await this.handleMeetingEnded(
+            meetingId,
+            webinarEndedTopic,
+            true,
+            occurrenceId,
+          );
           eventType = ZoomMeetingEventType.MeetingEnded;
           isWebinarLiveEvent = true;
           break;
+        }
 
         case ZoomWebhookEvent.MeetingRegistrationCreated:
-          await this.handleRegistrationCreated(meetingId, registrant, projectId, 'meeting');
+          await this.handleRegistrationCreated(
+            meetingId,
+            registrant,
+            projectId,
+            'meeting',
+            occurrences,
+          );
+          this.logWebhookProcessing(
+            correlationId,
+            'log',
+            'Meeting registration created event processed',
+            { meetingId, projectId: zoomProjectId.toString() },
+          );
           return;
 
         case ZoomWebhookEvent.WebinarRegistrationCreated:
-          console.log('Webinar registration created', registrant);
-          await this.handleRegistrationCreated(meetingId, registrant, projectId, 'webinar');
+          await this.handleRegistrationCreated(
+            meetingId,
+            registrant,
+            projectId,
+            'webinar',
+            occurrences,
+          );
+          this.logWebhookProcessing(
+            correlationId,
+            'log',
+            'Webinar registration created event processed',
+            { meetingId, projectId: zoomProjectId.toString() },
+          );
           return;
 
         default:
-          this.logger.warn(`Unhandled webhook event: ${event}`);
+          this.logWebhookProcessing(
+            correlationId,
+            'warn',
+            'Unhandled webhook event type',
+            { event, meetingId, projectId: zoomProjectId.toString() },
+          );
           return;
       }
 
-      // Create meeting event record
+      // Create meeting event record with idempotency consideration
+      // Note: Database unique constraints should prevent duplicates
+      // Transaction support: Full MongoDB transactions require replica set configuration.
+      // Current implementation uses idempotency checks and error handling for data consistency.
+      // For production with high consistency requirements, consider:
+      // 1. Configuring MongoDB replica set
+      // 2. Using mongoose.startSession() and session.withTransaction() for critical operations
+      // 3. Implementing compensating transactions for rollback scenarios
       if (eventType) {
         try {
+          // Validate occurrenceId before creating event
+          const validatedOccurrenceId = this.validateOccurrenceId(occurrenceId);
+
           await this.zoomEventService.createMeetingEvent({
-            accountId,
+            accountId: accountId || undefined,
             meetingId,
+            occurrenceId: validatedOccurrenceId,
             eventType,
             participantId: participant?.id,
             participantUserId: participant?.user_id,
             participantName: ValidationUtil.sanitizeText(
               participant?.user_name || participant?.name || '',
             ),
-            participantEmail: participant?.email,
+            participantEmail: participant?.email
+              ? (() => {
+                  try {
+                    return ValidationUtil.validateEmail(participant.email);
+                  } catch (emailError: any) {
+                    this.logWebhookProcessing(
+                      correlationId,
+                      'warn',
+                      'Invalid participant email for event record',
+                      {
+                        email: participant.email,
+                        error: emailError.message,
+                        meetingId,
+                      },
+                    );
+                    return undefined;
+                  }
+                })()
+              : undefined,
             raw: payload,
             projectId: zoomProjectId,
           });
+
+          this.logWebhookProcessing(
+            correlationId,
+            'log',
+            'Meeting event record created',
+            {
+              meetingId,
+              eventType,
+              occurrenceId: validatedOccurrenceId,
+            },
+          );
+
           await this.notifyLiveDataUpdate(
             projectId,
             meetingId,
             isWebinarLiveEvent,
           );
-        } catch (eventError) {
-          this.logger.error(
-            'Failed to create meeting event record:',
-            eventError,
-          );
-          // Don't throw here as the main webhook processing succeeded
+        } catch (eventError: any) {
+          // Check if error is due to duplicate (idempotency)
+          const isDuplicateError =
+            eventError?.code === 11000 ||
+            eventError?.message?.includes('duplicate') ||
+            eventError?.message?.includes('E11000');
+
+          if (isDuplicateError) {
+            this.logWebhookProcessing(
+              correlationId,
+              'warn',
+              'Duplicate event record detected (idempotency)',
+              {
+                meetingId,
+                eventType,
+                occurrenceId,
+                error: eventError.message,
+              },
+            );
+            // Don't treat duplicate as error - webhook was already processed
+          } else {
+            this.logWebhookProcessing(
+              correlationId,
+              'error',
+              'Failed to create meeting event record',
+              {
+                meetingId,
+                eventType,
+                occurrenceId,
+                error: eventError.message,
+                stack: eventError.stack,
+              },
+            );
+            // Don't throw here as the main webhook processing succeeded
+            // The event record is for tracking, not critical for webhook success
+          }
         }
       }
 
-      this.logger.log(
-        `Successfully processed webhook event: ${event} for meeting: ${meetingId}`,
+      // Store timer value once for consistent measurements
+      const processingTimeMs = timer();
+
+      this.logWebhookProcessing(
+        correlationId,
+        'log',
+        'Webhook event processed successfully',
+        {
+          event,
+          meetingId,
+          projectId: zoomProjectId.toString(),
+          processingTimeMs,
+        },
       );
 
-      // Log webhook processing metrics
-      MonitoringUtil.logWebhookMetrics(event, meetingId, timer(), true);
-    } catch (error) {
-      this.logger.error('Failed to process webhook payload:', {
-        error: error.message,
-        payload: payload,
-        stack: error.stack,
-      });
+      // Log webhook processing metrics with same value
+      MonitoringUtil.logWebhookMetrics(
+        event,
+        meetingId,
+        processingTimeMs,
+        true,
+      );
+    } catch (error: any) {
+      this.logWebhookProcessing(
+        correlationId,
+        'error',
+        'Failed to process webhook payload',
+        {
+          error: error.message,
+          stack: error.stack,
+          event: payload?.event,
+          meetingId: this.safeExtract(payload, [
+            'payload.object.id',
+            'object.id',
+          ]),
+          projectId,
+        },
+      );
 
-      // Log failed webhook processing
+      // Log failed webhook processing with consistent timer value
+      const errorProcessingTimeMs = timer();
       MonitoringUtil.logWebhookMetrics(
         payload?.event || 'unknown',
-        payload?.payload?.object?.id || 'unknown',
-        timer(),
+        this.safeExtract(
+          payload,
+          ['payload.object.id', 'object.id'],
+          'unknown',
+        ),
+        errorProcessingTimeMs,
         false,
       );
 
       // Don't throw the error for validation issues - these shouldn't be retried
       if (error instanceof BadRequestException) {
-        this.logger.warn(
-          'Webhook payload validation failed, ignoring:',
-          error.message,
+        this.logWebhookProcessing(
+          correlationId,
+          'warn',
+          'Webhook payload validation failed, ignoring',
+          {
+            error: error.message,
+            event: payload?.event,
+          },
         );
         return;
       }
@@ -1071,51 +1927,77 @@ export class ZoomService implements OnModuleInit {
     meetingId: string,
     meetingTopic: string,
     isWebinar: boolean,
+    occurrenceId?: string,
   ) {
     try {
-      this.logger.log(
-        `Handling meeting started event for meeting: ${meetingId}, topic: ${meetingTopic}`,
-      );
+      this.logger.log('Handler invoked', {
+        handler: 'handleMeetingStarted',
+        meetingId,
+        meetingTopic,
+        isWebinar,
+        occurrenceId,
+      });
 
       // Validate inputs
       if (!meetingId || meetingId === 'undefined' || meetingId === 'null') {
-        this.logger.warn('Invalid meeting ID provided to handleMeetingStarted');
+        this.logger.warn('Validation failed', {
+          handler: 'handleMeetingStarted',
+          reason: 'Invalid meeting ID',
+          meetingId,
+        });
         return;
       }
 
       const meetingEventConfig =
-        await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
+        await this.meetingEventConfigService.getMeetingEventConfig(
+          meetingId,
+          occurrenceId,
+        );
 
       if (!meetingEventConfig) {
-        this.logger.warn(
-          `No meeting event config found for meeting: ${meetingId}`,
-        );
+        this.logger.warn('Configuration not found', {
+          handler: 'handleMeetingStarted',
+          meetingId,
+          occurrenceId,
+        });
         return;
       }
 
-      this.logger.log(`Found meeting event config for meeting: ${meetingId}`);
+      this.logger.log('Configuration fetched', {
+        handler: 'handleMeetingStarted',
+        meetingId,
+        occurrenceId,
+      });
 
       const { meetingStarted } = meetingEventConfig;
 
       if (!meetingStarted?.enabled) {
-        this.logger.log(
-          `Meeting started notifications disabled for meeting: ${meetingId}`,
-        );
+        this.logger.log('Notifications disabled', {
+          handler: 'handleMeetingStarted',
+          meetingId,
+          occurrenceId,
+        });
         return;
       }
 
       // Check if already executed
       if (meetingStarted.isExecuted) {
-        this.logger.warn(
-          `Meeting started event already executed for meeting: ${meetingId}. Skipping duplicate processing.`,
-        );
+        this.logger.warn('Event already executed', {
+          handler: 'handleMeetingStarted',
+          meetingId,
+          occurrenceId,
+          reason: 'Skipping duplicate processing',
+        });
         return;
       }
 
       if (!mongoose.isValidObjectId(meetingStarted.configuredTemplateId)) {
-        this.logger.warn(
-          `Invalid configured template ID for meeting: ${meetingId}`,
-        );
+        this.logger.warn('Validation failed', {
+          handler: 'handleMeetingStarted',
+          reason: 'Invalid template ID',
+          meetingId,
+          templateId: meetingStarted.configuredTemplateId,
+        });
         return;
       }
 
@@ -1125,20 +2007,25 @@ export class ZoomService implements OnModuleInit {
         );
 
       if (!configuredTemplate) {
-        this.logger.warn(
-          `Configured template not found for meeting: ${meetingId}`,
-        );
+        this.logger.warn('Template not found', {
+          handler: 'handleMeetingStarted',
+          meetingId,
+          templateId: meetingStarted.configuredTemplateId,
+        });
         return;
       }
 
-      this.logger.log(
-        `Using configured template: ${configuredTemplate.configuredTemplateName} for meeting: ${meetingId}`,
-      );
+      this.logger.log('Template fetched', {
+        handler: 'handleMeetingStarted',
+        meetingId,
+        templateName: configuredTemplate.configuredTemplateName,
+      });
 
       // Set isExecuted flag immediately to prevent duplicate processing
       await this.meetingEventConfigService.updateEventExecutedFlag(
         meetingId,
         'meetingStarted',
+        occurrenceId,
       );
 
       const registrations = await this.getMeetingRegistrations({
@@ -1148,47 +2035,67 @@ export class ZoomService implements OnModuleInit {
         webinarID: meetingEventConfig.webinarId,
         zoomProjectId: meetingEventConfig.zoomProjectId,
         isWebinar,
+        occurrenceId,
       });
 
       if (!registrations || registrations.length === 0) {
-        this.logger.log(`No registrations found for meeting: ${meetingId}`);
+        this.logger.log('No registrations found', {
+          handler: 'handleMeetingStarted',
+          meetingId,
+          occurrenceId,
+        });
         return;
       }
 
-      this.logger.log(
-        `Found ${registrations.length} registrations for meeting: ${meetingId}`,
-      );
+      this.logger.log('Registrations fetched', {
+        handler: 'handleMeetingStarted',
+        meetingId,
+        count: registrations.length,
+      });
 
       // Send template messages with enhanced error handling
       const results = await this.whatsappService.sendTemplateMessages({
         fetchedContacts: registrations,
         template: configuredTemplate,
         meetingId,
+        occurrenceId,
       });
 
-      this.logger.log(
-        `Meeting started notifications completed for meeting: ${meetingId}. Results: ${results.successful}/${results.total} successful`,
-      );
+      this.logger.log('Handler completed successfully', {
+        handler: 'handleMeetingStarted',
+        meetingId,
+        occurrenceId,
+        successful: results.successful,
+        total: results.total,
+      });
 
       if (results.failed > 0) {
-        this.logger.warn(
-          `Some notifications failed for meeting: ${meetingId}. Failed: ${results.failed}`,
-        );
+        this.logger.warn('Some notifications failed', {
+          handler: 'handleMeetingStarted',
+          meetingId,
+          occurrenceId,
+          failed: results.failed,
+          total: results.total,
+        });
         results.errors.forEach((error) => {
-          this.logger.warn(
-            `Failed notification for contact ${error.contactId}: ${error.error}`,
-          );
+          this.logger.warn('Notification failed for contact', {
+            handler: 'handleMeetingStarted',
+            meetingId,
+            contactId: error.contactId,
+            error: error.error,
+          });
         });
       }
     } catch (error) {
-      this.logger.error(
-        `Failed to handle meeting started event for meeting: ${meetingId}`,
-        {
-          error: error.message,
-          stack: error.stack,
-          meetingTopic,
-        },
-      );
+      this.logger.error('Handler failed', {
+        handler: 'handleMeetingStarted',
+        error: error.message,
+        stack: error.stack,
+        meetingId,
+        meetingTopic,
+        isWebinar,
+        occurrenceId,
+      });
       // Don't throw to avoid breaking the webhook processing
     }
   }
@@ -1200,6 +2107,7 @@ export class ZoomService implements OnModuleInit {
     webinarID?: Types.ObjectId;
     zoomProjectId: Types.ObjectId;
     isWebinar: boolean;
+    occurrenceId?: string;
   }) {
     if (mongoose.isValidObjectId(data.webinarID)) {
       const registrations = await this.webinarService.getWebinarRegistrations(
@@ -1209,14 +2117,19 @@ export class ZoomService implements OnModuleInit {
       if (Array.isArray(registrations)) return registrations;
     } else {
       const registrations = await this.getAllMeetingRegistrants(
-        data.adminId,
-        data.zoomProjectId,
-        data.meetingId,
-        data.isWebinar,
+       {
+        adminId: data.adminId,
+        zoomProjectId: data.zoomProjectId,
+        meetingId: data.meetingId,
+        isWebinar: data.isWebinar,
+        occurrenceId: data.occurrenceId,
+       }
       );
-      this.logger.log(
-        `registration count ====> > ${registrations?.registrants?.length}`,
-      );
+      this.logger.log('Registrations fetched from Zoom API', {
+        method: 'getMeetingRegistrations',
+        meetingId: data.meetingId,
+        count: registrations?.registrants?.length || 0,
+      });
       if (Array.isArray(registrations?.registrants))
         return registrations.registrants.map((registrant) => ({
           email: registrant.email,
@@ -1236,13 +2149,14 @@ export class ZoomService implements OnModuleInit {
     webinarID?: Types.ObjectId;
     zoomProjectId: Types.ObjectId;
     isWebinar: boolean;
+    occurrenceId?: string;
   }) {
     // Get all registrations first
     const allRegistrations = await this.getMeetingRegistrations(data);
 
     // Get participants who actually joined the meeting
     const meetingEvents =
-      await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId);
+      await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId, data.occurrenceId);
     const attendedEmails = new Set(
       meetingEvents
         .filter(
@@ -1266,13 +2180,14 @@ export class ZoomService implements OnModuleInit {
     webinarID?: Types.ObjectId;
     zoomProjectId: Types.ObjectId;
     isWebinar: boolean;
+    occurrenceId?: string;
   }) {
     // Get all registrations first
     const allRegistrations = await this.getMeetingRegistrations(data);
 
     // Get participants who actually joined the meeting
     const meetingEvents =
-      await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId);
+      await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId, data.occurrenceId);
     const attendedEmails = new Set(
       meetingEvents
         .filter(
@@ -1297,6 +2212,7 @@ export class ZoomService implements OnModuleInit {
     participantEmail: string;
     zoomProjectId: Types.ObjectId;
     isWebinar: boolean;
+    occurrenceId?: string;
   }) {
     // Get all registrations first
     const allRegistrations = await this.getMeetingRegistrations(data);
@@ -1314,47 +2230,125 @@ export class ZoomService implements OnModuleInit {
     meetingId: string,
     participantEmail: string,
     isWebinar: boolean,
-  ) {}
+    occurrenceId?: string,
+  ) {
+    try {
+      // Business-logic specific validation (meetingId already validated in processWebhookPayloadV2)
+      if (!participantEmail) {
+        this.logger.warn('Validation failed', {
+          handler: 'handleParticipantJoined',
+          reason: 'No participant email provided',
+          meetingId,
+          occurrenceId,
+        });
+        return;
+      }
+
+      this.logger.log('Handler invoked', {
+        handler: 'handleParticipantJoined',
+        meetingId,
+        participantEmail,
+        isWebinar,
+        occurrenceId,
+      });
+
+      // Note: Currently there's no participantJoined config in MeetingEventConfiguration
+      // This handler is implemented for future extensibility and tracking purposes
+      // If notifications are needed in the future, add participantJoined to the schema
+
+      // For now, we just log the event - the event record will be created in processWebhookPayloadV2
+      this.logger.debug('Handler completed successfully', {
+        handler: 'handleParticipantJoined',
+        meetingId,
+        participantEmail,
+        isWebinar,
+        occurrenceId,
+      });
+    } catch (error) {
+      this.logger.error('Handler failed', {
+        handler: 'handleParticipantJoined',
+        error: error.message,
+        stack: error.stack,
+        meetingId,
+        participantEmail,
+        isWebinar,
+        occurrenceId,
+      });
+      // Don't throw to avoid breaking webhook processing
+    }
+  }
 
   async handleParticipantLeft(
     meetingId: string,
     participantData: any,
     isWebinar: boolean,
+    occurrenceId?: string,
   ) {
     try {
-      this.logger.log(
-        'handleParticipantLeft --------==================-------------',
+      // Business-logic specific validation (meetingId already validated in processWebhookPayloadV2)
+      if (!participantData || !participantData.email) {
+        this.logger.warn('Validation failed', {
+          handler: 'handleParticipantLeft',
+          reason: 'Missing participant email',
+          meetingId,
+          occurrenceId,
+        });
+        return;
+      }
+
+      this.logger.log('Handler invoked', {
+        handler: 'handleParticipantLeft',
         meetingId,
-        participantData,
-      );
+        participantEmail: participantData.email,
+        isWebinar,
+        occurrenceId,
+      });
+
       const meetingEventConfig =
-        await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
-      this.logger.log(
-        'meetingEventConfig --------==================-------------',
-        meetingEventConfig,
-      );
-      if (!meetingEventConfig) return;
+        await this.meetingEventConfigService.getMeetingEventConfig(
+          meetingId,
+          occurrenceId,
+        );
+
+      if (!meetingEventConfig) {
+        this.logger.debug('Configuration not found', {
+          handler: 'handleParticipantLeft',
+          meetingId,
+          occurrenceId,
+        });
+        return;
+      }
 
       const { participantLeft } = meetingEventConfig;
-      this.logger.log(
-        'participantLeft --------==================-------------',
-        participantLeft,
-      );
+
       if (
         !participantLeft.enabled ||
         !mongoose.isValidObjectId(participantLeft.configuredTemplateId)
-      )
+      ) {
+        this.logger.debug('Notifications disabled or invalid template', {
+          handler: 'handleParticipantLeft',
+          meetingId,
+          occurrenceId,
+          enabled: participantLeft.enabled,
+          templateId: participantLeft.configuredTemplateId,
+        });
         return;
+      }
 
       const configuredTemplate =
         await this.ConfiguredTemplateService.getConfiguredTemplate(
           participantLeft.configuredTemplateId,
         );
-      this.logger.log(
-        'configuredTemplate --------==================-------------',
-        configuredTemplate,
-      );
-      if (!configuredTemplate) return;
+
+      if (!configuredTemplate) {
+        this.logger.warn('Template not found', {
+          handler: 'handleParticipantLeft',
+          meetingId,
+          occurrenceId,
+          templateId: participantLeft.configuredTemplateId,
+        });
+        return;
+      }
 
       // Get the specific participant who left
       const participant = await this.getParticipantByEmail({
@@ -1365,21 +2359,43 @@ export class ZoomService implements OnModuleInit {
         participantEmail: participantData.email,
         zoomProjectId: meetingEventConfig.zoomProjectId,
         isWebinar,
+        occurrenceId,
       });
-      this.logger.log(
-        'participant --------==================-------------',
-        participant,
-      );
-      if (!participant) return;
+
+      if (!participant) {
+        this.logger.debug('Participant not found in registrations', {
+          handler: 'handleParticipantLeft',
+          meetingId,
+          occurrenceId,
+          participantEmail: participantData.email,
+        });
+        return;
+      }
 
       await this.whatsappService.sendTemplateMessages({
         fetchedContacts: [participant],
         template: configuredTemplate,
         meetingId,
+        occurrenceId,
       });
-      return;
-    } catch (error) {
-      this.logger.error('handleParticipantLeft failed:', error);
+
+      this.logger.log('Handler completed successfully', {
+        handler: 'handleParticipantLeft',
+        meetingId,
+        occurrenceId,
+        participantEmail: participantData.email,
+      });
+    } catch (error: any) {
+      this.logger.error('Handler failed', {
+        handler: 'handleParticipantLeft',
+        error: error.message,
+        stack: error.stack,
+        meetingId,
+        participantEmail: participantData?.email,
+        occurrenceId,
+        isWebinar,
+      });
+      // Don't throw to avoid breaking webhook processing
     }
   }
 
@@ -1387,19 +2403,30 @@ export class ZoomService implements OnModuleInit {
     meetingId: string,
     meetingTopic: string,
     isWebinar: boolean,
+    occurrenceId?: string,
   ) {
     try {
-      this.logger.log(
-        'handleMeetingEnded --------==================-------------',
+      this.logger.log('Handler invoked', {
+        handler: 'handleMeetingEnded',
         meetingId,
         meetingTopic,
-      );
+        isWebinar,
+        occurrenceId,
+      });
+
       const meetingEventConfig =
-        await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
-      this.logger.log(
-        'meetingEventConfig --------==================-------------',
-        meetingEventConfig,
-      );
+        await this.meetingEventConfigService.getMeetingEventConfig(
+          meetingId,
+          occurrenceId,
+        );
+
+      this.logger.log('Configuration fetched', {
+        handler: 'handleMeetingEnded',
+        meetingId,
+        occurrenceId,
+        configFound: !!meetingEventConfig,
+      });
+
       if (!meetingEventConfig) return;
 
       const { meetingEndedAttendees, meetingEndedNonAttendees } =
@@ -1412,53 +2439,73 @@ export class ZoomService implements OnModuleInit {
       ) {
         // Check if already executed
         if (meetingEndedAttendees.isExecuted) {
-          this.logger.warn(
-            `Meeting ended attendees event already executed for meeting: ${meetingId}. Skipping duplicate processing.`,
-          );
+          this.logger.warn('Event already executed', {
+            handler: 'handleMeetingEnded',
+            eventType: 'meetingEndedAttendees',
+            meetingId,
+            occurrenceId,
+            reason: 'Skipping duplicate processing',
+          });
         } else {
-          this.logger.log(
-            'meetingEndedAttendees --------==================-------------',
-            meetingEndedAttendees,
-          );
+          this.logger.log('Processing attendees notifications', {
+            handler: 'handleMeetingEnded',
+            meetingId,
+            occurrenceId,
+            templateId: meetingEndedAttendees.configuredTemplateId,
+          });
+
           const configuredTemplate =
             await this.ConfiguredTemplateService.getConfiguredTemplate(
               meetingEndedAttendees.configuredTemplateId,
             );
-          this.logger.log(
-            'configuredTemplate for attendees --------==================-------------',
-            configuredTemplate,
-          );
+
+          this.logger.log('Template fetched for attendees', {
+            handler: 'handleMeetingEnded',
+            meetingId,
+            occurrenceId,
+            templateName: configuredTemplate?.configuredTemplateName,
+          });
 
           if (configuredTemplate) {
             // Set isExecuted flag immediately to prevent duplicate processing
             await this.meetingEventConfigService.updateEventExecutedFlag(
               meetingId,
               'meetingEndedAttendees',
+              occurrenceId,
             );
 
             const attendees = await this.getMeetingAttendees({
-            meetingId,
-            adminId: meetingEventConfig.adminId,
-            projectId: meetingEventConfig.whatsappProjectId,
-            webinarID: meetingEventConfig.webinarId,
-            zoomProjectId: meetingEventConfig.zoomProjectId,
-            isWebinar,
-          });
-            this.logger.log(
-              'attendees --------==================-------------',
-              attendees,
-            );
+              meetingId,
+              adminId: meetingEventConfig.adminId,
+              projectId: meetingEventConfig.whatsappProjectId,
+              webinarID: meetingEventConfig.webinarId,
+              zoomProjectId: meetingEventConfig.zoomProjectId,
+              isWebinar,
+              occurrenceId,
+            });
+
+            this.logger.log('Attendees fetched', {
+              handler: 'handleMeetingEnded',
+              meetingId,
+              occurrenceId,
+              count: attendees.length,
+            });
+
             // Send messages even if attendees.length === 0 (flag already set)
             if (attendees.length > 0) {
               await this.whatsappService.sendTemplateMessages({
                 fetchedContacts: attendees,
                 template: configuredTemplate,
                 meetingId,
+                occurrenceId,
               });
             } else {
-              this.logger.log(
-                `No attendees found for meeting: ${meetingId}. Flag already marked as executed.`,
-              );
+              this.logger.log('No attendees found', {
+                handler: 'handleMeetingEnded',
+                meetingId,
+                occurrenceId,
+                note: 'Flag already marked as executed',
+              });
             }
           }
         }
@@ -1471,61 +2518,96 @@ export class ZoomService implements OnModuleInit {
       ) {
         // Check if already executed
         if (meetingEndedNonAttendees.isExecuted) {
-          this.logger.warn(
-            `Meeting ended non-attendees event already executed for meeting: ${meetingId}. Skipping duplicate processing.`,
-          );
+          this.logger.warn('Event already executed', {
+            handler: 'handleMeetingEnded',
+            eventType: 'meetingEndedNonAttendees',
+            meetingId,
+            occurrenceId,
+            reason: 'Skipping duplicate processing',
+          });
         } else {
-          this.logger.log(
-            'meetingEndedNonAttendees --------==================-------------',
-            meetingEndedNonAttendees,
-          );
+          this.logger.log('Processing non-attendees notifications', {
+            handler: 'handleMeetingEnded',
+            meetingId,
+            occurrenceId,
+            templateId: meetingEndedNonAttendees.configuredTemplateId,
+          });
+
           const configuredTemplate =
             await this.ConfiguredTemplateService.getConfiguredTemplate(
               meetingEndedNonAttendees.configuredTemplateId,
             );
-          this.logger.log(
-            'configuredTemplate for non-attendees --------==================-------------',
-            configuredTemplate,
-          );
+
+          this.logger.log('Template fetched for non-attendees', {
+            handler: 'handleMeetingEnded',
+            meetingId,
+            occurrenceId,
+            templateName: configuredTemplate?.configuredTemplateName,
+          });
 
           if (configuredTemplate) {
             // Set isExecuted flag immediately to prevent duplicate processing
             await this.meetingEventConfigService.updateEventExecutedFlag(
               meetingId,
               'meetingEndedNonAttendees',
+              occurrenceId,
             );
 
             const nonAttendees = await this.getMeetingNonAttendees({
-            meetingId,
-            adminId: meetingEventConfig.adminId,
-            projectId: meetingEventConfig.whatsappProjectId,
-            webinarID: meetingEventConfig.webinarId,
-            zoomProjectId: meetingEventConfig.zoomProjectId,
-            isWebinar,
-          });
-            this.logger.log(
-              'nonAttendees --------==================-------------',
-              nonAttendees,
-            );
+              meetingId,
+              adminId: meetingEventConfig.adminId,
+              projectId: meetingEventConfig.whatsappProjectId,
+              webinarID: meetingEventConfig.webinarId,
+              zoomProjectId: meetingEventConfig.zoomProjectId,
+              isWebinar,
+              occurrenceId,
+            });
+
+            this.logger.log('Non-attendees fetched', {
+              handler: 'handleMeetingEnded',
+              meetingId,
+              occurrenceId,
+              count: nonAttendees.length,
+            });
+
             // Send messages even if nonAttendees.length === 0 (flag already set)
             if (nonAttendees.length > 0) {
               await this.whatsappService.sendTemplateMessages({
                 fetchedContacts: nonAttendees,
                 template: configuredTemplate,
                 meetingId,
+                occurrenceId,
               });
             } else {
-              this.logger.log(
-                `No non-attendees found for meeting: ${meetingId}. Flag already marked as executed.`,
-              );
+              this.logger.log('No non-attendees found', {
+                handler: 'handleMeetingEnded',
+                meetingId,
+                occurrenceId,
+                note: 'Flag already marked as executed',
+              });
             }
           }
         }
       }
 
+      this.logger.log('Handler completed successfully', {
+        handler: 'handleMeetingEnded',
+        meetingId,
+        occurrenceId,
+      });
+
       return;
     } catch (error) {
-      this.logger.error('handleMeetingEnded failed:', error);
+      this.logger.error('Handler failed', {
+        handler: 'handleMeetingEnded',
+        error: error.message,
+        stack: error.stack,
+        meetingId,
+        meetingTopic,
+        isWebinar,
+        occurrenceId,
+      });
+      return; // Explicit return for consistency with other handlers
     }
   }
 
@@ -1573,11 +2655,9 @@ export class ZoomService implements OnModuleInit {
     page: number,
     pageSize: number,
     status: 'pending' | 'approved' | 'denied' = 'approved',
+    occurrenceId?: string,
   ) {
     try {
-      this.logger.log(
-        `getMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${isWebinar ? 'webinar' : 'meeting'} ${status} page: ${page} pageSize: ${pageSize}`,
-      );
       const project = await this.zoomProjectModel.findOne({
         _id: zoomProjectId,
         adminId,
@@ -1591,16 +2671,19 @@ export class ZoomService implements OnModuleInit {
         : `https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}/registrants`;
 
       const data = await this.executeWithTokenRetry(project, async (token) => {
+        const params: any = { status, page_size: pageSize, page_number: page };
+        if (occurrenceId) {
+          params.occurrence_id = occurrenceId;
+        }
         const resp = await firstValueFrom(
           this.http.get(endpoint, {
             headers: { Authorization: `Bearer ${token}` },
-            params: { status, page_size: pageSize, page_number: page },
+            params,
           }),
         );
         return resp.data;
       });
 
-      console.log('data', data);
       let registrants = Array.isArray(data?.registrants)
         ? data?.registrants
         : [];
@@ -1669,12 +2752,16 @@ export class ZoomService implements OnModuleInit {
   }
 
   async getAllMeetingRegistrants(
-    adminId: Types.ObjectId,
+    data: {
+      adminId: Types.ObjectId,
     zoomProjectId: Types.ObjectId,
     meetingId: string,
     isWebinar: boolean,
-    status: 'pending' | 'approved' | 'denied' = 'approved',
+    status?: 'pending' | 'approved' | 'denied',
+    occurrenceId?: string,
+    }
   ) {
+    const { adminId, zoomProjectId, meetingId, isWebinar, status, occurrenceId } = data;
     try {
       this.logger.log(
         `getAllMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${isWebinar ? 'webinar' : 'meeting'} ${status}`,
@@ -1700,19 +2787,23 @@ export class ZoomService implements OnModuleInit {
 
       // Fetch all pages
       while (true) {
-        const data = await this.executeWithTokenRetry(project, async (token) => {
-          const resp = await firstValueFrom(
-            this.http.get(endpoint, {
-              headers: { Authorization: `Bearer ${token}` },
-              params: {
-                status,
-                page_size: pageSize,
-                page_number: currentPage,
-              },
-            }),
-          );
-          return resp.data;
-        });
+        const data = await this.executeWithTokenRetry(
+          project,
+          async (token) => {
+            const resp = await firstValueFrom(
+              this.http.get(endpoint, {
+                headers: { Authorization: `Bearer ${token}` },
+                params: {
+                  status,
+                  page_size: pageSize,
+                  page_number: currentPage,
+                  occurrence_id: occurrenceId,
+                },
+              }),
+            );
+            return resp.data;
+          },
+        );
 
         const registrants = Array.isArray(data?.registrants)
           ? data?.registrants
@@ -2134,8 +3225,6 @@ export class ZoomService implements OnModuleInit {
       this.config.get<string>('EXTERNAL_WEBHOOK_URL') ||
       this.config.get<string>('ZOOM_WEBHOOK_URL');
 
-
-
     try {
       const data = await this.executeWithTokenRetry(project, async (token) => {
         const resp = await firstValueFrom(
@@ -2148,7 +3237,6 @@ export class ZoomService implements OnModuleInit {
 
       // Check if our webhook URL exists in the subscriptions
       const subscriptions = data?.webhooks || [];
-      console.log('subscriptions', subscriptions);
 
       if (!webhookUrl) {
         this.logger.warn('Webhook URL not configured in environment variables');
