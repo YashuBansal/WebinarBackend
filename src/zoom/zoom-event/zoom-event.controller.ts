@@ -14,6 +14,7 @@ export class ZoomEventController {
     @Query('isWebinar') isWebinar: string,
     @Query('zoomProjectId') zoomProjectId: string,
     @Query('accountId') accountId?: string,
+    @Query('occurrenceId') occurrenceId?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(zoomProjectId)) {
       throw new BadRequestException('Invalid adminId or zoomProjectId');
@@ -25,6 +26,7 @@ export class ZoomEventController {
       meetingId,
       accountId,
       isWebinar: isWebinar === 'true',
+      occurrenceId,
     });
   }
 }

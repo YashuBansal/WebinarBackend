@@ -6,6 +6,7 @@ import {
   Param,
   Delete,
   Patch,
+  Query,
   ValidationPipe,
   UsePipes,
   BadRequestException,
@@ -27,12 +28,16 @@ export class MeetingEventConfigController {
   async getMeetingEventConfig(
     @Param('meetingId') meetingId: string,
     @Id() adminId: string,
+    @Query('occurrenceId') occurrenceId?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId)) {
       throw new NotAcceptableException('Invalid Admin ID');
     }
 
-    const config = await this.meetingEventConfigService.getMeetingEventConfig(meetingId);
+    const config = await this.meetingEventConfigService.getMeetingEventConfig(
+      meetingId,
+      occurrenceId,
+    );
 
     return {
       statusCode: 200,
@@ -84,12 +89,16 @@ export class MeetingEventConfigController {
   async deleteMeetingEventConfig(
     @Param('meetingId') meetingId: string,
     @Id() adminId: string,
+    @Query('occurrenceId') occurrenceId?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId)) {
       throw new NotAcceptableException('Invalid Admin ID');
     }
 
-    const config = await this.meetingEventConfigService.deleteMeetingEventConfig(meetingId);
+    const config = await this.meetingEventConfigService.deleteMeetingEventConfig(
+      meetingId,
+      occurrenceId,
+    );
 
     return {
       statusCode: 200,

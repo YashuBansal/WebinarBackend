@@ -166,9 +166,9 @@ export class WebinarController {
   async updateWebinarMeetingId(
     @Id() adminId: string,
     @Param('id') webinarId: string,
-    @Body() body: { meetingId: string }
+    @Body() body: { meetingId: string; occurrenceId?: string }
   ): Promise<any> {
-    const result = await this.webinarService.updateWebinarMeetingId(webinarId, body.meetingId, adminId);
+    const result = await this.webinarService.updateWebinarMeetingId(webinarId, body.meetingId, adminId, body.occurrenceId);
     return {
       message: 'Webinar meeting ID updated successfully',
       data: result,

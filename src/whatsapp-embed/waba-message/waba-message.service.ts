@@ -40,6 +40,7 @@ export class WabaMessageService {
     templateLanguage?: string;
     textBody?: string;
     displayText?: string;
+    occurrenceId?: string;
   }): Promise<WabaMessage> {
     this.logger.log(
       'wabaMessageData ------------------------- > ',
@@ -91,6 +92,7 @@ export class WabaMessageService {
       messageType?: WabaMessageType;
       templateName?: string;
       meetingId?: string;
+      occurrenceId?: string;
     },
     paginationOptions: {
       page: number;
@@ -99,6 +101,8 @@ export class WabaMessageService {
   ) {
     const { page, limit } = paginationOptions;
     const skip = (page - 1) * limit;
+    console.log('query', query);
+
     const count = await this.wabaMessageModel.countDocuments(query);
     const wabaMessages = await this.wabaMessageModel
       .find(query)

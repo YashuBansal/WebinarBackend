@@ -45,9 +45,14 @@ export class MeetingEventConfiguration {
   @Prop({
     type: String,
     required: true,
-    unique: true,
   })
   meetingId: string;
+
+  @Prop({
+    type: String,
+    required: false,
+  })
+  occurrenceId?: string;
 
   @Prop({
     type: Types.ObjectId,
@@ -111,3 +116,9 @@ export class MeetingEventConfiguration {
 
 export type MeetingEventConfigurationDocument = HydratedDocument<MeetingEventConfiguration>;
 export const MeetingEventConfigurationSchema = SchemaFactory.createForClass(MeetingEventConfiguration);
+
+// Ensure uniqueness per meetingId + occurrenceId pair (occurrenceId optional)
+MeetingEventConfigurationSchema.index(
+  { meetingId: 1, occurrenceId: 1 },
+  { unique: true },
+);

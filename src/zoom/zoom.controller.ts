@@ -308,6 +308,7 @@ export class ZoomController {
     @Query('status') status?: 'pending' | 'approved' | 'denied',
     @Query('page') page?: string,
     @Query('page_size') pageSize?: string,
+    @Query('occurrenceId') occurrenceId?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !webinarId) {
       return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
@@ -321,6 +322,7 @@ export class ZoomController {
       status ?? 'approved',
       pageNum,
       pageSizeNum,
+      occurrenceId,
     );
     return { statusCode: HttpStatus.OK, message: 'Webinar registrants retrieved', data: result };
   }
@@ -350,6 +352,7 @@ export class ZoomController {
     @Query('status') status?: 'pending' | 'approved' | 'denied',
     @Query('page') page?: string,
     @Query('page_size') pageSize?: string,
+    @Query('occurrenceId') occurrenceId?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !meetingId) {
       return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
@@ -364,6 +367,7 @@ export class ZoomController {
       pageNum,
       pageSizeNum,
       status ?? 'approved',
+      occurrenceId,
     );
     return { statusCode: HttpStatus.OK, message: 'Meeting registrants retrieved', data: result };
   }
