@@ -71,6 +71,7 @@ import { WebinarWebhookModule } from './webinar-webhook/webinar-webhook.module';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
 import { HealthModule } from './health/health.module';
+import { OtelWinstonTransport } from './logger/otel-winston-transport';
 
 @Module({
   imports: [
@@ -114,6 +115,15 @@ import { HealthModule } from './health/health.module';
           ),
           level: 'error',
         }),
+        // OpenTelemetry transport - only added if OTEL is configured
+        ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_SERVICE_NAME
+          ? [
+              new OtelWinstonTransport({
+                serviceName: process.env.OTEL_SERVICE_NAME,
+                level: 'info', // Send info level and above to OTEL
+              }),
+            ]
+          : []),
       ],
     }),
     MongooseModule.forRoot(process.env.MONGO_URI),

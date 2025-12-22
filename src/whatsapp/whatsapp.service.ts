@@ -1255,11 +1255,13 @@ export class WhatsappService {
     meetingId?: string;
     media?: { url: string; filename: string };
     apiCampaignId?: string;
+    occurrenceId?: string;
   }): Promise<any> {
     const {
       adminId,
       projectId,
       meetingId,
+      occurrenceId,
       recipientPhoneNumber,
       templateName,
       bodyVariables,
@@ -1518,6 +1520,7 @@ export class WhatsappService {
             attendeeId: attendeeId?.toString(),
             apiCampaignId,
             meetingId,
+            occurrenceId,
             direction: 'outbound' as any,
           });
         } catch (error) {
@@ -1542,6 +1545,7 @@ export class WhatsappService {
         attendeeId: attendeeId?.toString(),
         apiCampaignId,
         meetingId,
+        occurrenceId,
         error: error,
       });
       // Enhanced error handling for axios errors
@@ -1594,6 +1598,7 @@ export class WhatsappService {
     templateStructure,
     attendeeId,
     meetingId,
+    occurrenceId,
     apiCampaignId,
     messageType,
     messageFormat,
@@ -1609,6 +1614,7 @@ export class WhatsappService {
     templateStructure: any;
     attendeeId?: string;
     meetingId?: string;
+    occurrenceId?: string;
     apiCampaignId?: string;
     messageType: WabaMessageType;
     messageFormat: 'text' | 'template' | 'media';
@@ -1635,6 +1641,7 @@ export class WhatsappService {
         displayText: this.renderDisplayText(templateStructure.components || []),
         attendeeId: attendeeId?.toString(),
         meetingId,
+        occurrenceId
       });
     } catch (error) {
       this.logger.error('Failed to create error message:', error);
@@ -2486,8 +2493,9 @@ export class WhatsappService {
     fetchedContacts: any[];
     template: ConfiguredTemplate;
     meetingId: string;
+    occurrenceId?: string;
   }) {
-    const { fetchedContacts, template, meetingId } = data;
+    const { fetchedContacts, template, meetingId, occurrenceId } = data;
 
     // Input validation
     if (!fetchedContacts || !Array.isArray(fetchedContacts)) {
@@ -2636,6 +2644,7 @@ export class WhatsappService {
             language: templateLanguage,
             messageType: WabaMessageType.ZOOM_EVENT,
             meetingId,
+            occurrenceId,
           });
 
           this.logger.log(

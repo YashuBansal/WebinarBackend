@@ -14,7 +14,7 @@ export class WabaMessageController {
     @Id() adminId: string,
     @Query() queryDto: FindPaginatedWabaMessageDto,
   ) {
-    const { page, limit, projectId, campaignId, contactId, messageType, templateName, meetingId } = queryDto;
+    const { page, limit, projectId, campaignId, contactId, messageType, templateName, meetingId, occurrenceId } = queryDto;
 
     const query: any = {
       adminId: new Types.ObjectId(adminId),
@@ -26,6 +26,7 @@ export class WabaMessageController {
     if (messageType) query.messageType = messageType;
     if (templateName) query.templateName = templateName;
     if (meetingId) query.meetingId = meetingId;
+    if (occurrenceId) query.occurrenceId = occurrenceId;
 
     return this.wabaMessageService.findPaginatedAll(query, { page, limit });
   }

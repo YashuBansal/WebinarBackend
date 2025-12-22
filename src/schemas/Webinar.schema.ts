@@ -19,6 +19,12 @@ export class Webinar extends Document {
   meetingId?: string;
 
   @Prop({
+    type: String,
+    required: false,
+  })
+  occurrenceId?: string;
+
+  @Prop({
     type: Date,
     required: false,
   })

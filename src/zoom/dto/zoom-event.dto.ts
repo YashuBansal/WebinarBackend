@@ -15,6 +15,10 @@ export class ZoomEventDto {
     @IsString()
     @IsNotEmpty()
     meetingId: string;
+
+    @IsOptional()
+    @IsString()
+    occurrenceId?: string;
     
     @IsEnum(ZoomMeetingEventType)
     @IsNotEmpty()

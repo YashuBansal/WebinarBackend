@@ -5,7 +5,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
-  NotFoundException,
+  NotFoundException, 
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -3475,6 +3475,85 @@ export class AttendeesService {
       webinar: new Types.ObjectId(webinarId),
       email,
     });
+  }
+
+  async upsertAttendeeByWebinarEmailNotAttended({
+    webinarId,
+    adminId,
+    email,
+    firstName,
+    lastName,
+    phone,
+    source = 'zoom',
+  }: {
+    webinarId: string;
+    adminId: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    source?: string;
+  }): Promise<{
+    action: 'created' | 'updated' | 'unchanged';
+    attendee?: Attendee | null;
+  }> {
+    const normalizedEmail = (email || '').toLowerCase();
+    const query = {
+      webinar: new Types.ObjectId(webinarId),
+      email: normalizedEmail,
+      isAttended: false,
+    };
+
+    const update = {
+      $set: {
+        firstName: firstName ?? undefined,
+        lastName: lastName ?? undefined,
+        phone: phone ?? undefined,
+        source,
+        isAttended: false,
+        timeInSession: 0,
+      },
+      $setOnInsert: {
+        webinar: new Types.ObjectId(webinarId),
+        adminId: new Types.ObjectId(adminId),
+        email: normalizedEmail,
+      },
+    };
+
+    const result = await this.attendeeModel.updateOne(query, update, {
+      upsert: true,
+    });
+
+    // Fetch attendee after upsert for logging
+    const attendee = await this.attendeeModel.findOne(query).populate('webinar');
+
+    // Create attendee log (best-effort) when attendee exists
+    if (attendee && adminId) {
+      try {
+        this.logger.log(`Creating attendee log for Zoom registration upsert: ${attendee.email} for webinar ${(attendee.webinar as any)?.webinarName}`);
+        await this.attendeeLogService.createSingleAttendeeLog({
+          attendee: attendee.email,
+          action: AttendeeAction.REGISTERED,
+          item: 'Zoom Registration',
+          details: `<span>Saved Zoom registration for <strong>${attendee.email}</strong> in webinar <strong>${(attendee.webinar as any)?.webinarName}</strong></span>`,
+          adminId: new Types.ObjectId(adminId),
+        });
+      } catch (logError) {
+        console.warn(
+          'Failed to create attendee log for Zoom registration upsert:',
+          logError?.message || logError,
+        );
+      }
+    }
+
+    const action: 'created' | 'updated' | 'unchanged' =
+      result.upsertedCount && result.upsertedCount > 0
+        ? 'created'
+        : result.modifiedCount && result.modifiedCount > 0
+          ? 'updated'
+          : 'unchanged';
+
+    return { action, attendee };
   }
 
   async bulkUpdateAttendees(

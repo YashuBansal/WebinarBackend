@@ -28,16 +28,21 @@ export class ZoomEventService {
     meetingId,
     accountId,
     isWebinar,
+    occurrenceId,
   }: {
     adminId: Types.ObjectId;
     zoomProjectId: Types.ObjectId;
     meetingId: string;
     accountId?: string;
     isWebinar: boolean;
+    occurrenceId?: string;
   }) {
     const query: Record<string, any> = { meetingId };
     if (accountId) {
       query.accountId = accountId;
+    }
+    if (occurrenceId) {
+      query.occurrenceId = occurrenceId;
     }
 
     const events = await this.zoomMeetingEventModel
@@ -60,10 +65,13 @@ export class ZoomEventService {
     const participantState = new Map<string, ParticipantState>();
 
     const registrants = await this.zoomService.getAllMeetingRegistrants(
-      adminId,
-      zoomProjectId,
-      meetingId,
-      isWebinar,
+      {
+        adminId,
+        zoomProjectId,
+        meetingId,
+        isWebinar,
+        occurrenceId,
+      }
     );
 
     let meetingStartedAt: Date | undefined;
@@ -173,6 +181,7 @@ export class ZoomEventService {
         totalUniqueParticipants,
         totalJoins,
         totalNotJoined: notJoined.length,
+        totalRegistrations: registrantsArray.length,
       },
       participants: {
         online: onlineParticipants,
@@ -182,9 +191,17 @@ export class ZoomEventService {
     };
   }
 
-  async getMeetingEventsByMeetingId(meetingId: string) {
+  async getMeetingEventsByMeetingId(
+    meetingId: string,
+    occurrenceId?: string,
+  ) {
+    const filter: Record<string, any> = { meetingId };
+    if (occurrenceId) {
+      filter.occurrenceId = occurrenceId;
+    }
+
     return this.zoomMeetingEventModel
-      .find({ meetingId })
+      .find(filter)
       .sort({ createdAt: 1 })
       .lean()
       .exec();

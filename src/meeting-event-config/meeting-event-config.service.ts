@@ -4,6 +4,7 @@ import {
   NotFoundException,
   InternalServerErrorException,
   BadRequestException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
@@ -17,7 +18,7 @@ import {
 } from './dto/meeting-event-config.dto';
 
 @Injectable()
-export class MeetingEventConfigService {
+export class MeetingEventConfigService implements OnModuleInit {
   private readonly logger = new Logger(MeetingEventConfigService.name);
 
   constructor(
@@ -25,17 +26,41 @@ export class MeetingEventConfigService {
     private readonly meetingEventConfigModel: Model<MeetingEventConfigurationDocument>,
   ) {}
 
+  async onModuleInit() {
+    try {
+      await this.meetingEventConfigModel.collection.dropIndex('meetingId_1');
+      this.logger.log('Dropped incorrect index: meetingId_1');
+    } catch (error) {
+      if (error.codeName !== 'IndexNotFound' && error.code !== 27) {
+        this.logger.warn(`Failed to drop index meetingId_1: ${error.message}`);
+      }
+    }
+  }
+
   async getMeetingEventConfig(
     meetingId: string,
+    occurrenceId?: string,
   ): Promise<MeetingEventConfiguration | null> {
     try {
       this.logger.log(
-        `Fetching meeting event configuration for meeting ${meetingId}`,
+        `Fetching meeting event configuration for meeting ${meetingId}${
+          occurrenceId ? `, occurrenceId=${occurrenceId}` : ''
+        }`,
       );
 
-      const config = await this.meetingEventConfigModel
-        .findOne({ meetingId })
-        .exec();
+      const filter: Record<string, any> = { meetingId };
+      if (occurrenceId) {
+        filter.occurrenceId = occurrenceId;
+      }
+      else{
+        
+        filter.$or = [
+          { occurrenceId: { $exists: false } },
+          { occurrenceId: null },
+        ];
+      }
+
+      const config = await this.meetingEventConfigModel.findOne(filter).lean().exec();
 
       return config;
     } catch (error) {
@@ -55,12 +80,22 @@ export class MeetingEventConfigService {
   ) {
     try {
       this.logger.log(
-        `Creating meeting event configuration for meeting ${createDto.meetingId}`,
+        `Creating meeting event configuration for meeting ${createDto.meetingId}${
+          createDto.occurrenceId ? `, occurrenceId=${createDto.occurrenceId}` : ''
+        }`,
       );
 
-      // Check if configuration already exists for this meeting
+      // Check if configuration already exists for this meeting/occurrence
+      const existingFilter: Record<string, any> = {
+        meetingId: createDto.meetingId,
+        adminId,
+      };
+      if (createDto.occurrenceId) {
+        existingFilter.occurrenceId = createDto.occurrenceId;
+      }
+
       const existingConfig = await this.meetingEventConfigModel
-        .findOne({ meetingId: createDto.meetingId, adminId })
+        .findOne(existingFilter)
         .exec();
 
       if (existingConfig) {
@@ -108,7 +143,9 @@ export class MeetingEventConfigService {
   ) {
     try {
       this.logger.log(
-        `Updating meeting event configuration for meeting ${meetingId}`,
+        `Updating meeting event configuration for meeting ${meetingId}${
+          (updateDto as any).occurrenceId ? `, occurrenceId=${(updateDto as any).occurrenceId}` : ''
+        }`,
         updateDto,
       );
 
@@ -131,12 +168,13 @@ export class MeetingEventConfigService {
         updateData.webinarId = null;
       }
 
+      const filter: Record<string, any> = { meetingId };
+      if ((updateDto as any).occurrenceId) {
+        filter.occurrenceId = (updateDto as any).occurrenceId;
+      }
+
       const updatedConfig = await this.meetingEventConfigModel
-        .findOneAndUpdate(
-          { meetingId },
-          { ...updateData },
-          { new: true },
-        )
+        .findOneAndUpdate(filter, { ...updateData }, { new: true })
         .populate('whatsappProjectId', 'projectName')
         .exec();
 
@@ -162,14 +200,21 @@ export class MeetingEventConfigService {
     }
   }
 
-  async deleteMeetingEventConfig(meetingId: string) {
+  async deleteMeetingEventConfig(meetingId: string, occurrenceId?: string) {
     try {
       this.logger.log(
-        `Deleting meeting event configuration for meeting ${meetingId}`,
+        `Deleting meeting event configuration for meeting ${meetingId}${
+          occurrenceId ? `, occurrenceId=${occurrenceId}` : ''
+        }`,
       );
 
+      const filter: Record<string, any> = { meetingId };
+      if (occurrenceId) {
+        filter.occurrenceId = occurrenceId;
+      }
+
       const deletedConfig = await this.meetingEventConfigModel
-        .findOneAndDelete({ meetingId })
+        .findOneAndDelete(filter)
         .exec();
 
       if (!deletedConfig) {
@@ -236,11 +281,23 @@ export class MeetingEventConfigService {
     adminId: Types.ObjectId,
     meetingId: string,
     webinarId?: string,
+    occurrenceId?: string,
   ): Promise<MeetingEventConfiguration | null> {
     try {
-      this.logger.log(`Attempting to set webinarId on meeting config. meetingId=${meetingId} webinarId=${webinarId}`);
+      this.logger.log(
+        `Attempting to set webinarId on meeting config. meetingId=${meetingId} webinarId=${webinarId}${
+          occurrenceId ? ` occurrenceId=${occurrenceId}` : ''
+        }`,
+      );
 
-      const existing = await this.meetingEventConfigModel.findOne({ meetingId, adminId }).exec();
+      const filter: Record<string, any> = { meetingId, adminId };
+      if (occurrenceId) {
+        filter.occurrenceId = occurrenceId;
+      }
+
+      const existing = await this.meetingEventConfigModel
+        .findOne(filter)
+        .exec();
       if (!existing) {
         this.logger.log(`No meeting event config found for meetingId=${meetingId}. Skipping webinarId update.`);
         return null;
@@ -274,19 +331,23 @@ export class MeetingEventConfigService {
   async updateEventExecutedFlag(
     meetingId: string,
     eventType: 'meetingStarted' | 'meetingEndedAttendees' | 'meetingEndedNonAttendees',
+    occurrenceId?: string,
   ): Promise<MeetingEventConfiguration | null> {
     try {
       this.logger.log(
-        `Updating isExecuted flag for meeting ${meetingId}, eventType: ${eventType}`,
+        `Updating isExecuted flag for meeting ${meetingId}, eventType: ${eventType}${
+          occurrenceId ? `, occurrenceId=${occurrenceId}` : ''
+        }`,
       );
 
       const updateField = `${eventType}.isExecuted`;
+      const filter: Record<string, any> = { meetingId };
+      if (occurrenceId) {
+        filter.occurrenceId = occurrenceId;
+      }
+
       const updatedConfig = await this.meetingEventConfigModel
-        .findOneAndUpdate(
-          { meetingId },
-          { $set: { [updateField]: true } },
-          { new: true },
-        )
+        .findOneAndUpdate(filter, { $set: { [updateField]: true } }, { new: true })
         .exec();
 
       if (!updatedConfig) {

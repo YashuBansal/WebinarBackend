@@ -97,6 +97,12 @@ export class WabaMessage extends Document {
 
   @Prop({
     type: String,
+    required: false,
+  })
+  occurrenceId?: string;
+
+  @Prop({
+    type: String,
     required: [true, 'WABA message ID is required'],
     trim: true,
     unique: true,

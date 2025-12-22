@@ -16,6 +16,7 @@ import { ConfiguredTemplatesModule } from 'src/configured-templates/configured-t
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 import { AttendeesModule } from 'src/attendees/attendees.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
+import { ZoomMeetingModule } from './zoom-meeting/zoom-meeting.module';
 
 @Module({
   imports: [
@@ -31,7 +32,8 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
      MeetingEventConfigModule,
      ConfiguredTemplatesModule,
      WhatsappModule,
-     WebsocketModule
+     WebsocketModule,
+     forwardRef(() => ZoomMeetingModule)
   ],
   controllers: [ZoomController],
   providers: [ZoomService, WebhookQueueService],
