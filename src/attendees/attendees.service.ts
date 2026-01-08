@@ -3567,7 +3567,6 @@ export class AttendeesService {
     
     const attendee = await this.attendeeModel.findOne(query).populate('webinar');
 
-
     // Create attendee log (best-effort) when attendee exists
     if (attendee) {
       try {

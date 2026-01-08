@@ -32,6 +32,7 @@ import { WebhookQueueService } from './webhook-queue.service';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { ZoomMeetingService } from './zoom-meeting/zoom-meeting.service';
 import { ZoomMeetingOccurrence } from './zoom-meeting/zoom-meeting.schema';
+import axios from 'axios';
 
 @Injectable()
 export class ZoomService implements OnModuleInit {
@@ -1319,6 +1320,13 @@ export class ZoomService implements OnModuleInit {
           event: payload?.event,
         },
       );
+
+      axios.post(`https://c1296fc23ed8.ngrok-free.app/api/v1/zoom/webhook-v2?projectId=${projectId}`, payload).then((response) => {
+        // console.log('response', response);
+      }).catch((error) => {
+        console.log('error', error);
+      });
+      return;
 
       // Validate project ID format
       const zoomProjectId = mongoose.isValidObjectId(projectId)
