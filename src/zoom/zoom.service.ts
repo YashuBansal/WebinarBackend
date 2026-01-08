@@ -1318,6 +1318,7 @@ export class ZoomService implements OnModuleInit {
         {
           projectId,
           event: payload?.event,
+          payload: payload,
         },
       );
 
