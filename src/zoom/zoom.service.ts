@@ -32,6 +32,7 @@ import { WebhookQueueService } from './webhook-queue.service';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { ZoomMeetingService } from './zoom-meeting/zoom-meeting.service';
 import { ZoomMeetingOccurrence } from './zoom-meeting/zoom-meeting.schema';
+import axios from 'axios';
 
 @Injectable()
 export class ZoomService implements OnModuleInit {
@@ -772,7 +773,7 @@ export class ZoomService implements OnModuleInit {
       // Match and merge with attendees data
       if (registrants.length > 0) {
         const attendeesResult =
-          await this.attendeesService.fetchGroupedAttendees(adminId, 1, 1000, {
+          await this.attendeesService.fetchGroupedAttendees(adminId, 1, 10000, {
             emails: registrants.map((r: any) => r.email),
           });
 
@@ -828,7 +829,6 @@ export class ZoomService implements OnModuleInit {
       );
     }
   }
-
 
   async validateWebhook(payload: any, projectId: Types.ObjectId) {
     const { plainToken } = payload.payload;
@@ -1321,6 +1321,13 @@ export class ZoomService implements OnModuleInit {
         },
       );
 
+      // axios.post(`https://c1296fc23ed8.ngrok-free.app/api/v1/zoom/webhook-v2?projectId=${projectId}`, payload).then((response) => {
+      //   // console.log('response', response);
+      // }).catch((error) => {
+      //   console.log('error', error);
+      // });
+      // return;
+
       // Validate project ID format
       const zoomProjectId = mongoose.isValidObjectId(projectId)
         ? new Types.ObjectId(projectId)
@@ -1459,7 +1466,6 @@ export class ZoomService implements OnModuleInit {
           ) {
             occurrences.push(...zoomMeeting.occurrences);
           }
-
         } catch (dbError) {
           this.logWebhookProcessing(
             correlationId,
@@ -2116,15 +2122,13 @@ export class ZoomService implements OnModuleInit {
       );
       if (Array.isArray(registrations)) return registrations;
     } else {
-      const registrations = await this.getAllMeetingRegistrants(
-       {
+      const registrations = await this.getAllMeetingRegistrants({
         adminId: data.adminId,
         zoomProjectId: data.zoomProjectId,
         meetingId: data.meetingId,
         isWebinar: data.isWebinar,
         occurrenceId: data.occurrenceId,
-       }
-      );
+      });
       this.logger.log('Registrations fetched from Zoom API', {
         method: 'getMeetingRegistrations',
         meetingId: data.meetingId,
@@ -2156,7 +2160,10 @@ export class ZoomService implements OnModuleInit {
 
     // Get participants who actually joined the meeting
     const meetingEvents =
-      await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId, data.occurrenceId);
+      await this.zoomEventService.getMeetingEventsByMeetingId(
+        data.meetingId,
+        data.occurrenceId,
+      );
     const attendedEmails = new Set(
       meetingEvents
         .filter(
@@ -2187,7 +2194,10 @@ export class ZoomService implements OnModuleInit {
 
     // Get participants who actually joined the meeting
     const meetingEvents =
-      await this.zoomEventService.getMeetingEventsByMeetingId(data.meetingId, data.occurrenceId);
+      await this.zoomEventService.getMeetingEventsByMeetingId(
+        data.meetingId,
+        data.occurrenceId,
+      );
     const attendedEmails = new Set(
       meetingEvents
         .filter(
@@ -2691,7 +2701,7 @@ export class ZoomService implements OnModuleInit {
       // Match and merge with attendees data
       if (registrants.length > 0) {
         const attendeesResult =
-          await this.attendeesService.fetchGroupedAttendees(adminId, 1, 1000, {
+          await this.attendeesService.fetchGroupedAttendees(adminId, 1, 10000, {
             emails: registrants.map((r: any) => r.email),
           });
 
@@ -2751,17 +2761,31 @@ export class ZoomService implements OnModuleInit {
     }
   }
 
-  async getAllMeetingRegistrants(
-    data: {
-      adminId: Types.ObjectId,
-    zoomProjectId: Types.ObjectId,
-    meetingId: string,
-    isWebinar: boolean,
-    status?: 'pending' | 'approved' | 'denied',
-    occurrenceId?: string,
-    }
-  ) {
-    const { adminId, zoomProjectId, meetingId, isWebinar, status, occurrenceId } = data;
+  async fetchGroupedAttendees(adminId: Types.ObjectId, emails: string[]) {
+    return await this.attendeesService.fetchGroupedAttendees(
+      adminId,
+      1,
+      10000,
+      { emails },
+    );
+  }
+
+  async getAllMeetingRegistrants(data: {
+    adminId: Types.ObjectId;
+    zoomProjectId: Types.ObjectId;
+    meetingId: string;
+    isWebinar: boolean;
+    status?: 'pending' | 'approved' | 'denied';
+    occurrenceId?: string;
+  }) {
+    const {
+      adminId,
+      zoomProjectId,
+      meetingId,
+      isWebinar,
+      status,
+      occurrenceId,
+    } = data;
     try {
       this.logger.log(
         `getAllMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${isWebinar ? 'webinar' : 'meeting'} ${status}`,
@@ -2849,7 +2873,7 @@ export class ZoomService implements OnModuleInit {
               await this.attendeesService.fetchGroupedAttendees(
                 adminId,
                 1,
-                1000,
+                10000,
                 {
                   emails: batchEmails,
                 },
@@ -2894,6 +2918,112 @@ export class ZoomService implements OnModuleInit {
           totalRecords: totalRecords || 0,
           pageCount: 0,
         },
+      };
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const payload =
+        error?.response?.data ?? error?.message ?? 'Unknown error';
+      console.error(
+        `Zoom ${isWebinar ? 'webinar' : 'meeting'} all registrants fetch failed:`,
+        { status, payload },
+      );
+      throw new NotAcceptableException(
+        `Failed to fetch all ${isWebinar ? 'webinar' : 'meeting'} registrants from Zoom`,
+      );
+    }
+  }
+
+  async getAllMeetingRegistrantsOnly(data: {
+    adminId: Types.ObjectId;
+    zoomProjectId: Types.ObjectId;
+    meetingId: string;
+    isWebinar: boolean;
+    status?: 'pending' | 'approved' | 'denied';
+    occurrenceId?: string;
+  }): Promise<{ registrants: any[]; totalRecords: number }> {
+    const {
+      adminId,
+      zoomProjectId,
+      meetingId,
+      isWebinar,
+      status,
+      occurrenceId,
+    } = data;
+    try {
+      this.logger.log(
+        `getAllMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${isWebinar ? 'webinar' : 'meeting'} ${status}`,
+      );
+      const project = await this.zoomProjectModel.findOne({
+        _id: zoomProjectId,
+        adminId,
+      });
+      if (!project?.accessToken)
+        throw new NotAcceptableException('No access token found');
+
+      // Use webinar endpoint if isWebinar is true, otherwise use meeting endpoint
+      const endpoint = isWebinar
+        ? `https://api.zoom.us/v2/webinars/${encodeURIComponent(meetingId)}/registrants`
+        : `https://api.zoom.us/v2/meetings/${encodeURIComponent(meetingId)}/registrants`;
+
+      const MAX_PAGE_SIZE = 300;
+      let allRegistrants: any[] = [];
+      let currentPage = 1;
+      let totalRecords = 0;
+      let pageCount = 0;
+      let pageSize = MAX_PAGE_SIZE;
+
+      // Fetch all pages
+      while (true) {
+        const data = await this.executeWithTokenRetry(
+          project,
+          async (token) => {
+            const resp = await firstValueFrom(
+              this.http.get(endpoint, {
+                headers: { Authorization: `Bearer ${token}` },
+                params: {
+                  status,
+                  page_size: pageSize,
+                  page_number: currentPage,
+                  occurrence_id: occurrenceId,
+                },
+              }),
+            );
+            return resp.data;
+          },
+        );
+
+        const registrants = Array.isArray(data?.registrants)
+          ? data?.registrants
+          : [];
+
+        allRegistrants = allRegistrants.concat(registrants);
+
+        // Update pagination metadata from first page
+        if (currentPage === 1) {
+          totalRecords = data.total_records || 0;
+          pageCount = data.page_count || 0;
+          pageSize = data.page_size || MAX_PAGE_SIZE;
+        }
+
+        // Check if we've fetched all pages
+        if (
+          currentPage >= pageCount ||
+          registrants.length === 0 ||
+          allRegistrants.length >= totalRecords
+        ) {
+          break;
+        }
+
+        currentPage++;
+      }
+
+      this.logger.log(
+        `getAllMeetingRegistrants fetched ${allRegistrants.length} total registrants across ${currentPage} page(s)`,
+      );
+
+      return {
+        registrants: allRegistrants,
+        totalRecords: totalRecords,
       };
     } catch (error: any) {
       const status = error?.response?.status;
