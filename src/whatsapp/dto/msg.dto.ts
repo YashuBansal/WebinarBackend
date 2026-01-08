@@ -147,5 +147,6 @@ export interface ISendSingleTemplateMessagePayload {
   campaignId?: string;
   attendeeId?: string;
   meetingId?: string;
+  occurrenceId?: string;
   apiCampaignId?: string;
 }

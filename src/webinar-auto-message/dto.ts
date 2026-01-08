@@ -46,8 +46,9 @@ export class UpsertAutoMessageDto {
   @IsString()
   headerMediaAssetId?: string;
 
+  @IsOptional()
   @IsBoolean()
-  enabled: boolean;
+  enabled?: boolean;
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -99,11 +100,17 @@ export class TestSendDto {
 export class DeleteAutoMessageDto {
   @IsMongoId()
   @IsNotEmpty()
-  webinarId: string;
+  _id: string;
+}
 
+export class ToggleAutoMessageDto {
   @IsMongoId()
   @IsNotEmpty()
-  projectId: string;
+  _id: string;
+
+  @IsBoolean()
+  @IsNotEmpty()
+  enabled: boolean;
 }
 
 

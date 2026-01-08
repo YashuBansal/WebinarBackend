@@ -12,6 +12,7 @@ import {
   CreateConfiguredTemplateDto,
   UpdateConfiguredTemplateDto,
 } from './dto/configured-template.dto';
+import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 
 @Injectable()
 export class ConfiguredTemplatesService {
@@ -20,6 +21,7 @@ export class ConfiguredTemplatesService {
   constructor(
     @InjectModel(ConfiguredTemplate.name)
     private readonly configuredTemplateModel: Model<ConfiguredTemplateDocument>,
+    private readonly whatsappService: WhatsappService,
   ) { }
 
   async getConfiguredTemplates(
@@ -104,6 +106,14 @@ export class ConfiguredTemplatesService {
           'A configured template with this name already exists for this project',
         );
       }
+
+      await this.whatsappService.checkVariableMappingLength({
+        adminId: adminId.toString(),
+        projectId: projectId.toString(),
+        templateName: createConfiguredTemplateDto.templateName,
+        givenVariableLength: createConfiguredTemplateDto?.variableMappings?.length ?? 0,
+        headerMediaAssetId: createConfiguredTemplateDto?.headerMediaAssetId?.toString() ?? null,
+      })
 
       const configuredTemplate = new this.configuredTemplateModel({
         ...createConfiguredTemplateDto,

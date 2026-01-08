@@ -51,6 +51,16 @@ export class ApiCampaignService {
       throw new BadRequestException('Campaign name already exists');
     }
 
+    await this.whatsappService.checkVariableMappingLength({
+      adminId,
+      projectId,
+      templateName: messageTemplate.templateName,
+      givenVariableLength: Array.isArray(messageTemplate.bodyVariables)
+        ? messageTemplate.bodyVariables.length
+        : 0,
+      headerMediaAssetId: messageTemplate.headerMediaAssetId,
+    });
+
     const processedMessageTemplate: MessageTemplate = {
       ...messageTemplate,
       bodyVariables: messageTemplate.bodyVariables || [],
@@ -309,56 +319,34 @@ export class ApiCampaignService {
     }
 
     // Fetch template data from Meta to get the language
-    let templateLanguage = 'en_US'; // Default fallback
-    try {
-      const metaTemplates = await this.whatsappService.getTemplatesForWaba(
-        new Types.ObjectId(adminId),
-        apiCampaign.project,
-        { name: template.templateName },
-      );
-
-      if (metaTemplates && metaTemplates.length > 0) {
-        const metaTemplate = metaTemplates.find(
-          (t) => t.name === template.templateName,
-        ) || metaTemplates[0];
-        templateLanguage = metaTemplate.language || 'en_US';
-        this.logger.log(
-          `Retrieved template language from Meta: ${templateLanguage} for template: ${template.templateName}`,
-        );
-      } else {
-        this.logger.warn(
-          `Template ${template.templateName} not found in Meta. Using default language: ${templateLanguage}`,
-        );
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Failed to fetch template language from Meta for ${template.templateName}. Using default: ${templateLanguage}`,
-        error.message,
-      );
-    }
-
     this.whatsappService
-      .sendSingleTemplateMessage({
-        adminId: new Types.ObjectId(adminId),
-        projectId: apiCampaign.project.toString(),
-        recipientPhoneNumber: destination,
-        templateName: template.templateName,
-        bodyVariables: templateParams || [],
-        language: templateLanguage,
+      .sendTemplateMessagev2({
+        adminId: adminId,
         messageType: WabaMessageType.API_CAMPAIGN,
-        apiCampaignId: apiCampaign._id.toString(),
+        sendTemplateDto: {
+          projectId: apiCampaign.project.toString(),
+          recipients: [
+            {
+              recipientPhoneNumber: destination,
+              bodyVariables: templateParams || [],
+            },
+          ],
+          templateName: template.templateName,
+          headerMediaAssetId: template.headerMediaAssetId?.toString(),
+        },
         media,
+        // API Campaigns don't usually have meeting/occurrence IDs, but if needed they can be added later
       })
       .then((response) => {
-        const primaryMessage = response?.messages?.[0];
-        this.logger.log('Single template message sent successfully', {
-          messageId: primaryMessage?.id,
+        // response structure from sendTemplateMessagev2 is { success: boolean, message: string, stats: any }
+        this.logger.log('API Campaign message processed via v2', {
           destination,
           campaignName,
+          stats: response.stats,
         });
       })
       .catch((err) => {
-        this.logger.error('Error sending single template message', err);
+        this.logger.error('Error sending API campaign message via v2', err);
       });
 
     return {

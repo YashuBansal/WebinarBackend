@@ -14,7 +14,6 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MediaAsset, MediaAssetSchema } from './schemas/media-asset.schema';
 import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { WabaMessageModule } from 'src/whatsapp-embed/waba-message/waba-message.module';
-import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
 import { ContactsModule } from 'src/contacts/contacts.module';
 import { FileStorageService } from 'src/file-storage/file-storage.service';
 import { WebsocketModule } from 'src/websocket/websocket.module';

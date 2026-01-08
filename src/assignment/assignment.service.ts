@@ -1266,7 +1266,7 @@ export class AssignmentService {
         tags: Array.isArray(attendee.tags) ? attendee.tags : [],
       });
 
-    if (existingAttendee) {
+    if (existingAttendee && updatedAssociation) {
       if (
         Array.isArray(updatedAssociation.tags) &&
         Array.isArray(attendee.tags)

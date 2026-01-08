@@ -4,7 +4,7 @@ import { Contact } from '../../contacts/Contact.schema';
 import { Project } from 'src/schemas/project.schema';
 import { User } from 'src/schemas/User.schema';
 import { Attendee } from 'src/schemas/Attendee.schema';
-import { Campaign } from 'src/schemas/whatsapp-embed/campaign.schema';
+import { Campaign } from 'src/whatsapp-embed/campaign/campaign.schema';
 import { ApiCampaign } from '../api-campaign/api-campaign.schema';
 
 export type WabaMessageDocument = WabaMessage & Document;

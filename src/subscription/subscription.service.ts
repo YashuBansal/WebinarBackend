@@ -101,10 +101,29 @@ export class SubscriptionService {
   }
 
   async getSubscription(adminId: string): Promise<Subscription> {
-    const result = await this.SubscriptionModel.findOne({
-      admin: new Types.ObjectId(`${adminId}`),
+    const adminObjectId = new Types.ObjectId(adminId);
+
+    const subscription = await this.SubscriptionModel.findOne({
+      admin: adminObjectId,
     }).populate('plan');
-    return result;
+
+    if (!subscription) {
+      throw new NotFoundException('Subscription not found for the given admin');
+    }
+
+    // If there is no expiry date or it's invalid / in the past, deactivate the user
+    if (!subscription.expiryDate) {
+      await this.userService.deactivateUserByAdminId(adminObjectId);
+      return subscription;
+    }
+
+    const expiryDate = new Date(subscription.expiryDate);
+
+    if (isNaN(expiryDate.getTime()) || expiryDate.getTime() < Date.now()) {
+      await this.userService.deactivateUserByAdminId(adminObjectId);
+    }
+
+    return subscription;
   }
 
   async updateSubscriptionExpiryDate(

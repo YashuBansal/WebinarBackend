@@ -29,7 +29,7 @@ export class WabaMessageService {
     apiCampaignId?: string;
     attendeeId?: string;
     wabaMessageId: string;
-    messageType?: string;
+    messageType: string;
     templateName: string;
     failureReason?: any;
     status?: string;

@@ -1,7 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { User } from '../User.schema';
-import { Project } from '../project.schema';
+import { User } from '../../schemas/User.schema';
+import { Project } from '../../schemas/project.schema';
+import { VariableMapping } from 'src/webinar-auto-message/webinar-auto-message.schema';
 
 export type CampaignDocument = Campaign & Document;
 
@@ -93,34 +94,16 @@ export class StoredCampaignData {
   contacts: any[]; // Store contact selection data
 
   @Prop({ 
-    type: [String], 
-    default: [] 
-  })
-  bodyVariables: string[];
-
-  @Prop({ 
-    type: [Boolean], 
-    default: [] 
-  })
-  dynamicVariables: boolean[];
-
-  @Prop({ 
-    type: [String], 
-    default: [] 
-  })
-  fallbackValues: string[]; // Fallback values for dynamic variables
-
-  @Prop({ 
     type: String, 
     default: 'en_US' 
   })
   language: string;
 
   @Prop({ 
-    type: [Object], 
+    type: [VariableMapping], 
     default: [] 
   })
-  variableMappings: any[];
+  variableMappings: VariableMapping[];
 
   @Prop({ 
     type: String, 

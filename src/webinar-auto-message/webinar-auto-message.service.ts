@@ -54,7 +54,7 @@ export class WebinarAutoMessageService {
       templateName: dto.templateName,
       language: dto.language || 'en_US',
       headerMediaAssetId: dto.headerMediaAssetId,
-      enabled: dto.enabled,
+      enabled: dto.enabled ?? true,
       variableMappings: dto.variableMappings || [],
     };
     const doc = await this.model.findOneAndUpdate(filter, update, {
@@ -151,7 +151,7 @@ export class WebinarAutoMessageService {
   private resolveVariables(
     mappings: VariableMappingDto[],
     contact: any,
-  ): { values: string[]; dynamic: boolean[] } {
+  ): { values: string[]; } {
     const values: string[] = [];
     const dynamic: boolean[] = [];
     for (const m of mappings) {
@@ -168,7 +168,7 @@ export class WebinarAutoMessageService {
         values.push(m.staticValue || m.fallbackValue || m.variable);
       }
     }
-    return { values, dynamic };
+    return { values };
   }
 
   async sendTest(adminId: string, dto: TestSendDto) {
@@ -178,50 +178,30 @@ export class WebinarAutoMessageService {
     );
     if (!project) throw new NotFoundException('Project not found');
 
-    const { values, dynamic } = this.resolveVariables(
+    const { values } = this.resolveVariables(
       dto.variableMappings || [],
       {},
     );
 
     // Fetch template data from Meta to get the language
     let templateLanguage = dto.language || 'en_US'; // Default fallback
-    try {
-      const metaTemplates = await this.whatsappService.getTemplatesForWaba(
-        new Types.ObjectId(adminId),
-        new Types.ObjectId(dto.projectId),
-        { name: dto.templateName },
-      );
 
-      if (metaTemplates && metaTemplates.length > 0) {
-        const metaTemplate =
-          metaTemplates.find((t) => t.name === dto.templateName) ||
-          metaTemplates[0];
-        templateLanguage = metaTemplate.language || dto.language || 'en_US';
-        this.logger.log(
-          `Retrieved template language from Meta: ${templateLanguage} for template: ${dto.templateName}`,
-        );
-      } else {
-        this.logger.warn(
-          `Template ${dto.templateName} not found in Meta. Using ${templateLanguage}`,
-        );
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Failed to fetch template language from Meta for ${dto.templateName}. Using ${templateLanguage}`,
-        error.message,
-      );
-    }
-
-    const res = await this.whatsappService.sendSingleTemplateMessage({
-      adminId: new Types.ObjectId(adminId),
-      projectId: dto.projectId,
-      recipientPhoneNumber: dto.phoneNumber,
-      templateName: dto.templateName,
-      bodyVariables: values,
-      headerMediaAssetId: dto.headerMediaAssetId,
-      language: templateLanguage,
-      contactId: undefined,
+    const res = await this.whatsappService.sendTemplateMessagev2({
+      adminId: adminId,
       messageType: WabaMessageType.INDIVIDUAL,
+      sendTemplateDto: {
+        projectId: dto.projectId,
+        recipients: [
+          {
+            recipientPhoneNumber: dto.phoneNumber,
+            contactId: undefined,
+            bodyVariables: values,
+          },
+        ],
+        templateName: dto.templateName,
+        headerMediaAssetId: dto.headerMediaAssetId,
+        language: templateLanguage,
+      },
     });
 
     return res;
@@ -241,51 +221,28 @@ export class WebinarAutoMessageService {
     const cfg = await this.getConfig(adminId, webinarId);
     if (!cfg || !cfg.enabled) return;
 
-    const { values, dynamic } = this.resolveVariables(
+    const { values } = this.resolveVariables(
       cfg.variableMappings as any,
       contact,
     );
 
-    // Fetch template data from Meta to get the language
-    let templateLanguage = cfg.language || 'en_US'; // Default fallback
     try {
-      const metaTemplates = await this.whatsappService.getTemplatesForWaba(
-        new Types.ObjectId(adminId),
-        cfg.projectId,
-        { name: cfg.templateName },
-      );
-
-      if (metaTemplates && metaTemplates.length > 0) {
-        const metaTemplate =
-          metaTemplates.find((t) => t.name === cfg.templateName) ||
-          metaTemplates[0];
-        templateLanguage = metaTemplate.language || cfg.language || 'en_US';
-        this.logger.log(
-          `Retrieved template language from Meta: ${templateLanguage} for template: ${cfg.templateName}`,
-        );
-      } else {
-        this.logger.warn(
-          `Template ${cfg.templateName} not found in Meta. Using ${templateLanguage}`,
-        );
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Failed to fetch template language from Meta for ${cfg.templateName}. Using ${templateLanguage}`,
-        error.message,
-      );
-    }
-
-    try {
-      const res = await this.whatsappService.sendSingleTemplateMessage({
-        adminId: new Types.ObjectId(adminId),
-        projectId: cfg.projectId.toString(),
-        recipientPhoneNumber: contact.phoneNumber,
-        templateName: cfg.templateName,
-        bodyVariables: values,
-        headerMediaAssetId: cfg.headerMediaAssetId,
-        language: templateLanguage,
-        contactId: contact.contactId,
+      const res = await this.whatsappService.sendTemplateMessagev2({
+        adminId: adminId,
         messageType: WabaMessageType.AUTO_MESSAGE,
+        sendTemplateDto: {
+          projectId: cfg.projectId.toString(),
+          recipients: [
+            {
+              recipientPhoneNumber: contact.phoneNumber,
+              contactId: contact.contactId,
+              bodyVariables: values,
+            },
+          ],
+          templateName: cfg.templateName,
+          headerMediaAssetId: cfg.headerMediaAssetId,
+          language: cfg.language,
+        },
       });
 
       await this.model.updateOne(
@@ -297,6 +254,7 @@ export class WebinarAutoMessageService {
       );
       return res;
     } catch (e: any) {
+      this.logger.error(e.message);
       await this.model.updateOne(
         { _id: cfg._id },
         {
@@ -304,15 +262,13 @@ export class WebinarAutoMessageService {
           $set: { lastError: e?.message || 'send failed' },
         },
       );
-      throw e;
     }
   }
 
-  async delete(adminId: string, webinarId: string, projectId: string) {
+  async delete(adminId: string, _id: string) {
     const filter = {
+      _id: new Types.ObjectId(_id),
       adminId: new Types.ObjectId(adminId),
-      webinarId: new Types.ObjectId(webinarId),
-      projectId: new Types.ObjectId(projectId),
     };
 
     const result = await this.model.findOneAndDelete(filter);
@@ -322,5 +278,24 @@ export class WebinarAutoMessageService {
     }
 
     return { message: 'Configuration deleted successfully' };
+  }
+
+  async toggle(adminId: string, _id: string, enabled: boolean) {
+    const filter = {
+      _id: new Types.ObjectId(_id),
+      adminId: new Types.ObjectId(adminId),
+    };
+
+    const result = await this.model.findOneAndUpdate(
+      filter,
+      { $set: { enabled } },
+      { new: true }
+    );
+
+    if (!result) {
+      throw new NotFoundException('Auto message configuration not found');
+    }
+
+    return result;
   }
 }

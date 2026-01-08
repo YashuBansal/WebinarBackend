@@ -2,7 +2,6 @@ import {
   forwardRef,
   MiddlewareConsumer,
   Module,
-  RequestMethod,
 } from '@nestjs/common';
 import { ConfiguredTemplatesService } from './configured-templates.service';
 import { ConfiguredTemplatesController } from './configured-templates.controller';
@@ -10,6 +9,7 @@ import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfiguredTemplate, ConfiguredTemplateSchema } from 'src/configured-templates/schema/configured-template.schema';
 import { UsersModule } from 'src/users/users.module';
+import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -18,6 +18,7 @@ import { UsersModule } from 'src/users/users.module';
 
     ]),
     forwardRef(() => UsersModule),
+    WhatsappModule,
   ],
   providers: [ConfiguredTemplatesService],
   exports: [ConfiguredTemplatesService],

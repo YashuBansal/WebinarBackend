@@ -1,4 +1,4 @@
-import { Campaign } from '../../../schemas/whatsapp-embed/campaign.schema';
+import { Campaign } from '../campaign.schema';
 
 export class PaginationDto {
   page: number;

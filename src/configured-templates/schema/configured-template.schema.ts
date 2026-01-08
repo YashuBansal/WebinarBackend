@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Project } from 'src/schemas/project.schema';
 import { User } from 'src/schemas/User.schema';
-import { CampaignContactType } from 'src/schemas/whatsapp-embed/campaign.schema';
+import { CampaignContactType } from 'src/whatsapp-embed/campaign/campaign.schema';
 import { MediaAsset } from '../../whatsapp/schemas/media-asset.schema';
 
 export type ConfiguredTemplateDocument = ConfiguredTemplate & Document;

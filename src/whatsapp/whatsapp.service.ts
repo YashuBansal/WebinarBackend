@@ -43,13 +43,14 @@ import { FileStorageService } from 'src/file-storage/file-storage.service';
 import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-template.schema';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
-import { CampaignStatus } from 'src/schemas/whatsapp-embed/campaign.schema';
+import { CampaignStatus } from 'src/whatsapp-embed/campaign/campaign.schema';
 import {
   WHATSAPP_TEMPLATE_QUEUE,
   WHATSAPP_TEMPLATE_QUEUE_NAME,
   WHATSAPP_WEBHOOK_QUEUE,
 } from './whatsapp.queue.module';
 import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-template.service';
+import { WabaTemplateDocument } from 'src/whatsapp-embed/waba-template/waba-template.schema';
 
 @Injectable()
 export class WhatsappService {
@@ -1639,9 +1640,9 @@ export class WhatsappService {
         messageFormat,
         templateComponents: templateStructure.components || [],
         displayText: this.renderDisplayText(templateStructure.components || []),
-        attendeeId: attendeeId?.toString(),
+        attendeeId,
         meetingId,
-        occurrenceId
+        occurrenceId,
       });
     } catch (error) {
       this.logger.error('Failed to create error message:', error);
@@ -1679,7 +1680,9 @@ export class WhatsappService {
     templateName: string;
     givenVariableLength: number;
     headerMediaAssetId?: string;
-  }): Promise<void> {
+  }): Promise<{
+    template: WabaTemplateDocument;
+  }> {
     const template = await this.wabaTemplateService.getByTemplateName(
       new Types.ObjectId(adminId),
       new Types.ObjectId(projectId),
@@ -1736,6 +1739,8 @@ export class WhatsappService {
         }
       }
     }
+
+    return { template };
   }
 
   async sendBulkTemplateMessage(
@@ -2552,130 +2557,155 @@ export class WhatsappService {
     }
 
     const timer = MonitoringUtil.createTimer();
-    const results = {
-      total: fetchedContacts.length,
-      successful: 0,
-      failed: 0,
-      errors: [] as Array<{ contactId: string; phone: string; error: string }>,
-    };
+    const { variableMappings = [] } = template;
 
-    try {
-      for (const contact of fetchedContacts) {
-        // Validate phone number format
-        const validatedPhone = this.formatIndianRecipient(contact.phone);
+    // Process contacts to build recipients array with bodyVariables
+    const recipients: Array<{
+      recipientPhoneNumber: string;
+      contactId?: string;
+      bodyVariables?: string[];
+    }> = [];
+    const contactErrors: Array<{
+      contactId: string;
+      phone: string;
+      error: string;
+    }> = [];
 
-        try {
-          // Validate contact data
-          if (!contact) {
-            this.logger.warn('Skipping null/undefined contact');
-            results.failed++;
-            continue;
-          }
+    for (const contact of fetchedContacts) {
+      try {
+        // Validate contact data
+        if (!contact) {
+          this.logger.warn('Skipping null/undefined contact');
+          contactErrors.push({
+            contactId: 'unknown',
+            phone: 'N/A',
+            error: 'Null/undefined contact',
+          });
+          continue;
+        }
 
-          if (!contact.phone) {
-            this.logger.warn(
-              `Skipping contact without phone number: ${contact._id || 'unknown'}`,
-            );
-            results.failed++;
-            results.errors.push({
-              contactId: contact._id?.toString() || 'unknown',
-              phone: 'N/A',
-              error: 'Missing phone number',
-            });
-            continue;
-          }
+        if (!contact.phone) {
+          this.logger.warn(
+            `Skipping contact without phone number: ${contact._id || 'unknown'}`,
+          );
+          contactErrors.push({
+            contactId: contact._id?.toString() || 'unknown',
+            phone: 'N/A',
+            error: 'Missing phone number',
+          });
+          continue;
+        }
 
-          const { variableMappings = [] } = template;
+        // Process variables with enhanced validation and sanitization
+        const processedBodyVariables = variableMappings.map(
+          (variable, index) => {
+            try {
+              const isDynamic = variable.isDynamic;
+              const fallbackValue = variable.fallbackValue;
 
-          // Process variables with enhanced validation and sanitization
-          const processedBodyVariables = variableMappings.map(
-            (variable, index) => {
-              try {
-                const isDynamic = variable.isDynamic;
-                const fallbackValue = variable.fallbackValue;
-
-                if (isDynamic) {
-                  // Extract field name from variable (e.g., "$firstName" -> "firstName")
-                  const fieldName = variable.dynamicField?.replace('$', '');
-                  if (!fieldName) {
-                    this.logger.warn(
-                      `Invalid dynamic field for variable ${index}: ${variable.dynamicField}`,
-                    );
-                    return fallbackValue || '[Invalid Field]';
-                  }
-
-                  const contactValue = contact[fieldName];
-                  this.logger.debug(
-                    `Processing dynamic variable ${fieldName} for contact ${contact._id}: ${contactValue}`,
+              if (isDynamic) {
+                // Extract field name from variable (e.g., "$firstName" -> "firstName")
+                const fieldName = variable.dynamicField?.replace('$', '');
+                if (!fieldName) {
+                  this.logger.warn(
+                    `Invalid dynamic field for variable ${index}: ${variable.dynamicField}`,
                   );
+                  return fallbackValue || '[Invalid Field]';
+                }
 
-                  // Use contact value if available and not empty, otherwise use fallback
-                  if (contactValue && contactValue.toString().trim() !== '') {
-                    return ValidationUtil.sanitizeText(contactValue.toString());
-                  } else {
-                    return ValidationUtil.sanitizeText(
-                      fallbackValue ||
-                        variable.dynamicField ||
-                        '[Missing Value]',
-                    );
-                  }
+                const contactValue = contact[fieldName];
+                this.logger.debug(
+                  `Processing dynamic variable ${fieldName} for contact ${contact._id}: ${contactValue}`,
+                );
+
+                // Use contact value if available and not empty, otherwise use fallback
+                if (contactValue && contactValue.toString().trim() !== '') {
+                  return ValidationUtil.sanitizeText(contactValue.toString());
                 } else {
-                  // Static variable, sanitize the value
                   return ValidationUtil.sanitizeText(
-                    variable.staticValue || '[Missing Value]',
+                    fallbackValue || variable.dynamicField || '[Missing Value]',
                   );
                 }
-              } catch (variableError) {
-                this.logger.warn(
-                  `Error processing variable ${index}: ${variableError.message}`,
+              } else {
+                // Static variable, sanitize the value
+                return ValidationUtil.sanitizeText(
+                  variable.staticValue || '[Missing Value]',
                 );
-                return '[Processing Error]';
               }
-            },
-          );
+            } catch (variableError) {
+              this.logger.warn(
+                `Error processing variable ${index}: ${variableError.message}`,
+              );
+              return '[Processing Error]';
+            }
+          },
+        );
 
-          const messageResult = await this.sendSingleTemplateMessage({
-            adminId: template.adminId,
-            projectId: template.project.toString(),
-            recipientPhoneNumber: validatedPhone.phoneNumber,
-            templateName: template.templateName,
-            bodyVariables: processedBodyVariables,
-            headerMediaAssetId: template.headerMediaAssetId?.toString(),
-            language: templateLanguage,
-            messageType: WabaMessageType.ZOOM_EVENT,
-            meetingId,
-            occurrenceId,
-          });
-
-          this.logger.log(
-            `Message sent successfully to ${validatedPhone}. Message ID: ${messageResult.messages?.[0]?.id || 'unknown'}`,
-          );
-
-          results.successful++;
-
-          // Add a delay between messages to avoid rate limiting
-          await new Promise((resolve) => setTimeout(resolve, 200));
-        } catch (error) {
-          results.failed++;
-
-          const errorMessage =
-            error.response?.data?.error?.message ||
-            error.response?.data?.error ||
-            error.message ||
-            'Unknown error';
-
-          results.errors.push({
-            contactId: contact._id?.toString() || 'unknown',
-            phone: contact.phone || 'N/A',
-            error: errorMessage,
-          });
-
-          this.logger.error(
-            `Failed to send message to ${contact.phone || 'N/A'} (Contact ID: ${contact._id?.toString() || 'unknown'})`,
-            errorMessage,
-          );
-        }
+        // Build recipient object
+        recipients.push({
+          recipientPhoneNumber: contact.phone,
+          bodyVariables:
+            processedBodyVariables.length > 0
+              ? processedBodyVariables
+              : undefined,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : String(error || 'Unknown error');
+        contactErrors.push({
+          contactId: contact?._id?.toString() || 'unknown',
+          phone: contact?.phone || 'N/A',
+          error: errorMessage,
+        });
+        this.logger.error(
+          `Error processing contact ${contact?._id?.toString() || 'unknown'}: ${errorMessage}`,
+        );
       }
+    }
+
+    // Call sendTemplateMessagev2 with prepared recipients
+    try {
+      const v2Result = await this.sendTemplateMessagev2({
+        adminId: template.adminId.toString(),
+        messageType: WabaMessageType.ZOOM_EVENT,
+        sendTemplateDto: {
+          projectId: template.project.toString(),
+          recipients,
+          templateName: template.templateName,
+          headerMediaAssetId: template.headerMediaAssetId?.toString(),
+          language: templateLanguage,
+        },
+        meetingId,
+        occurrenceId,
+      });
+
+      // Map return structure to original format
+      const stats = v2Result.stats || {};
+      const results = {
+        total: fetchedContacts.length,
+        successful: stats.enqueued || 0,
+        failed:
+          (stats.failed || 0) +
+          (stats.duplicates || 0) +
+          (stats.invalid || 0) +
+          contactErrors.length,
+        errors: [
+          ...contactErrors,
+          // Transform v2 error strings to error objects where possible
+          ...(stats.errors || []).map((errorStr: string) => {
+            // Try to extract contact info from error string
+            const phoneMatch = errorStr.match(/^([^:]+):/);
+            const phone = phoneMatch ? phoneMatch[1] : 'N/A';
+            return {
+              contactId: 'unknown',
+              phone,
+              error: errorStr,
+            };
+          }),
+        ],
+      };
 
       this.logger.log(
         `Template message sending completed. Results: ${results.successful}/${results.total} successful, ${results.failed} failed`,
@@ -2696,6 +2726,37 @@ export class WhatsappService {
       return results;
     } catch (error) {
       this.logger.error('Critical error in sendTemplateMessages:', error);
+
+      // Return results with all contacts marked as failed
+      const results = {
+        total: fetchedContacts.length,
+        successful: 0,
+        failed: fetchedContacts.length,
+        errors: [
+          ...contactErrors,
+          ...recipients.map((recipient) => ({
+            contactId: recipient.contactId || 'unknown',
+            phone: recipient.recipientPhoneNumber || 'N/A',
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Failed to process batch',
+          })),
+        ],
+      };
+
+      // Log metrics even on failure
+      MonitoringUtil.logMessageEventMetrics({
+        eventType: 'template_message_batch',
+        templateName: template.templateName,
+        totalContacts: results.total,
+        successfulMessages: results.successful,
+        failedMessages: results.failed,
+        processingTimeMs: timer(),
+        timestamp: new Date(),
+        errors: results.errors,
+      });
+
       throw new InternalServerErrorException(
         'Failed to process template messages',
       );
@@ -3117,16 +3178,29 @@ export class WhatsappService {
       language?: string;
     };
     media?: { url: string; filename: string };
-  }): Promise<any> {
-    const { adminId, sendTemplateDto, messageType, media } = payload;
+    meetingId?: string;
+    occurrenceId?: string;
+    campaignId?: string;
+    attendeeId?: string;
+    apiCampaignId?: string;
 
+
+
+  }): Promise<any> {
     const {
-      projectId,
-      recipients,
-      templateName,
-      headerMediaAssetId,
-      language,
-    } = sendTemplateDto;
+      adminId,
+      sendTemplateDto,
+      messageType,
+      media,
+      meetingId,
+      occurrenceId,
+      campaignId,
+      attendeeId,
+      apiCampaignId,
+    } = payload;
+
+    const { projectId, recipients, templateName, headerMediaAssetId } =
+      sendTemplateDto;
 
     const account = await this.projectService.findOne(
       new Types.ObjectId(adminId),
@@ -3157,7 +3231,7 @@ export class WhatsappService {
     const baseTemplateStructure: any = {
       name: templateName,
       language: {
-        code: language || 'en_US',
+        code: template.language,
       },
       components: [],
     };
@@ -3309,12 +3383,17 @@ export class WhatsappService {
               projectId,
               formattedPhoneData: formatted,
               templateName,
-              language,
+              language: template.language,
               fromPhoneNumberId,
               permanentAccessToken,
               messageType,
               templateStructure,
               contactId,
+              meetingId,
+              occurrenceId,
+              campaignId,
+              attendeeId,
+              apiCampaignId,
             });
             results.enqueued++;
           } catch (error) {

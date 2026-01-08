@@ -133,9 +133,6 @@ export class AttendeeAssociationService {
             $setOnInsert: {
               email: email,
               adminId: adminId,
-              fullNames: trimmedFullName ? [trimmedFullName] : [],
-              phones: trimmedPhone ? [trimmedPhone] : [],
-              tags: normalizedTags,
             },
             $addToSet: {
               ...(trimmedFullName ? { fullNames: trimmedFullName } : {}),
