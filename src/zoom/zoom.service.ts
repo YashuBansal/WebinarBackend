@@ -1321,12 +1321,12 @@ export class ZoomService implements OnModuleInit {
         },
       );
 
-      axios.post(`https://c1296fc23ed8.ngrok-free.app/api/v1/zoom/webhook-v2?projectId=${projectId}`, payload).then((response) => {
-        // console.log('response', response);
-      }).catch((error) => {
-        console.log('error', error);
-      });
-      return;
+      // axios.post(`https://c1296fc23ed8.ngrok-free.app/api/v1/zoom/webhook-v2?projectId=${projectId}`, payload).then((response) => {
+      //   // console.log('response', response);
+      // }).catch((error) => {
+      //   console.log('error', error);
+      // });
+      // return;
 
       // Validate project ID format
       const zoomProjectId = mongoose.isValidObjectId(projectId)

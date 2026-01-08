@@ -3563,21 +3563,21 @@ export class AttendeesService {
       });
     }
 
+    await this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
+      fullName: (firstName ?? '') + ' ' + (lastName ?? ''),
+      phone: phone,
+      adminId: new Types.ObjectId(adminId),
+      email: normalizedEmail,
+      tags: [],
+    });
+
     // Fetch attendee after upsert for logging
     
-    const attendee = await this.attendeeModel.findOne(query).populate('webinar');
+    const attendee = await this.attendeeModel.findOne(query).populate('webinar').lean();
 
     // Create attendee log (best-effort) when attendee exists
     if (attendee) {
       try {
-
-        this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
-          fullName: (attendee.firstName ?? '') + ' ' + (attendee.lastName ?? ''),
-          phone: attendee.phone,
-          adminId: attendee.adminId,
-          email: attendee.email,
-          tags: [],
-        });
 
         this.logger.log(`Creating attendee log for Zoom registration upsert: ${attendee.email} for webinar ${(attendee.webinar as any)?.webinarName}`);
         await this.attendeeLogService.createSingleAttendeeLog({
