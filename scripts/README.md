@@ -76,6 +76,7 @@ Two backup files are created:
 - **Restoration**: Use the restore script to reinsert deleted attendees (see below)
 - **Re-running**: Safe to re-run if some duplicates remain (e.g., due to errors)
 - **Performance**: Processes duplicates in batches with progress tracking
+- **Cleanup**: After deleting duplicates, use the assignments cleanup script to remove orphaned assignments (see below)
 
 ## Restore Deleted Attendees
 
@@ -132,5 +133,62 @@ npm run restore:deleted-attendees attendees-backup-2024-01-15T10-30-00-000Z.json
 - **Idempotent**: Safe to run multiple times - existing attendees will be skipped
 - **Original IDs**: Restores attendees with their original `_id` values
 - **No Duplicates**: Won't create duplicates if attendees already exist
+- **List Available Files**: If no filename is provided, the script lists all available backup files
+
+## Delete Assignments for Deleted Attendees
+
+This script cleans up assignments that are associated with attendees that were deleted during the duplicate removal process. It reads the backup file, identifies deleted attendees that had assignments (where `assignedTo` or `tempAssignedTo` was not null), and removes their corresponding assignment records.
+
+### Run
+
+```bash
+npm run delete:assignments-for-deleted-attendees <backup-filename>
+```
+
+Or directly:
+
+```bash
+npx ts-node -r tsconfig-paths/register scripts/delete-assignments-for-deleted-attendees.ts <backup-filename>
+```
+
+### Example
+
+```bash
+npm run delete:assignments-for-deleted-attendees attendees-backup-2024-01-15T10-30-00-000Z.json
+```
+
+### How It Works
+
+1. **Backup File Reading**: Reads the specified backup JSON file from the `scripts/` directory.
+
+2. **Filtering**: Identifies deleted attendees where `assignedTo` or `tempAssignedTo` is not null/undefined.
+
+3. **Assignment Lookup**: Uses the attendee `_id` values to find all assignments in the `Assignments` collection where the `attendee` field matches.
+
+4. **Deletion**: Removes all found assignments from the database.
+
+5. **Verification**: Confirms that all assignments have been deleted and creates a detailed report.
+
+6. **Report Generation**: Creates a text file report with details of all deleted assignments.
+
+### Safety Features
+
+- **Backup File Required**: Uses the same backup file from duplicate deletion to ensure consistency
+- **Detailed Logging**: Logs all assignments found and deleted
+- **Verification**: Confirms deletion was successful
+- **Report File**: Creates a detailed report file for audit purposes
+- **Error Handling**: Comprehensive error handling with detailed error messages
+
+### Report File Format
+
+The script creates a report file: `assignments-deletion-report-YYYY-MM-DD-HH-MM-SS.txt` containing:
+- Summary statistics (total attendees, assignments found, deleted, remaining)
+- Detailed information for each deleted assignment (ID, attendee, user, status, etc.)
+
+### Important Notes
+
+- **Backup File Required**: You must specify the exact backup filename used during duplicate deletion
+- **Idempotent**: Safe to run multiple times - will only delete assignments that still exist
+- **Orphaned Data Cleanup**: This script helps maintain data integrity by removing assignments for attendees that no longer exist
 - **List Available Files**: If no filename is provided, the script lists all available backup files
 

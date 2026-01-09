@@ -1,0 +1,29 @@
+ASSIGNMENTS DELETION REPORT
+================================================================================
+
+Backup File: attendees-backup-2026-01-09T05-52-15-476Z.json
+Report Timestamp: 2026-01-09T07:06:29.448Z
+Total Deleted Attendees in Backup: 3
+Attendees with Assignments: 1
+Assignments Found: 1
+Assignments Deleted: 1
+Remaining Assignments: 0
+
+================================================================================
+
+DELETED ASSIGNMENTS DETAILS:
+--------------------------------------------------------------------------------
+
+[1/1] Assignment
+  ID: 6960976843c235ebdbc5789a
+  Attendee ID: 696090ac702ad2924c73c397
+  User ID: 689426ed888d407f9f8a1086
+  Admin ID: 68679714227cb07f53e73601
+  Webinar ID: 695643ad02ddff53ddd08d2f
+  Status: active
+  Record Type: preWebinar
+  Is Temporary: false
+  Request Reason: N/A
+
+================================================================================
+END OF REPORT
