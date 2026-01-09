@@ -3498,70 +3498,31 @@ export class AttendeesService {
     attendee?: Attendee | null;
   }> {
     const normalizedEmail = (email || '').toLowerCase();
-    if(!normalizedEmail) {
-      return { action: 'unchanged', attendee: null };
-    }
     const query = {
       webinar: new Types.ObjectId(webinarId),
       email: normalizedEmail,
       isAttended: false,
     };
 
-    // First, check if attendee already exists
-    const existingAttendee = await this.attendeeModel.findOne(query);
+    const update = {
+      $set: {
+        firstName: firstName ?? undefined,
+        lastName: lastName ?? undefined,
+        phone: phone ?? undefined,
+      },
+      $setOnInsert: {
+        webinar: new Types.ObjectId(webinarId),
+        adminId: new Types.ObjectId(adminId),
+        email: normalizedEmail,
+        source,
+        isAttended: false,
+        timeInSession: 0,
+      },
+    };
 
-    let update: any;
-    let result: any;
-
-    if (existingAttendee) {
-      // Attendee exists - only update fields that are currently null/undefined/empty
-      const updateFields: any = {
-      };
-
-      // Helper function to check if a field is empty/null/undefined
-      const isEmpty = (value: any): boolean => {
-        return value === null || value === undefined || value?.trim() === '';
-      };
-
-      // Only add fields to update if they are provided AND the existing value is null/undefined/empty
-      if (!isEmpty(firstName) && isEmpty(existingAttendee.firstName)) {
-        updateFields.firstName = firstName;
-      }
-      if (!isEmpty(lastName) && isEmpty(existingAttendee.lastName)) {
-        updateFields.lastName = lastName;
-      }
-      if (!isEmpty(phone) && isEmpty(existingAttendee.phone)) {
-        updateFields.phone = phone;
-      }
-
-      // Only update if there are fields to update (more than just isAttended and timeInSession)
-      if (Object.keys(updateFields).length > 0) {
-        update = { $set: updateFields };
-        result = await this.attendeeModel.updateOne(query, update);
-      } else {
-        // No fields to update
-        result = { modifiedCount: 0, upsertedCount: 0 };
-      }
-    } else {
-      // Attendee doesn't exist - create new one
-      update = {
-        $set: {
-          firstName: firstName,
-          lastName: lastName,
-          phone: phone,
-          source,
-        },
-        $setOnInsert: {
-          webinar: new Types.ObjectId(webinarId),
-          adminId: new Types.ObjectId(adminId),
-          email: normalizedEmail,
-        },
-      };
-
-      result = await this.attendeeModel.updateOne(query, update, {
-        upsert: true,
-      });
-    }
+    const result = await this.attendeeModel.updateOne(query, update, {
+      upsert: true,
+    });
 
     await this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
       fullName: (firstName ?? '') + ' ' + (lastName ?? ''),
@@ -3572,13 +3533,11 @@ export class AttendeesService {
     });
 
     // Fetch attendee after upsert for logging
-    
-    const attendee = await this.attendeeModel.findOne(query).populate('webinar').lean();
+    const attendee = await this.attendeeModel.findOne(query).populate('webinar');
 
     // Create attendee log (best-effort) when attendee exists
     if (attendee) {
       try {
-
         this.logger.log(`Creating attendee log for Zoom registration upsert: ${attendee.email} for webinar ${(attendee.webinar as any)?.webinarName}`);
         await this.attendeeLogService.createSingleAttendeeLog({
           attendee: attendee.email,
