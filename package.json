@@ -22,7 +22,8 @@
     "delete:attendee-tags": "ts-node -r tsconfig-paths/register scripts/delete-attendee-tags.ts",
     "delete:duplicate-attendees": "ts-node -r tsconfig-paths/register scripts/delete-duplicate-attendees.ts",
     "restore:deleted-attendees": "ts-node -r tsconfig-paths/register scripts/restore-deleted-attendees.ts",
-    "delete:assignments-for-deleted-attendees": "ts-node -r tsconfig-paths/register scripts/delete-assignments-for-deleted-attendees.ts"
+    "delete:assignments-for-deleted-attendees": "ts-node -r tsconfig-paths/register scripts/delete-assignments-for-deleted-attendees.ts",
+    "delete:duplicate-attendee-associations": "ts-node -r tsconfig-paths/register scripts/delete-duplicate-attendee-associations.ts"
   },
   "dependencies": {
     "@nest-middlewares/compression": "^10.0.0",

@@ -192,3 +192,58 @@ The script creates a report file: `assignments-deletion-report-YYYY-MM-DD-HH-MM-
 - **Orphaned Data Cleanup**: This script helps maintain data integrity by removing assignments for attendees that no longer exist
 - **List Available Files**: If no filename is provided, the script lists all available backup files
 
+## Delete Duplicate Attendee Associations
+
+This script identifies and removes duplicate attendee associations based on the composite key (`adminId`, `email`, `leadType`) defined in `[backend/src/schemas/attendee-association.schema.ts](../src/schemas/attendee-association.schema.ts)`. For each duplicate group, it keeps the oldest document and deletes the rest, backing up all deleted association documents to a JSON file.
+
+### Run
+
+```bash
+npm run delete:duplicate-attendee-associations
+```
+
+Or directly:
+
+```bash
+npx ts-node -r tsconfig-paths/register scripts/delete-duplicate-attendee-associations.ts
+```
+
+### How It Works
+
+1. **Duplicate Detection**: Uses MongoDB aggregation on the attendee associations collection to group by `adminId`, `email`, and `leadType`, and finds groups where the count is greater than 1.
+
+2. **Selection Strategy**: For each duplicate group, sorts the associations by `createdAt` (oldest first). If `createdAt` is missing, falls back to the `_id` ObjectId timestamp. It keeps the oldest association and marks all others for deletion.
+
+3. **Backup Creation**: Before deletion, all duplicate associations (except the one kept) are fetched in full and written to a JSON backup file in the `scripts/` directory with a timestamped filename (e.g., `attendee-associations-backup-2026-01-09T10-00-00-000Z.json`).
+
+4. **Deletion**: Deletes all associations in each duplicate group except the one chosen to keep.
+
+5. **Verification**: After deletion, runs another aggregation to verify that no duplicate groups remain.
+
+### Backup File Format
+
+The backup JSON file contains:
+
+- **Metadata**:
+  - `timestamp`: When the backup was created
+  - `scriptVersion`: Script version (e.g., `1.0.0`)
+  - `totalDuplicateGroups`: Number of duplicate groups processed
+  - `totalDeleted`: Number of association documents deleted
+  - `totalKept`: Number of association documents kept (one per group)
+
+- **Deleted Associations**: An array of full association documents, with `ObjectId` fields (`_id`, `adminId`, `leadType`) serialized to strings.
+
+### Safety Features
+
+- **Backup First**: All deleted attendee associations are backed up before deletion.
+- **Deterministic Selection**: Always keeps the oldest association in each group (by `createdAt` / `_id`).
+- **Detailed Logging**: Logs progress every 50 groups and summarizes totals at the end.
+- **Verification**: Performs a post-deletion check to ensure no duplicate groups remain.
+
+### Important Notes
+
+- **Run During Low Traffic**: As with other bulk scripts, prefer to run this during off-peak hours to minimize impact on the primary and replication lag.
+- **Backup Location**: Backup files are stored in the `scripts/` directory.
+- **Idempotent-ish**: After a successful run, there should be no duplicate groups; re-running will typically do nothing (no further duplicates to delete).
+- **Restoration**: If needed, you can write a companion restore script similar to `restore-deleted-attendees.ts` to reinsert deleted associations from the backup file.
+
