@@ -108,14 +108,22 @@ export class AttendeeAssociationService {
     tags: string[];
   }): Promise<AttendeeAssociation | null> {
     try {
+      this.logger.log(`addFullNamesAndPhonesToAssociation -> ${JSON.stringify(payload)}`);
       const { fullName = '', phone = '', adminId, email, tags } = payload;
 
-      const association = await this.attendeeAssociationModel.findOne({
-        adminId: adminId,
-        email: email,
-      });
+      // Normalize fullName: filter out "undefined" strings and clean up
+      let cleanedFullName = '';
+      if (fullName) {
+        const normalized = fullName
+          .trim()
+          .replace(/\bundefined\b/gi, '')
+          .trim();
+        // Only use if it's not empty and not the literal string "undefined"
+        if (normalized && normalized !== 'undefined') {
+          cleanedFullName = normalized;
+        }
+      }
 
-      const trimmedFullName = fullName?.trim() || '';
       const trimmedPhone = phone?.trim() || '';
       const normalizedTags = Array.isArray(tags)
         ? Array.from(
@@ -127,56 +135,82 @@ export class AttendeeAssociationService {
           )
         : [];
 
-      if (!association) {
-        const newAssociation = await this.attendeeAssociationModel.create({
-          email: email,
-          adminId: adminId,
-          fullNames: trimmedFullName ? [trimmedFullName] : [],
-          phones: trimmedPhone ? [trimmedPhone] : [],
-          tags: normalizedTags,
-        });
-        return newAssociation;
-      }
-
-      const associatedFullNames = association.fullNames || [];
-      const associatedPhones = association.phones || [];
-      const associatedTags = association.tags || [];
-
-      // Add new full names and phones to the association but remove duplicates
-
-      if (trimmedFullName && !associatedFullNames.includes(trimmedFullName)) {
-        associatedFullNames.push(trimmedFullName);
-      }
-
-      if (trimmedPhone && !associatedPhones.includes(trimmedPhone)) {
-        associatedPhones.push(trimmedPhone);
-      }
-
-      normalizedTags.forEach((tag) => {
-        if (tag && !associatedTags.includes(tag)) {
-          associatedTags.push(tag);
-        }
-      });
-
-      const updatedAssociation =
-        await this.attendeeAssociationModel.findByIdAndUpdate(
-          association._id,
-          {
-            $set: {
-              fullNames: associatedFullNames,
-              phones: associatedPhones,
-              tags: associatedTags,
+      // Build aggregation pipeline for single atomic upsert operation
+      // This approach avoids all MongoDB operator conflicts by using pipeline stages
+      const pipeline: any[] = [
+        {
+          $set: {
+            // Ensure required fields are set (for insert case)
+            email: email,
+            adminId: adminId,
+            // fullNames: Filter out "undefined" strings, then merge with new value
+            fullNames: {
+              $setUnion: [
+                {
+                  $filter: {
+                    input: { $ifNull: ['$fullNames', []] },
+                    as: 'name',
+                    cond: {
+                      $and: [
+                        { $ne: ['$$name', null] },
+                        { $ne: ['$$name', 'undefined'] },
+                        { $ne: [{ $trim: { input: '$$name' } }, ''] },
+                      ],
+                    },
+                  },
+                },
+                cleanedFullName ? [cleanedFullName] : [],
+              ],
+            },
+            // phones: Merge existing phones with new phone
+            phones: {
+              $setUnion: [
+                { $ifNull: ['$phones', []] },
+                trimmedPhone ? [trimmedPhone] : [],
+              ],
+            },
+            // tags: Merge existing tags with new tags
+            tags: {
+              $setUnion: [
+                { $ifNull: ['$tags', []] },
+                normalizedTags.length > 0 ? normalizedTags : [],
+              ],
             },
           },
-          { new: true },
+        },
+      ];
+
+      // Single atomic upsert operation using aggregation pipeline
+      const updatedAssociation =
+        await this.attendeeAssociationModel.findOneAndUpdate(
+          { adminId: adminId, email: email },
+          pipeline,
+          {
+            upsert: true,
+            new: true,
+            setDefaultsOnInsert: true,
+          },
         );
+
+      if (!updatedAssociation) {
+        this.logger.error(
+          `findOneAndUpdate returned null for email: ${email}, adminId: ${adminId}. This should not happen with upsert: true.`,
+        );
+        return null;
+      }
 
       return updatedAssociation;
     } catch (error) {
       this.logger.error(
-        `Error adding full names, phones, and tags to association for email: ${payload.email}, adminId: ${payload.adminId}`,
-        error.stack || error,
+        `Error adding full names, phones, and tags to association for email: ${payload.email}, adminId: ${payload.adminId}. Error message: ${error.message}. Error stack: ${error.stack || 'No stack trace'}`,
       );
+      // Log the error details for debugging
+      if (error.name) {
+        this.logger.error(`Error name: ${error.name}`);
+      }
+      if (error.code) {
+        this.logger.error(`Error code: ${error.code}`);
+      }
       return null;
     }
   }

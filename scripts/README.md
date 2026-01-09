@@ -247,3 +247,52 @@ The backup JSON file contains:
 - **Idempotent-ish**: After a successful run, there should be no duplicate groups; re-running will typically do nothing (no further duplicates to delete).
 - **Restoration**: If needed, you can write a companion restore script similar to `restore-deleted-attendees.ts` to reinsert deleted associations from the backup file.
 
+## Remove Undefined from FullNames
+
+This script removes the literal string "undefined" from `fullNames` arrays in the `AttendeeAssociation` collection. This addresses cases where undefined values were incorrectly converted to the string "undefined" during data processing.
+
+### Run
+
+```bash
+npm run remove:undefined-from-fullnames
+```
+
+Or directly:
+
+```bash
+npx ts-node -r tsconfig-paths/register scripts/remove-undefined-from-fullnames.ts
+```
+
+### How It Works
+
+1. **Detection**: Finds all `AttendeeAssociation` documents where the `fullNames` array contains the string "undefined" (case-insensitive).
+
+2. **Cleaning**: For each association found:
+   - Filters out all instances of "undefined" from the `fullNames` array
+   - Also removes empty strings and null/undefined values
+   - Updates the document with the cleaned array
+
+3. **Reporting**: Creates a JSON report file (`fullnames-cleanup-report-YYYY-MM-DD-HH-MM-SS.json`) containing:
+   - Metadata (timestamp, script version, statistics)
+   - Details of each cleaned association (original and cleaned fullNames arrays)
+
+4. **Verification**: After cleanup, verifies that no associations with "undefined" remain.
+
+### Prevention
+
+The schema now includes a setter that automatically filters out "undefined" strings when `fullNames` is set, preventing future occurrences. The service method `addFullNamesAndPhonesToAssociation` has also been updated to clean fullName values before adding them to the array.
+
+### Safety Features
+
+- **Non-destructive**: Only removes "undefined" strings, preserves all valid names
+- **Detailed Logging**: Progress is logged every 100 associations processed
+- **Report File**: Creates a detailed report of all changes made
+- **Verification**: Confirms cleanup was successful
+- **Error Handling**: Individual failures don't stop the entire process
+
+### Important Notes
+
+- **Idempotent**: Safe to run multiple times - will only update associations that still contain "undefined"
+- **Report Location**: Report files are stored in the `scripts/` directory
+- **Schema Protection**: The schema setter now prevents "undefined" from being added in the future
+

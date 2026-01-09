@@ -3524,8 +3524,13 @@ export class AttendeesService {
       upsert: true,
     });
 
+    // Construct fullName, filtering out undefined/null values
+    const cleanFirstName = firstName && firstName !== 'undefined' ? firstName.trim() : '';
+    const cleanLastName = lastName && lastName !== 'undefined' ? lastName.trim() : '';
+    const fullName = [cleanFirstName, cleanLastName].filter(Boolean).join(' ');
+
     await this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
-      fullName: (firstName ?? '') + ' ' + (lastName ?? ''),
+      fullName: fullName,
       phone: phone,
       adminId: new Types.ObjectId(adminId),
       email: normalizedEmail,
