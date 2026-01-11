@@ -90,7 +90,7 @@ export class ZoomController {
     }
 
     // Generate deduplication ID for idempotency
-    const deduplicationId = this.generateDeduplicationId(body, projectId);
+    const deduplicationId = this.generateDeduplicationId(body);
     this.logger.log(`Deduplication ID:::::::::::::::::::::::: ${deduplicationId}`);
 
     // Enqueue webhook for processing
@@ -114,9 +114,8 @@ export class ZoomController {
    * Generate a deterministic deduplication ID from webhook payload
    * This ensures the same event from Zoom (retries) will be identified as duplicates
    */
-  private generateDeduplicationId(body: any, projectId: string): string {
+  private generateDeduplicationId(body: any): string {
     const parts: string[] = [
-      projectId || '',
       body?.event || '',
       body?.event_ts || body?.payload?.event_ts || '',
     ];
