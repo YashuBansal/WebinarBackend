@@ -36,6 +36,11 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
   private isShuttingDown = false;
   private processingWorker: any = null;
   private metricsLoggerInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  
+  // Idempotency tracking: Map of deduplicationId -> timestamp
+  private readonly processedEvents = new Map<string, number>();
+  private readonly IDEMPOTENCY_TTL_MS = 60 * 60 * 1000; // 1 hour
 
   // Configuration
   private readonly concurrency: number;
@@ -57,6 +62,7 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     this.startWorkers();
     this.startMetricsLogger();
+    this.startIdempotencyCleanup();
   }
 
   /**
@@ -72,6 +78,37 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Started periodic queue metrics logging (every 5 minutes)');
   }
 
+  /**
+   * Start periodic cleanup of old idempotency entries
+   */
+  private startIdempotencyCleanup() {
+    // Cleanup every 15 minutes
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupProcessedEvents();
+    }, 15 * 60 * 1000); // 15 minutes
+
+    this.logger.log('Started periodic idempotency cleanup (every 15 minutes)');
+  }
+
+  /**
+   * Remove old entries from processedEvents map to prevent memory leaks
+   */
+  private cleanupProcessedEvents() {
+    const now = Date.now();
+    let cleaned = 0;
+    
+    for (const [id, timestamp] of this.processedEvents.entries()) {
+      if (now - timestamp > this.IDEMPOTENCY_TTL_MS) {
+        this.processedEvents.delete(id);
+        cleaned++;
+      }
+    }
+    
+    if (cleaned > 0) {
+      this.logger.debug(`Cleaned up ${cleaned} old idempotency entries`);
+    }
+  }
+
   onModuleDestroy() {
     this.isShuttingDown = true;
     
@@ -81,6 +118,12 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
       this.metricsLoggerInterval = null;
     }
     
+    // Clear idempotency cleanup interval
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    
     this.logger.log('Shutting down webhook queue workers...');
     // Wait for all workers to finish processing
     return Promise.all(this.workers);
@@ -88,8 +131,35 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Enqueue a webhook event for processing
+   * @param payload - The webhook payload
+   * @param projectId - The project ID
+   * @param deduplicationId - Optional unique ID for idempotency checking
+   * @returns true if enqueued, false if duplicate or queue full
    */
-  async enqueue(payload: any, projectId: string): Promise<boolean> {
+  async enqueue(payload: any, projectId: string, deduplicationId?: string): Promise<boolean> {
+    // Check for duplicate if deduplicationId is provided
+    if (deduplicationId) {
+      const now = Date.now();
+      
+      // Check if we've seen this event recently
+      if (this.processedEvents.has(deduplicationId)) {
+        const previousTimestamp = this.processedEvents.get(deduplicationId)!;
+        const age = now - previousTimestamp;
+        
+        // If within TTL, it's a duplicate
+        if (age < this.IDEMPOTENCY_TTL_MS) {
+          this.logger.debug(`Duplicate webhook event detected and skipped: ${deduplicationId} (age: ${age}ms)`);
+          return true; // Return true to indicate "handled" (even though we skipped it)
+        } else {
+          // Entry is old, remove it and continue
+          this.processedEvents.delete(deduplicationId);
+        }
+      }
+      
+      // Mark as processed
+      this.processedEvents.set(deduplicationId, now);
+    }
+
     // Check if queue is full
     if (this.queue.length >= this.maxQueueSize) {
       this.logger.error(`Webhook queue is full (${this.queue.length}/${this.maxQueueSize}). Rejecting new event.`);
@@ -105,7 +175,7 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
     };
 
     this.queue.push(item);
-    this.logger.debug(`Enqueued webhook event: ${item.id}, queue depth: ${this.queue.length}`);
+    this.logger.debug(`Enqueued webhook event: ${item.id}, queue depth: ${this.queue.length}${deduplicationId ? `, dedupId: ${deduplicationId}` : ''}`);
     
     return true;
   }

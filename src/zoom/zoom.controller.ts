@@ -89,20 +89,67 @@ export class ZoomController {
       return await this.zoomService.validateWebhook(body, new Types.ObjectId(`${projectId}`));
     }
 
+    // Generate deduplication ID for idempotency
+    const deduplicationId = this.generateDeduplicationId(body, projectId);
+    this.logger.log(`Deduplication ID:::::::::::::::::::::::: ${deduplicationId}`);
+
     // Enqueue webhook for processing
     // Return 200 OK immediately to prevent Zoom from retrying
-    const enqueued = await this.webhookQueueService.enqueue(body, projectId);
+    const enqueued = await this.webhookQueueService.enqueue(body, projectId, deduplicationId);
     
     if (!enqueued) {
       this.logger.error('Failed to enqueue webhook event - queue is full', {
         event: body?.event,
         projectId,
+        deduplicationId,
       });
       // Still return 200 OK to prevent Zoom from retrying
       // The event is lost, but we log it for monitoring
     }
 
     return { statusCode: HttpStatus.OK, message: 'Webhook received' };
+  }
+
+  /**
+   * Generate a deterministic deduplication ID from webhook payload
+   * This ensures the same event from Zoom (retries) will be identified as duplicates
+   */
+  private generateDeduplicationId(body: any, projectId: string): string {
+    const parts: string[] = [
+      projectId || '',
+      body?.event || '',
+      body?.event_ts || body?.payload?.event_ts || '',
+    ];
+
+    // Add entity ID (meeting/webinar ID)
+    const objectId = body?.payload?.object?.id || body?.object?.id || '';
+    if (objectId) {
+      parts.push(objectId);
+    }
+
+    // Add registrant/participant identifier for granular uniqueness
+    // This ensures different registrations are treated as separate events
+    const registrantId = body?.payload?.object?.registrant?.id || 
+                        body?.payload?.object?.registrant?.email ||
+                        body?.object?.registrant?.id ||
+                        body?.object?.registrant?.email ||
+                        '';
+    if (registrantId) {
+      parts.push(registrantId);
+    }
+
+    const participantId = body?.payload?.object?.participant?.user_id ||
+                         body?.payload?.object?.participant?.id ||
+                         body?.object?.participant?.user_id ||
+                         body?.object?.participant?.id ||
+                         '';
+    if (participantId) {
+      parts.push(participantId);
+    }
+
+    // Join all parts with a delimiter and create a hash-like string
+    // Using a simple concatenation since we need deterministic IDs
+    return parts.filter(p => p).join('|');
   }
 
   @Get('webhook-v2/queue/health')
