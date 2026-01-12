@@ -243,10 +243,7 @@ export class AssignmentService {
           $gt: [
             {
               $size: {
-                $setIntersection: [
-                  { $ifNull: ['$tags', []] },
-                  normalizedTags,
-                ],
+                $setIntersection: [{ $ifNull: ['$tags', []] }, normalizedTags],
               },
             },
             0,
@@ -547,8 +544,7 @@ export class AssignmentService {
       tag,
     } = body;
 
-    const assignmentStatusToUse =
-      assignmentStatus || AssignmentStatus.ACTIVE;
+    const assignmentStatusToUse = assignmentStatus || AssignmentStatus.ACTIVE;
 
     const { result } = await this.getAssignments(
       adminId,
@@ -1072,7 +1068,10 @@ export class AssignmentService {
       // Transaction successful
     } catch (error) {
       // Transaction failed
-      this.logger.error('Transaction failed during assignment creation:', error);
+      this.logger.error(
+        'Transaction failed during assignment creation:',
+        error,
+      );
       // Re-throw the original error after logging
       throw error;
     } finally {
@@ -1263,14 +1262,16 @@ export class AssignmentService {
         webinarId,
       );
 
-            // Construct fullName, filtering out undefined/null values
-            const cleanFirstName = attendee.firstName && attendee.firstName !== 'undefined' 
-            ? attendee.firstName.trim() 
-            : '';
-          const cleanLastName = attendee.lastName && attendee.lastName !== 'undefined' 
-            ? attendee.lastName.trim() 
-            : '';
-          const fullName = [cleanFirstName, cleanLastName].filter(Boolean).join(' ');    
+    // Construct fullName, filtering out undefined/null values
+    const cleanFirstName =
+      attendee.firstName && attendee.firstName !== 'undefined'
+        ? attendee.firstName.trim()
+        : '';
+    const cleanLastName =
+      attendee.lastName && attendee.lastName !== 'undefined'
+        ? attendee.lastName.trim()
+        : '';
+    const fullName = [cleanFirstName, cleanLastName].filter(Boolean).join(' ');
 
     const updatedAssociation =
       await this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
@@ -3534,7 +3535,6 @@ export class AssignmentService {
     ];
 
     const result = await this.assignmentsModel.aggregate(pipeline).exec();
-
 
     return await this.userService.updateDailyContactCount(
       result,

@@ -207,9 +207,34 @@ export class ZoomService implements OnModuleInit {
 
   /**
    * Validates event type against known Zoom webhook events
+   * Returns:
+   * - isValidEvent: whether the event is one of the known ZoomWebhookEvent values
+   * - isWebinar: whether the event is a webinar-specific event
    */
-  private validateEventType(event: string): boolean {
-    return Object.values(ZoomWebhookEvent).includes(event as ZoomWebhookEvent);
+  private validateEventType(event: string): {
+    isValidEvent: boolean;
+    isWebinar: boolean;
+  } {
+    const typedEvent = event as ZoomWebhookEvent;
+
+    const isValidEvent = Object.values(ZoomWebhookEvent).includes(typedEvent);
+
+    // Webinar-specific events
+    const webinarEvents = new Set<ZoomWebhookEvent>([
+      ZoomWebhookEvent.WebinarCreated,
+      ZoomWebhookEvent.WebinarStarted,
+      ZoomWebhookEvent.WebinarEnded,
+      ZoomWebhookEvent.WebinarParticipantJoined,
+      ZoomWebhookEvent.WebinarParticipantLeft,
+      ZoomWebhookEvent.WebinarRegistrationCreated,
+    ]);
+
+    const isWebinar = webinarEvents.has(typedEvent);
+
+    return {
+      isValidEvent,
+      isWebinar,
+    };
   }
 
   /**
@@ -1403,7 +1428,8 @@ export class ZoomService implements OnModuleInit {
       }
 
       // Validate event type against known events
-      if (!this.validateEventType(event)) {
+      const { isValidEvent, isWebinar } = this.validateEventType(event);
+      if (!isValidEvent) {
         this.logWebhookProcessing(
           correlationId,
           'warn',
@@ -1419,6 +1445,7 @@ export class ZoomService implements OnModuleInit {
         `Processing webhook event: ${event}`,
         {
           event,
+          isWebinar,
           projectId: zoomProjectId.toString(),
         },
       );
@@ -1447,39 +1474,45 @@ export class ZoomService implements OnModuleInit {
       }
 
       // Extract occurrences from payload
-      const occurrences: ZoomMeetingOccurrence[] = Array.isArray(
-        object?.occurrences,
-      )
-        ? object?.occurrences
-        : [];
+      const occurrences: ZoomMeetingOccurrence[] = [];
 
       // Extract occurrenceId with improved logic and error handling
       let occurrenceId: string | undefined = undefined;
-      if (occurrences.length === 0) {
-        // Only fetch from DB if occurrences not in payload
-        try {
-          const zoomMeeting =
-            await this.zoomMeetingService.getZoomMeetingByMeetingId(meetingId);
-          if (
-            zoomMeeting &&
-            Array.isArray(zoomMeeting?.occurrences) &&
-            zoomMeeting.occurrences.length > 0
-          ) {
-            occurrences.push(...zoomMeeting.occurrences);
-          }
-        } catch (dbError) {
+
+      // Only fetch from DB if occurrences not in payload
+      try {
+        const zoomMeeting =
+          await this.zoomMeetingService.getZoomMeetingByMeetingId({
+            meetingId,
+            zoomProjectId,
+            isWebinar,
+            retry: true,
+            adminId: project.adminId,
+          });
+
+        if (!zoomMeeting) {
           this.logWebhookProcessing(
             correlationId,
             'warn',
-            'Failed to fetch meeting occurrences from database',
-            {
-              error: dbError.message,
-              meetingId,
-              event,
-            },
+            'Zoom meeting not found',
+            { meetingId, event },
           );
-          // Continue without occurrenceId
+          return;
         }
+
+        occurrences.push(...zoomMeeting.occurrences);
+      } catch (dbError) {
+        this.logWebhookProcessing(
+          correlationId,
+          'warn',
+          'Failed to fetch meeting occurrences from database',
+          {
+            error: dbError.message,
+            meetingId,
+            event,
+          },
+        );
+        // Continue without occurrenceId
       }
 
       // Extract occurrence ID with improved matching logic
