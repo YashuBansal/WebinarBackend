@@ -1482,13 +1482,10 @@ export class ZoomService implements OnModuleInit {
       // Only fetch from DB if occurrences not in payload
       try {
         const zoomMeeting =
-          await this.zoomMeetingService.getZoomMeetingByMeetingId({
+          await this.zoomMeetingService.getZoomMeetingByMeetingId(
             meetingId,
             zoomProjectId,
-            isWebinar,
-            retry: true,
-            adminId: project.adminId,
-          });
+          );
 
         if (!zoomMeeting) {
           this.logWebhookProcessing(

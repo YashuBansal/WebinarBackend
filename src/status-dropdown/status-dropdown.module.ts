@@ -14,6 +14,7 @@ import { UsersModule } from 'src/users/users.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
+import { RolesModule } from 'src/roles/roles.module';
 
 @Module({
   imports: [
@@ -21,21 +22,15 @@ import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
       {
         name: StatusDropdown.name,
         schema: StatusDropdownSchema,
-      },
-      {
-        name: Roles.name,
-        schema: RolesSchema,
-      },
-      {
-        name: User.name,
-        schema: UserSchema,
-      },
+      }
     ]),
     UsersModule,
     SubscriptionModule,
+    RolesModule
   ],
   controllers: [StatusDropdownController],
-  providers: [StatusDropdownService, RolesService],
+  providers: [StatusDropdownService],
+  exports: [StatusDropdownService],
 })
 export class StatusDropdownModule {
   configure(consumer: MiddlewareConsumer) {

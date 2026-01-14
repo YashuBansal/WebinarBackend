@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-13T10:32:42.432Z",
+    "scriptVersion": "1.0.0",
+    "totalProjects": 1,
+    "totalProcessed": 1,
+    "totalMeetingsSynced": 2,
+    "totalWebinarsSynced": 0,
+    "totalErrors": 1
+  },
+  "errors": [
+    {
+      "projectId": "69661ada176b4fe3fb1e3bed",
+      "projectName": "WLH Application Main Live",
+      "type": "webinar",
+      "errorMessage": "Failed to fetch webinars from Zoom",
+      "error": {
+        "response": {
+          "message": "Failed to fetch webinars from Zoom",
+          "error": "Not Acceptable",
+          "statusCode": 406
+        },
+        "status": 406,
+        "options": {},
+        "message": "Failed to fetch webinars from Zoom",
+        "name": "NotAcceptableException"
+      },
+      "timestamp": "2026-01-13T10:32:42.431Z"
+    }
+  ]
+}

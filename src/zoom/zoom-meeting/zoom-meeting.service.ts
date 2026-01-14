@@ -57,13 +57,10 @@ export class ZoomMeetingService {
     meetingId: string,
   ): Promise<ZoomMeeting> {
     // First check if meeting exists in database for this project
-    const existingMeeting = await this.getZoomMeetingByMeetingId({
+    const existingMeeting = await this.getZoomMeetingByMeetingId(
       meetingId,
-      zoomProjectId: projectId,
-      isWebinar: true,
-      retry: false,
-      adminId,
-    });
+      projectId,
+    );
 
     if (existingMeeting) {
       this.logger.debug(
@@ -84,62 +81,27 @@ export class ZoomMeetingService {
     }
 
     // Return the synced meeting
-    const syncedMeeting = await this.getZoomMeetingByMeetingId({
+    const syncedMeeting = await this.getZoomMeetingByMeetingId(
       meetingId,
-      zoomProjectId: projectId,
-      isWebinar: false,
-      retry: false,
-      adminId,
-    });
+      projectId,
+    );
     if (!syncedMeeting) {
       throw new Error(`Failed to retrieve meeting ${meetingId} after sync`);
     }
     return syncedMeeting;
   }
 
-  async getZoomMeetingByMeetingId(payload: {
-    meetingId: string;
-    zoomProjectId: Types.ObjectId;
-    adminId: Types.ObjectId;
-    isWebinar: boolean;
-    retry: boolean;
-  }): Promise<ZoomMeeting | null> {
+  async getZoomMeetingByMeetingId(
+    meetingId: string,
+    zoomProjectId: Types.ObjectId,
+  ): Promise<ZoomMeeting | null> {
     try {
-      const { meetingId, zoomProjectId, adminId, isWebinar, retry } = payload;
-      const zoomMeeting = await this.zoomMeetingModel
+      return await this.zoomMeetingModel
         .findOne({
           id: meetingId,
           projectId: zoomProjectId,
         })
         .lean();
-
-      if (zoomMeeting) {
-        return zoomMeeting;
-      }
-
-      if (retry) {
-        this.logger.log(
-          `Retrying to sync zoom meeting ${meetingId} for project ${zoomProjectId}`,
-        );
-        try {
-          if (isWebinar) {
-            await this.syncZoomWebinarData(adminId, zoomProjectId, meetingId);
-          } else {
-            await this.syncZoomMeetingData(adminId, zoomProjectId, meetingId);
-          }
-        } catch (error) {
-          this.logger.error(
-            `Error syncing zoom ${isWebinar ? 'webinar' : 'meeting'} ${meetingId} for project ${zoomProjectId}`,
-            error,
-          );
-          return null;
-        }
-      }
-
-      return await this.zoomMeetingModel.findOne({
-        id: meetingId,
-        projectId: zoomProjectId,
-      });
     } catch (error) {
       this.logger.error('Error getting zoom meeting by meeting id', error);
       return null;
@@ -189,13 +151,10 @@ export class ZoomMeetingService {
     webinarId: string,
   ): Promise<ZoomMeeting> {
     // First check if webinar exists in database for this project
-    const existingWebinar = await this.getZoomMeetingByMeetingId({
-      meetingId: webinarId,
-      zoomProjectId: projectId,
-      isWebinar: true,
-      retry: false,
-      adminId,
-    });
+    const existingWebinar = await this.getZoomMeetingByMeetingId(
+      webinarId,
+      projectId,
+    );
 
     if (existingWebinar) {
       this.logger.debug(
@@ -216,13 +175,10 @@ export class ZoomMeetingService {
     }
 
     // Return the synced webinar
-    const syncedWebinar = await this.getZoomMeetingByMeetingId({
-      meetingId: webinarId,
-      zoomProjectId: projectId,
-      isWebinar: true,
-      retry: false,
-      adminId,
-    });
+    const syncedWebinar = await this.getZoomMeetingByMeetingId(
+      webinarId,
+      projectId,
+    );
     if (!syncedWebinar) {
       throw new Error(`Failed to retrieve webinar ${webinarId} after sync`);
     }

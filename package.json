@@ -24,7 +24,8 @@
     "restore:deleted-attendees": "ts-node -r tsconfig-paths/register scripts/restore-deleted-attendees.ts",
     "delete:assignments-for-deleted-attendees": "ts-node -r tsconfig-paths/register scripts/delete-assignments-for-deleted-attendees.ts",
     "delete:duplicate-attendee-associations": "ts-node -r tsconfig-paths/register scripts/delete-duplicate-attendee-associations.ts",
-    "remove:undefined-from-fullnames": "ts-node -r tsconfig-paths/register scripts/remove-undefined-from-fullnames.ts"
+    "remove:undefined-from-fullnames": "ts-node -r tsconfig-paths/register scripts/remove-undefined-from-fullnames.ts",
+    "sync:zoom-meetings": "ts-node -r tsconfig-paths/register scripts/sync-zoom-meetings.ts"
   },
   "dependencies": {
     "@nest-middlewares/compression": "^10.0.0",
