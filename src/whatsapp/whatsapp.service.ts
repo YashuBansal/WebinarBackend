@@ -145,7 +145,7 @@ export class WhatsappService {
    * @param payload The body of the POST request from Meta's webhook.
    */
   async processWebhookPayload(payload: any): Promise<void> {
-    this.logger.log('Processing webhook payload for WhatsApp messages');
+    this.logger.log('Processing webhook payload for WhatsApp messages', JSON.stringify(payload));
 
     // Validate payload exists and is an object
     if (!payload) {
