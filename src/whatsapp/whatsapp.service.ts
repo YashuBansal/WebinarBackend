@@ -145,35 +145,37 @@ export class WhatsappService {
    * @param payload The body of the POST request from Meta's webhook.
    */
   async processWebhookPayload(payload: any): Promise<void> {
-    this.logger.log('Processing webhook payload for WhatsApp messages', JSON.stringify(payload));
-
-    // Validate payload exists and is an object
-    if (!payload) {
-      this.logger.warn('Received null or undefined payload, skipping processing');
-      return;
-    }
-
-    if (typeof payload !== 'object' || Array.isArray(payload)) {
-      this.logger.warn(
-        `Invalid payload type: ${typeof payload}, expected object. Skipping processing.`,
-      );
-      return;
-    }
-
-    // Validate payload structure
-    if (!payload.entry) {
-      this.logger.warn('Payload missing entry array, skipping processing');
-      return;
-    }
-
-    if (!Array.isArray(payload.entry) || payload.entry.length === 0) {
-      this.logger.warn(
-        `Payload entry is not a valid array or is empty. Length: ${payload.entry?.length || 0}`,
-      );
-      return;
-    }
-
+    // Wrap entire processing in try-catch to ensure no unhandled errors
+    // This method is called asynchronously from the controller, so errors must be caught
     try {
+      this.logger.log('Processing webhook payload for WhatsApp messages', JSON.stringify(payload));
+
+      // Validate payload exists and is an object
+      if (!payload) {
+        this.logger.warn('Received null or undefined payload, skipping processing');
+        return;
+      }
+
+      if (typeof payload !== 'object' || Array.isArray(payload)) {
+        this.logger.warn(
+          `Invalid payload type: ${typeof payload}, expected object. Skipping processing.`,
+        );
+        return;
+      }
+
+      // Validate payload structure
+      if (!payload.entry) {
+        this.logger.warn('Payload missing entry array, skipping processing');
+        return;
+      }
+
+      if (!Array.isArray(payload.entry) || payload.entry.length === 0) {
+        this.logger.warn(
+          `Payload entry is not a valid array or is empty. Length: ${payload.entry?.length || 0}`,
+        );
+        return;
+      }
+
       // Process status updates
       const firstEntry = payload.entry[0];
       if (!firstEntry || typeof firstEntry !== 'object') {
@@ -189,16 +191,36 @@ export class WhatsappService {
         ) {
           const changeValue = changes[0].value;
           if (changeValue && typeof changeValue === 'object') {
+            // Process status updates and messages in parallel for better performance
+            const processingPromises: Promise<void>[] = [];
+
             if (changeValue.statuses) {
               this.logger.log('Processing status updates from webhook payload');
-              await this.processStatusUpdates(changeValue.statuses);
+              processingPromises.push(
+                this.processStatusUpdates(changeValue.statuses).catch((error) => {
+                  this.logger.error(
+                    'Error processing status updates',
+                    error instanceof Error ? error.stack : error,
+                  );
+                }),
+              );
             }
 
             // Process incoming messages
             if (changeValue.messages) {
               this.logger.log('Processing incoming messages from webhook payload');
-              await this.processIncomingMessages(changeValue);
+              processingPromises.push(
+                this.processIncomingMessages(changeValue).catch((error) => {
+                  this.logger.error(
+                    'Error processing incoming messages',
+                    error instanceof Error ? error.stack : error,
+                  );
+                }),
+              );
             }
+
+            // Wait for all processing to complete (errors already caught above)
+            await Promise.allSettled(processingPromises);
           } else {
             this.logger.warn('Change value is missing or invalid, skipping processing');
           }
@@ -207,10 +229,12 @@ export class WhatsappService {
         }
       }
     } catch (error) {
+      // Catch any unexpected errors that might occur
       this.logger.error(
-        'Error processing webhook payload',
+        'Unexpected error processing webhook payload',
         error instanceof Error ? error.stack : error,
       );
+      // Don't rethrow - this is async processing, errors should be logged only
     }
   }
 

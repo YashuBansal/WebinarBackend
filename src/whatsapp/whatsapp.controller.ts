@@ -113,11 +113,24 @@ export class WhatsappController {
   @Post('webhook')
   @HttpCode(HttpStatus.OK) // Always respond with 200 OK immediately
   handleWebhookEvents(@Body() body: any) {
-    // We will build the logic for this in the service
-    this.whatsappService.processWebhookPayload(body);
-    // Meta doesn't care what's in the body, only that it gets a 200 OK
-    // to acknowledge receipt. The actual processing should be done asynchronously.
-    return;
+    try {
+      // Process webhook payload asynchronously (fire-and-forget)
+      // Meta expects immediate 200 OK response, processing happens in background
+      this.whatsappService.processWebhookPayload(body).catch((error) => {
+        // Log any errors that occur during async processing
+        // This won't block the response since we're not awaiting
+        console.error('Error in async webhook processing:', error);
+      });
+
+      // Return success response immediately to Meta
+      // Meta doesn't care about the response body, only the 200 OK status
+      return { status: 'ok' };
+    } catch (error) {
+      // Handle any synchronous errors (shouldn't happen, but safety check)
+      // Still return 200 OK to Meta to prevent retries
+      console.error('Synchronous error in webhook handler:', error);
+      return { status: 'ok' };
+    }
   }
 
   @Get('data')
