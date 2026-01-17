@@ -147,80 +147,289 @@ export class WhatsappService {
   async processWebhookPayload(payload: any): Promise<void> {
     this.logger.log('Processing webhook payload for WhatsApp messages');
 
-    // axios.post('http://localhost:3002/api/v1/whatsapp/webhook', payload).then((response) => {
-    //   // console.log('response', response);
-    // }).catch((error) => {
-    //   console.log('error', error);
-    // });
+    // Validate payload exists and is an object
+    if (!payload) {
+      this.logger.warn('Received null or undefined payload, skipping processing');
+      return;
+    }
+
+    if (typeof payload !== 'object' || Array.isArray(payload)) {
+      this.logger.warn(
+        `Invalid payload type: ${typeof payload}, expected object. Skipping processing.`,
+      );
+      return;
+    }
+
+    // Validate payload structure
+    if (!payload.entry) {
+      this.logger.warn('Payload missing entry array, skipping processing');
+      return;
+    }
+
+    if (!Array.isArray(payload.entry) || payload.entry.length === 0) {
+      this.logger.warn(
+        `Payload entry is not a valid array or is empty. Length: ${payload.entry?.length || 0}`,
+      );
+      return;
+    }
 
     try {
       // Process status updates
-      if (payload.entry?.[0]?.changes?.[0]?.value?.statuses) {
-        const statuses = payload.entry[0].changes[0].value.statuses;
+      const firstEntry = payload.entry[0];
+      if (!firstEntry || typeof firstEntry !== 'object') {
+        this.logger.warn('First entry in payload is invalid, skipping status processing');
+      } else {
+        const changes = firstEntry.changes;
+        if (
+          changes &&
+          Array.isArray(changes) &&
+          changes.length > 0 &&
+          changes[0] &&
+          typeof changes[0] === 'object'
+        ) {
+          const changeValue = changes[0].value;
+          if (changeValue && typeof changeValue === 'object') {
+            if (changeValue.statuses) {
+              this.logger.log('Processing status updates from webhook payload');
+              await this.processStatusUpdates(changeValue.statuses);
+            }
 
-        for (const status of statuses) {
-          // Process status updates asynchronously to avoid blocking the webhook response
-          this.updateMessageStatus(
-            status.id,
-            status.status,
-            status.timestamp,
-            status.errors?.[0]?.message,
-          ).catch((error) => {
-            this.logger.error(
-              `Failed to process status update for ${status.id}:`,
-              error,
-            );
-          });
-        }
-      }
-
-      // Process incoming messages
-      if (payload.entry?.[0]?.changes?.[0]?.value?.messages) {
-        const value = payload.entry[0].changes[0].value;
-        const messages = value.messages;
-        const contacts = value.contacts || [];
-        const metadata = value.metadata || {};
-        const fromPhoneNumberId = metadata?.phone_number_id;
-        this.logger.log(`Received ${messages.length} incoming messages`);
-
-        for (const msg of messages) {
-          try {
-            const from = msg.from; // sender's wa id (phone)
-            const textBody = msg.text?.body;
-            const msgId = msg.id;
-
-            if (!from || !msgId) continue;
-            console.log('from ------------------------- > ', from);
-            console.log(
-              'fromPhoneNumberId ------------------------- > ',
-              fromPhoneNumberId,
-            );
-            console.log('textBody ------------------------- > ', textBody);
-            console.log('wabaMessageId ------------------------- > ', msgId);
-            await this.handleInboundTextMessage({
-              from,
-              fromPhoneNumberId,
-              textBody,
-              wabaMessageId: msgId,
-            });
-          } catch (e) {
-            this.logger.error('Failed processing inbound message', e);
+            // Process incoming messages
+            if (changeValue.messages) {
+              this.logger.log('Processing incoming messages from webhook payload');
+              await this.processIncomingMessages(changeValue);
+            }
+          } else {
+            this.logger.warn('Change value is missing or invalid, skipping processing');
           }
+        } else {
+          this.logger.warn('Changes array is missing, empty, or invalid');
         }
       }
     } catch (error) {
-      this.logger.error('Error processing webhook payload', error);
+      this.logger.error(
+        'Error processing webhook payload',
+        error instanceof Error ? error.stack : error,
+      );
+    }
+  }
+
+  /**
+   * Processes status updates from webhook payload
+   * @param statuses Array of status update objects
+   */
+  private async processStatusUpdates(statuses: any[]): Promise<void> {
+    if (!Array.isArray(statuses)) {
+      this.logger.warn('Statuses is not an array, skipping status processing');
+      return;
+    }
+
+    if (statuses.length === 0) {
+      this.logger.log('No status updates to process');
+      return;
+    }
+
+    this.logger.log(`Processing ${statuses.length} status update(s)`);
+
+    for (let i = 0; i < statuses.length; i++) {
+      const status = statuses[i];
+      if (!status || typeof status !== 'object') {
+        this.logger.warn(`Status at index ${i} is invalid, skipping`);
+        continue;
+      }
+
+      // Validate required fields
+      const statusId = status.id;
+      const statusValue = status.status;
+      const timestamp = status.timestamp;
+
+      if (!statusId || typeof statusId !== 'string' || statusId.trim() === '') {
+        this.logger.warn(
+          `Status at index ${i} has invalid or missing ID, skipping`,
+        );
+        continue;
+      }
+
+      if (
+        !statusValue ||
+        typeof statusValue !== 'string' ||
+        statusValue.trim() === ''
+      ) {
+        this.logger.warn(
+          `Status at index ${i} (ID: ${statusId}) has invalid or missing status value, skipping`,
+        );
+        continue;
+      }
+
+      if (!timestamp || (typeof timestamp !== 'string' && typeof timestamp !== 'number')) {
+        this.logger.warn(
+          `Status at index ${i} (ID: ${statusId}) has invalid or missing timestamp, skipping`,
+        );
+        continue;
+      }
+
+      const failureReason =
+        status.errors && Array.isArray(status.errors) && status.errors.length > 0
+          ? status.errors[0]?.message
+          : undefined;
+
+      // Process status updates asynchronously to avoid blocking the webhook response
+      this.updateMessageStatus(
+        statusId,
+        statusValue,
+        String(timestamp),
+        failureReason,
+      ).catch((error) => {
+        this.logger.error(
+          `Failed to process status update for message ID: ${statusId}, status: ${statusValue}`,
+          error instanceof Error ? error.stack : error,
+        );
+      });
+    }
+  }
+
+  /**
+   * Processes incoming messages from webhook payload
+   * @param changeValue The value object from the webhook change
+   */
+  private async processIncomingMessages(changeValue: any): Promise<void> {
+    if (!changeValue || typeof changeValue !== 'object') {
+      this.logger.warn('Change value is invalid, skipping message processing');
+      return;
+    }
+
+    const messages = changeValue.messages;
+    if (!Array.isArray(messages)) {
+      this.logger.warn('Messages is not an array, skipping message processing');
+      return;
+    }
+
+    if (messages.length === 0) {
+      this.logger.log('No incoming messages to process');
+      return;
+    }
+
+    const contacts = Array.isArray(changeValue.contacts)
+      ? changeValue.contacts
+      : [];
+    const metadata =
+      changeValue.metadata && typeof changeValue.metadata === 'object'
+        ? changeValue.metadata
+        : {};
+    const fromPhoneNumberId =
+      metadata && typeof metadata.phone_number_id === 'string'
+        ? metadata.phone_number_id
+        : undefined;
+
+    this.logger.log(
+      `Received ${messages.length} incoming message(s) from phone number ID: ${fromPhoneNumberId || 'unknown'}`,
+    );
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (!msg || typeof msg !== 'object') {
+        this.logger.warn(`Message at index ${i} is invalid, skipping`);
+        continue;
+      }
+
+      try {
+        const from = msg.from; // sender's wa id (phone)
+        const textBody = msg.text?.body;
+        const msgId = msg.id;
+
+        // Validate required fields
+        if (!from || typeof from !== 'string' || from.trim() === '') {
+          this.logger.warn(
+            `Message at index ${i} has invalid or missing 'from' field, skipping`,
+          );
+          continue;
+        }
+
+        if (!msgId || typeof msgId !== 'string' || msgId.trim() === '') {
+          this.logger.warn(
+            `Message at index ${i} from ${from} has invalid or missing message ID, skipping`,
+          );
+          continue;
+        }
+
+        this.logger.log(
+          `Processing inbound message - From: ${from}, Message ID: ${msgId}, Phone Number ID: ${fromPhoneNumberId || 'unknown'}, Has Text: ${!!textBody}`,
+        );
+
+        await this.handleInboundTextMessage({
+          from,
+          fromPhoneNumberId,
+          textBody,
+          wabaMessageId: msgId,
+        });
+      } catch (e) {
+        this.logger.error(
+          `Failed processing inbound message at index ${i}`,
+          e instanceof Error ? e.stack : e,
+        );
+      }
     }
   }
 
   private async resolveProjectByPhoneNumberId(phoneNumberId?: string) {
-    if (!phoneNumberId) return null;
+    // Validate phoneNumberId
+    if (!phoneNumberId) {
+      this.logger.debug('resolveProjectByPhoneNumberId called without phoneNumberId');
+      return null;
+    }
+
+    if (typeof phoneNumberId !== 'string' || phoneNumberId.trim() === '') {
+      this.logger.warn(
+        `resolveProjectByPhoneNumberId called with invalid phoneNumberId: ${phoneNumberId}`,
+      );
+      return null;
+    }
+
+    // Validate service exists
+    if (!this.projectService) {
+      this.logger.error(
+        `projectService is not available. Cannot resolve project for phone number ID: ${phoneNumberId}`,
+      );
+      return null;
+    }
+
     try {
+      this.logger.debug(`Resolving project for phone number ID: ${phoneNumberId}`);
+
       const model = (this.projectService as any)['projectModel'];
-      if (!model) return null;
+      if (!model) {
+        this.logger.warn(
+          `projectModel is not available in projectService. Cannot resolve project for phone number ID: ${phoneNumberId}`,
+        );
+        return null;
+      }
+
+      if (typeof model.findOne !== 'function') {
+        this.logger.error(
+          `projectModel.findOne is not a function. Cannot resolve project for phone number ID: ${phoneNumberId}`,
+        );
+        return null;
+      }
+
       const project = await model.findOne({ phoneNumberId }).exec();
-      return project || null;
-    } catch {
+
+      if (!project) {
+        this.logger.debug(
+          `No project found for phone number ID: ${phoneNumberId}`,
+        );
+        return null;
+      }
+
+      this.logger.log(
+        `Successfully resolved project for phone number ID: ${phoneNumberId}, Project ID: ${project._id || 'unknown'}`,
+      );
+
+      return project;
+    } catch (error) {
+      this.logger.error(
+        `Error resolving project for phone number ID: ${phoneNumberId}`,
+        error instanceof Error ? error.stack : error,
+      );
       return null;
     }
   }
@@ -231,22 +440,104 @@ export class WhatsappService {
     textBody?: string;
     wabaMessageId: string;
   }) {
+    // Validate args object exists
+    if (!args || typeof args !== 'object') {
+      this.logger.error('handleInboundTextMessage called with invalid args object', {
+        args,
+      });
+      return;
+    }
+
     const { from, fromPhoneNumberId, textBody, wabaMessageId } = args;
+
+    // Validate required fields
+    if (!from || typeof from !== 'string' || from.trim() === '') {
+      this.logger.error(
+        'handleInboundTextMessage called with invalid or missing "from" field',
+        { from, wabaMessageId, fromPhoneNumberId },
+      );
+      return;
+    }
+
+    if (!wabaMessageId || typeof wabaMessageId !== 'string' || wabaMessageId.trim() === '') {
+      this.logger.error(
+        `handleInboundTextMessage called with invalid or missing "wabaMessageId" field for from: ${from}`,
+        { from, wabaMessageId, fromPhoneNumberId },
+      );
+      return;
+    }
+
+    this.logger.log(
+      `Handling inbound text message - From: ${from}, Message ID: ${wabaMessageId}, Phone Number ID: ${fromPhoneNumberId || 'not provided'}`,
+    );
+
+    // Validate optional fields
+    if (fromPhoneNumberId !== undefined && (typeof fromPhoneNumberId !== 'string' || fromPhoneNumberId.trim() === '')) {
+      this.logger.warn(
+        `Invalid fromPhoneNumberId provided for message from ${from}, message ID: ${wabaMessageId}. Continuing without phone number ID.`,
+      );
+    }
 
     // Try to resolve project via phoneNumberId; fallback skip if unknown
     const project = await this.resolveProjectByPhoneNumberId(fromPhoneNumberId);
-    if (!project) return;
+    if (!project) {
+      this.logger.warn(
+        `Could not resolve project for phone number ID: ${fromPhoneNumberId || 'not provided'}, message from: ${from}, message ID: ${wabaMessageId}. Skipping message processing.`,
+      );
+      return;
+    }
+
+    // Validate project has required properties
+    if (!project.adminId) {
+      this.logger.error(
+        `Project resolved but missing adminId for phone number ID: ${fromPhoneNumberId}, message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    if (!project._id) {
+      this.logger.error(
+        `Project resolved but missing _id for phone number ID: ${fromPhoneNumberId}, message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
 
     const adminId = project.adminId as any as Types.ObjectId;
     const projectId = project._id as any as Types.ObjectId;
 
-    // Emit websocket event to admin (WhatsApp chat-message) via gateway
-    this.whatsAppGateway.emitToUser(String(adminId), {
-      phoneNumber: from,
-      textBody,
-      direction: 'inbound',
-      createdAt: new Date().toISOString(),
-    });
+    // Validate gateway exists
+    if (!this.whatsAppGateway) {
+      this.logger.error(
+        `whatsAppGateway is not available. Cannot emit message event for message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    if (typeof this.whatsAppGateway.emitToUser !== 'function') {
+      this.logger.error(
+        `whatsAppGateway.emitToUser is not a function. Cannot emit message event for message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    try {
+      // Emit websocket event to admin (WhatsApp chat-message) via gateway
+      this.whatsAppGateway.emitToUser(String(adminId), {
+        phoneNumber: from,
+        textBody: textBody || '',
+        direction: 'inbound',
+        createdAt: new Date().toISOString(),
+      });
+
+      this.logger.log(
+        `Successfully processed inbound message - From: ${from}, Message ID: ${wabaMessageId}, Admin ID: ${adminId}, Project ID: ${projectId}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to emit websocket event for inbound message - From: ${from}, Message ID: ${wabaMessageId}, Admin ID: ${adminId}`,
+        error instanceof Error ? error.stack : error,
+      );
+    }
   }
 
   async getChatMessages(
@@ -415,17 +706,65 @@ export class WhatsappService {
     timestamp: string,
     failureReason?: string,
   ): Promise<void> {
+    // Validate required parameters
+    if (!wabaMessageId || typeof wabaMessageId !== 'string' || wabaMessageId.trim() === '') {
+      this.logger.error(
+        'updateMessageStatus called with invalid wabaMessageId',
+        { wabaMessageId, status, timestamp },
+      );
+      return;
+    }
+
+    if (!status || typeof status !== 'string' || status.trim() === '') {
+      this.logger.error(
+        `updateMessageStatus called with invalid status for message ID: ${wabaMessageId}`,
+        { wabaMessageId, status, timestamp },
+      );
+      return;
+    }
+
+    if (!timestamp || (typeof timestamp !== 'string' && typeof timestamp !== 'number')) {
+      this.logger.warn(
+        `updateMessageStatus called with invalid timestamp for message ID: ${wabaMessageId}, status: ${status}`,
+        { wabaMessageId, status, timestamp },
+      );
+      // Continue processing even if timestamp is invalid
+    }
+
+    // Validate service exists
+    if (!this.wabaMessageService) {
+      this.logger.error(
+        `wabaMessageService is not available. Cannot update status for message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    if (typeof this.wabaMessageService.updateStatus !== 'function') {
+      this.logger.error(
+        `wabaMessageService.updateStatus is not a function. Cannot update status for message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
     try {
+      this.logger.log(
+        `Updating message status - Message ID: ${wabaMessageId}, Status: ${status}, Timestamp: ${timestamp}${failureReason ? `, Failure Reason: ${failureReason}` : ''}`,
+      );
+
       // Update WABA message status
       await this.wabaMessageService.updateStatus(
         wabaMessageId,
         status,
         failureReason,
       );
+
+      this.logger.log(
+        `Successfully updated message status for message ID: ${wabaMessageId}, status: ${status}`,
+      );
     } catch (error) {
       this.logger.error(
-        `Failed to update message status for ${wabaMessageId}`,
-        error,
+        `Failed to update message status for message ID: ${wabaMessageId}, status: ${status}, timestamp: ${timestamp}`,
+        error instanceof Error ? error.stack : error,
       );
     }
   }
