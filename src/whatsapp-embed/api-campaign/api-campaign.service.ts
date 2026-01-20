@@ -335,6 +335,8 @@ export class ApiCampaignService {
           headerMediaAssetId: template.headerMediaAssetId?.toString(),
         },
         media,
+        apiCampaignId: apiCampaign._id.toString(),
+        
         // API Campaigns don't usually have meeting/occurrence IDs, but if needed they can be added later
       })
       .then((response) => {
