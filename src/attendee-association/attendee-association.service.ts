@@ -108,9 +108,22 @@ export class AttendeeAssociationService {
     tags: string[];
   }): Promise<AttendeeAssociation | null> {
     try {
+      this.logger.log(`addFullNamesAndPhonesToAssociation -> ${JSON.stringify(payload)}`);
       const { fullName = '', phone = '', adminId, email, tags } = payload;
 
-      const trimmedFullName = fullName?.trim() || '';
+      // Normalize fullName: filter out "undefined" strings and clean up
+      let cleanedFullName = '';
+      if (fullName) {
+        const normalized = fullName
+          .trim()
+          .replace(/\bundefined\b/gi, '')
+          .trim();
+        // Only use if it's not empty and not the literal string "undefined"
+        if (normalized && normalized !== 'undefined') {
+          cleanedFullName = normalized;
+        }
+      }
+
       const trimmedPhone = phone?.trim() || '';
       const normalizedTags = Array.isArray(tags)
         ? Array.from(
@@ -122,26 +135,56 @@ export class AttendeeAssociationService {
           )
         : [];
 
-      // Use findOneAndUpdate with upsert to reduce from 2 queries to 1
+      // Build aggregation pipeline for single atomic upsert operation
+      // This approach avoids all MongoDB operator conflicts by using pipeline stages
+      const pipeline: any[] = [
+        {
+          $set: {
+            // Ensure required fields are set (for insert case)
+            email: email,
+            adminId: adminId,
+            // fullNames: Filter out "undefined" strings, then merge with new value
+            fullNames: {
+              $setUnion: [
+                {
+                  $filter: {
+                    input: { $ifNull: ['$fullNames', []] },
+                    as: 'name',
+                    cond: {
+                      $and: [
+                        { $ne: ['$$name', null] },
+                        { $ne: ['$$name', 'undefined'] },
+                        { $ne: [{ $trim: { input: '$$name' } }, ''] },
+                      ],
+                    },
+                  },
+                },
+                cleanedFullName ? [cleanedFullName] : [],
+              ],
+            },
+            // phones: Merge existing phones with new phone
+            phones: {
+              $setUnion: [
+                { $ifNull: ['$phones', []] },
+                trimmedPhone ? [trimmedPhone] : [],
+              ],
+            },
+            // tags: Merge existing tags with new tags
+            tags: {
+              $setUnion: [
+                { $ifNull: ['$tags', []] },
+                normalizedTags.length > 0 ? normalizedTags : [],
+              ],
+            },
+          },
+        },
+      ];
+
+      // Single atomic upsert operation using aggregation pipeline
       const updatedAssociation =
         await this.attendeeAssociationModel.findOneAndUpdate(
-          {
-            adminId: adminId,
-            email: email,
-          },
-          {
-            $setOnInsert: {
-              email: email,
-              adminId: adminId,
-            },
-            $addToSet: {
-              ...(trimmedFullName ? { fullNames: trimmedFullName } : {}),
-              ...(trimmedPhone ? { phones: trimmedPhone } : {}),
-              ...(normalizedTags.length > 0
-                ? { tags: { $each: normalizedTags } }
-                : {}),
-            },
-          },
+          { adminId: adminId, email: email },
+          pipeline,
           {
             upsert: true,
             new: true,
@@ -149,12 +192,25 @@ export class AttendeeAssociationService {
           },
         );
 
+      if (!updatedAssociation) {
+        this.logger.error(
+          `findOneAndUpdate returned null for email: ${email}, adminId: ${adminId}. This should not happen with upsert: true.`,
+        );
+        return null;
+      }
+
       return updatedAssociation;
     } catch (error) {
       this.logger.error(
-        `Error adding full names, phones, and tags to association for email: ${payload.email}, adminId: ${payload.adminId}`,
-        error.stack || error,
+        `Error adding full names, phones, and tags to association for email: ${payload.email}, adminId: ${payload.adminId}. Error message: ${error.message}. Error stack: ${error.stack || 'No stack trace'}`,
       );
+      // Log the error details for debugging
+      if (error.name) {
+        this.logger.error(`Error name: ${error.name}`);
+      }
+      if (error.code) {
+        this.logger.error(`Error code: ${error.code}`);
+      }
       return null;
     }
   }

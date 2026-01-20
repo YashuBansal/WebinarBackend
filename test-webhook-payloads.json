@@ -1,0 +1,270 @@
+{
+  "description": "Zoom Webhook Test Payloads for Postman",
+  "endpoint": "POST http://localhost:3000/api/v1/zoom/webhook-v2?projectId=YOUR_PROJECT_ID",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "payloads": {
+    "1_meeting_registration_created": {
+      "event": "meeting.registration_created",
+      "event_ts": 1704067200000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "123456789",
+          "uuid": "abc123def456",
+          "host_id": "host123",
+          "topic": "Test Meeting",
+          "type": 2,
+          "start_time": "2024-01-01T10:00:00Z",
+          "duration": 60,
+          "timezone": "America/New_York",
+          "registrant": {
+            "id": "reg123456",
+            "email": "testuser@example.com",
+            "first_name": "John",
+            "last_name": "Doe",
+            "phone": "+1234567890",
+            "status": "approved"
+          },
+          "occurrences": [
+            {
+              "occurrence_id": "occ123",
+              "start_time": "2024-01-01T10:00:00Z",
+              "duration": 60,
+              "status": "available"
+            }
+          ]
+        }
+      }
+    },
+    "2_webinar_registration_created": {
+      "event": "webinar.registration_created",
+      "event_ts": 1704067200000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "987654321",
+          "uuid": "xyz789abc123",
+          "host_id": "host456",
+          "topic": "Test Webinar",
+          "type": 5,
+          "start_time": "2024-01-01T14:00:00Z",
+          "duration": 90,
+          "timezone": "America/New_York",
+          "registrant": {
+            "id": "reg789012",
+            "email": "webinaruser@example.com",
+            "first_name": "Jane",
+            "last_name": "Smith",
+            "phone": "+1987654321",
+            "status": "approved"
+          },
+          "occurrences": [
+            {
+              "occurrence_id": "occ456",
+              "start_time": "2024-01-01T14:00:00Z",
+              "duration": 90,
+              "status": "available"
+            }
+          ]
+        }
+      }
+    },
+    "3_meeting_started": {
+      "event": "meeting.started",
+      "event_ts": 1704067200000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "123456789",
+          "uuid": "abc123def456",
+          "host_id": "host123",
+          "topic": "Test Meeting",
+          "type": 2,
+          "start_time": "2024-01-01T10:00:00Z",
+          "duration": 60,
+          "timezone": "America/New_York"
+        }
+      }
+    },
+    "4_meeting_participant_joined": {
+      "event": "meeting.participant_joined",
+      "event_ts": 1704067260000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "123456789",
+          "uuid": "abc123def456",
+          "host_id": "host123",
+          "topic": "Test Meeting",
+          "type": 2,
+          "start_time": "2024-01-01T10:00:00Z",
+          "duration": 60,
+          "timezone": "America/New_York",
+          "participant": {
+            "user_id": "user123",
+            "user_name": "John Doe",
+            "id": "participant123",
+            "email": "testuser@example.com",
+            "join_time": "2024-01-01T10:01:00Z"
+          }
+        }
+      }
+    },
+    "5_meeting_participant_left": {
+      "event": "meeting.participant_left",
+      "event_ts": 1704067320000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "123456789",
+          "uuid": "abc123def456",
+          "host_id": "host123",
+          "topic": "Test Meeting",
+          "type": 2,
+          "start_time": "2024-01-01T10:00:00Z",
+          "duration": 60,
+          "timezone": "America/New_York",
+          "participant": {
+            "user_id": "user123",
+            "user_name": "John Doe",
+            "id": "participant123",
+            "email": "testuser@example.com",
+            "leave_time": "2024-01-01T10:02:00Z"
+          }
+        }
+      }
+    },
+    "6_meeting_ended": {
+      "event": "meeting.ended",
+      "event_ts": 1704067800000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "123456789",
+          "uuid": "abc123def456",
+          "host_id": "host123",
+          "topic": "Test Meeting",
+          "type": 2,
+          "start_time": "2024-01-01T10:00:00Z",
+          "duration": 60,
+          "timezone": "America/New_York",
+          "end_time": "2024-01-01T11:00:00Z"
+        }
+      }
+    },
+    "7_meeting_created": {
+      "event": "meeting.created",
+      "event_ts": 1704067000000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "123456789",
+          "uuid": "abc123def456",
+          "host_id": "host123",
+          "topic": "New Test Meeting",
+          "type": 2,
+          "start_time": "2024-01-01T10:00:00Z",
+          "duration": 60,
+          "timezone": "America/New_York",
+          "created_at": "2024-01-01T09:00:00Z"
+        }
+      }
+    },
+    "8_webinar_created": {
+      "event": "webinar.created",
+      "event_ts": 1704067000000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "987654321",
+          "uuid": "xyz789abc123",
+          "host_id": "host456",
+          "topic": "New Test Webinar",
+          "type": 5,
+          "start_time": "2024-01-01T14:00:00Z",
+          "duration": 90,
+          "timezone": "America/New_York",
+          "created_at": "2024-01-01T13:00:00Z"
+        }
+      }
+    },
+    "9_webinar_started": {
+      "event": "webinar.started",
+      "event_ts": 1704067200000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "987654321",
+          "uuid": "xyz789abc123",
+          "host_id": "host456",
+          "topic": "Test Webinar",
+          "type": 5,
+          "start_time": "2024-01-01T14:00:00Z",
+          "duration": 90,
+          "timezone": "America/New_York"
+        }
+      }
+    },
+    "10_webinar_participant_joined": {
+      "event": "webinar.participant_joined",
+      "event_ts": 1704067260000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "987654321",
+          "uuid": "xyz789abc123",
+          "host_id": "host456",
+          "topic": "Test Webinar",
+          "type": 5,
+          "start_time": "2024-01-01T14:00:00Z",
+          "duration": 90,
+          "timezone": "America/New_York",
+          "participant": {
+            "user_id": "user456",
+            "user_name": "Jane Smith",
+            "id": "participant456",
+            "email": "webinaruser@example.com",
+            "join_time": "2024-01-01T14:01:00Z"
+          }
+        }
+      }
+    },
+    "11_webinar_ended": {
+      "event": "webinar.ended",
+      "event_ts": 1704067800000,
+      "payload": {
+        "account_id": "test_account_123",
+        "object": {
+          "id": "987654321",
+          "uuid": "xyz789abc123",
+          "host_id": "host456",
+          "topic": "Test Webinar",
+          "type": 5,
+          "start_time": "2024-01-01T14:00:00Z",
+          "duration": 90,
+          "timezone": "America/New_York",
+          "end_time": "2024-01-01T15:30:00Z"
+        }
+      }
+    },
+    "12_url_validation": {
+      "event": "endpoint.url_validation",
+      "payload": {
+        "plainToken": "random_token_string_12345"
+      }
+    }
+  },
+  "notes": {
+    "usage": "Replace YOUR_PROJECT_ID in the URL with an actual MongoDB ObjectId",
+    "testing_idempotency": "Send the same payload multiple times to test duplicate detection. The deduplication ID will be logged in the console.",
+    "important_fields": [
+      "event - The event type (required)",
+      "event_ts - Timestamp in milliseconds (used for deduplication)",
+      "payload.object.id - Meeting/Webinar ID (used for deduplication)",
+      "payload.object.registrant.email - For registration events (used for deduplication)",
+      "payload.object.participant.email - For participant events (used for deduplication)"
+    ]
+  }
+}

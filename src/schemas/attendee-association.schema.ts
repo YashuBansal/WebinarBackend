@@ -24,6 +24,15 @@ export class AttendeeAssociation extends Document {
   @Prop({
     type: [String],
     default: [],
+    set: (fullNames: string[]) => {
+      if (!Array.isArray(fullNames)) {
+        return [];
+      }
+      // Filter out "undefined" strings, empty strings, and null/undefined values
+      return fullNames
+        .filter((name) => name != null && name !== 'undefined' && name.trim() !== '')
+        .map((name) => name.trim());
+    },
   })
   fullNames: string[]; //Full Names
 

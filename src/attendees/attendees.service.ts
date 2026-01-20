@@ -3509,14 +3509,14 @@ export class AttendeesService {
         firstName: firstName ?? undefined,
         lastName: lastName ?? undefined,
         phone: phone ?? undefined,
-        source,
-        isAttended: false,
-        timeInSession: 0,
       },
       $setOnInsert: {
         webinar: new Types.ObjectId(webinarId),
         adminId: new Types.ObjectId(adminId),
         email: normalizedEmail,
+        source,
+        isAttended: false,
+        timeInSession: 0,
       },
     };
 
@@ -3524,11 +3524,24 @@ export class AttendeesService {
       upsert: true,
     });
 
+    // Construct fullName, filtering out undefined/null values
+    const cleanFirstName = firstName && firstName !== 'undefined' ? firstName.trim() : '';
+    const cleanLastName = lastName && lastName !== 'undefined' ? lastName.trim() : '';
+    const fullName = [cleanFirstName, cleanLastName].filter(Boolean).join(' ');
+
+    await this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
+      fullName: fullName,
+      phone: phone,
+      adminId: new Types.ObjectId(adminId),
+      email: normalizedEmail,
+      tags: [],
+    });
+
     // Fetch attendee after upsert for logging
     const attendee = await this.attendeeModel.findOne(query).populate('webinar');
 
     // Create attendee log (best-effort) when attendee exists
-    if (attendee && adminId) {
+    if (attendee) {
       try {
         this.logger.log(`Creating attendee log for Zoom registration upsert: ${attendee.email} for webinar ${(attendee.webinar as any)?.webinarName}`);
         await this.attendeeLogService.createSingleAttendeeLog({
@@ -3536,7 +3549,7 @@ export class AttendeesService {
           action: AttendeeAction.REGISTERED,
           item: 'Zoom Registration',
           details: `<span>Saved Zoom registration for <strong>${attendee.email}</strong> in webinar <strong>${(attendee.webinar as any)?.webinarName}</strong></span>`,
-          adminId: new Types.ObjectId(adminId),
+          adminId: attendee.adminId,
         });
       } catch (logError) {
         console.warn(

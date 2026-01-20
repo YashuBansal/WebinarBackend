@@ -23,8 +23,11 @@ export class ZoomMeetingOccurrence {
 export class ZoomMeeting {
   _id: Types.ObjectId;
 
-  @Prop({ type: String, required: true, index: true })
+  @Prop({ type: String, required: true })
   id: string;
+
+  @Prop({ type: Types.ObjectId, required: true })
+  projectId: Types.ObjectId;
 
   @Prop({ type: String })
   topic: string;
@@ -57,3 +60,6 @@ export class ZoomMeeting {
 
 export type ZoomMeetingDocument = HydratedDocument<ZoomMeeting>;
 export const ZoomMeetingSchema = SchemaFactory.createForClass(ZoomMeeting);
+
+// Create compound index for id and projectId to ensure uniqueness per project
+ZoomMeetingSchema.index({ projectId: 1, id: 1 }, { unique: true });

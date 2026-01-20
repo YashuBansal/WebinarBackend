@@ -1257,9 +1257,20 @@ export class AssignmentService {
         webinarId,
       );
 
+    // Construct fullName, filtering out undefined/null values
+    const cleanFirstName =
+      attendee.firstName && attendee.firstName !== 'undefined'
+        ? attendee.firstName.trim()
+        : '';
+    const cleanLastName =
+      attendee.lastName && attendee.lastName !== 'undefined'
+        ? attendee.lastName.trim()
+        : '';
+    const fullName = [cleanFirstName, cleanLastName].filter(Boolean).join(' ');
+
     const updatedAssociation =
       await this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
-        fullName: attendee.firstName + ' ' + attendee.lastName,
+        fullName: fullName,
         phone: this.formatPhoneNumber(attendee.phone),
         adminId: new Types.ObjectId(`${adminId}`),
         email: attendee.email,

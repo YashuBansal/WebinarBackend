@@ -1,0 +1,87 @@
+DELETED ATTENDEES BACKUP
+================================================================================
+
+Backup Timestamp: 2026-01-09T05:52:15.477Z
+Script Version: 1.0.0
+Total Duplicates Found: 5
+Total Deleted: 3
+Total Kept: 2
+Duplicate Groups: 2
+
+================================================================================
+
+
+[1/3] DELETED ATTENDEE
+--------------------------------------------------------------------------------
+ID: 69608f92702ad2924c73c395
+Email: tiwariamit23@gmail.com
+First Name: Amit tiwari
+Last Name: :-)
+Phone: N/A
+Admin ID: 68679714227cb07f53e73601
+Webinar ID: 6867972d227cb07f53e73632
+Is Attended: true
+Status: N/A
+Assigned To: N/A
+Temp Assigned To: N/A
+Source: N/A
+Valid Call: false
+Is Pulledback: false
+Is Deleted: N/A
+Time In Session: 0
+Gender: N/A
+Location: N/A
+Created At: Fri Jul 04 2025 14:27:25 GMT+0530 (India Standard Time)
+Updated At: Fri Nov 21 2025 16:53:34 GMT+0530 (India Standard Time)
+
+
+[2/3] DELETED ATTENDEE
+--------------------------------------------------------------------------------
+ID: 69608fa4702ad2924c73c396
+Email: jon5@example.com
+First Name: ddf
+Last Name: Doe
+Phone: 9027078228
+Admin ID: 68679714227cb07f53e73601
+Webinar ID: 695643ad02ddff53ddd08d2f
+Is Attended: false
+Status: N/A
+Assigned To: N/A
+Temp Assigned To: N/A
+Source: api
+Valid Call: false
+Is Pulledback: false
+Is Deleted: N/A
+Time In Session: 0
+Gender: male
+Location: new york
+Created At: Thu Jan 08 2026 12:57:45 GMT+0530 (India Standard Time)
+Updated At: Thu Jan 08 2026 12:57:45 GMT+0530 (India Standard Time)
+
+
+[3/3] DELETED ATTENDEE
+--------------------------------------------------------------------------------
+ID: 696090ac702ad2924c73c397
+Email: jon5@example.com
+First Name: ddf
+Last Name: Doe
+Phone: 9027078228
+Admin ID: 68679714227cb07f53e73601
+Webinar ID: 695643ad02ddff53ddd08d2f
+Is Attended: false
+Status: N/A
+Assigned To: 689426ed888d407f9f8a1086
+Temp Assigned To: N/A
+Source: api
+Valid Call: false
+Is Pulledback: false
+Is Deleted: N/A
+Time In Session: 0
+Gender: male
+Location: new york
+Created At: Thu Jan 08 2026 12:57:45 GMT+0530 (India Standard Time)
+Updated At: Fri Jan 09 2026 11:21:36 GMT+0530 (India Standard Time)
+
+
+================================================================================
+END OF BACKUP - Total: 3 deleted attendees
