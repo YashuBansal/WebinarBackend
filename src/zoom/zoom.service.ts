@@ -3,7 +3,6 @@ import {
   forwardRef,
   Inject,
   Injectable,
-  Logger,
   NotAcceptableException,
   BadRequestException,
   OnModuleInit,
@@ -33,10 +32,10 @@ import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { ZoomMeetingService } from './zoom-meeting/zoom-meeting.service';
 import { ZoomMeetingOccurrence } from './zoom-meeting/zoom-meeting.schema';
 import axios from 'axios';
+import { BaseLoggerService } from 'src/logger/base-logger.service';
 
 @Injectable()
-export class ZoomService implements OnModuleInit {
-  private readonly logger = new Logger(ZoomService.name);
+export class ZoomService extends BaseLoggerService implements OnModuleInit {
 
   // Simple in-memory rate limiter (consider using Redis for production)
   private readonly rateLimitMap = new Map<
@@ -64,7 +63,9 @@ export class ZoomService implements OnModuleInit {
     private readonly whatsAppGateway: WhatsAppGateway,
     @Inject(forwardRef(() => ZoomMeetingService))
     private readonly zoomMeetingService: ZoomMeetingService,
-  ) {}
+  ) {
+    super();
+  }
 
   onModuleInit() {
     // Set the processing worker for the queue

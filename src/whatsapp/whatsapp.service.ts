@@ -51,10 +51,10 @@ import {
 } from './whatsapp.queue.module';
 import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-template.service';
 import { WabaTemplateDocument } from 'src/whatsapp-embed/waba-template/waba-template.schema';
+import { BaseLoggerService } from 'src/logger/base-logger.service';
 
 @Injectable()
-export class WhatsappService {
-  private readonly logger = new Logger(WhatsappService.name);
+export class WhatsappService extends BaseLoggerService {
   private readonly webhookVerifyToken: string;
   private readonly axiosInstance: AxiosInstance;
 
@@ -76,6 +76,7 @@ export class WhatsappService {
     @Inject(forwardRef(() => WabaTemplateService))
     private readonly wabaTemplateService: WabaTemplateService,
   ) {
+    super();
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
     );
