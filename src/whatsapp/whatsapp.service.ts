@@ -43,12 +43,11 @@ import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-t
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { CampaignStatus } from 'src/schemas/whatsapp-embed/campaign.schema';
+import { BaseLoggerService } from 'src/logger/base-logger.service';
 
 @Injectable()
-export class WhatsappService {
-  private readonly logger = new Logger(WhatsappService.name);
+export class WhatsappService extends BaseLoggerService {
   private readonly webhookVerifyToken: string;
-  private readonly ENCRYPTION_KEY: string;
   private readonly axiosInstance: AxiosInstance;
 
   constructor(
@@ -59,11 +58,11 @@ export class WhatsappService {
     @InjectModel(MediaAsset.name)
     private readonly mediaAssetModel: Model<MediaAssetDocument>,
     private readonly contactsService: ContactsService,
-    private readonly cloudinaryService: CloudinaryService,
     private readonly wabaMessageService: WabaMessageService,
     private readonly fileStorageService: FileStorageService,
     private readonly whatsAppGateway: WhatsAppGateway,
   ) {
+    super();
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
     );
@@ -75,14 +74,10 @@ export class WhatsappService {
       );
     }
 
-    this.ENCRYPTION_KEY = key;
+    // setInterval(() => {
+    //   this.logger.log('WhatsappService heartbeat - service is running', { timestamp: new Date().toISOString() });
+    // }, 10_000);
 
-    // Configure Cloudinary
-    cloudinary.config({
-      cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-      api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
-      api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
-    });
 
     // Initialize robust axios instance with IPv4 agent and retry logic
     const httpAgent = new http.Agent({ family: 4 });
