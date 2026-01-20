@@ -164,6 +164,14 @@ export class WhatsappService extends BaseLoggerService {
     try {
       this.logger.log('Processing webhook payload for WhatsApp messages', JSON.stringify(payload));
 
+      // axios.post('http://localhost:3002/api/v1/whatsapp/webhook', payload)
+      //   .then((response) => {
+      //     // this.logger.log('Webhook payload processed successfully', response.data);
+      //   })
+      //   .catch((error) => {
+      //     this.logger.error('Error processing webhook payload', error);
+      //   });
+
       // Validate payload exists and is an object
       if (!payload) {
         this.logger.warn('Received null or undefined payload, skipping processing');
