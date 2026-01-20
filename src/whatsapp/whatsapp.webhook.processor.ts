@@ -35,7 +35,7 @@ export class WhatsappWebhookProcessor implements OnModuleInit, OnModuleDestroy {
       async (job) => {
         const payload = job.data;
         // Process the payload using the service logic
-        return this.whatsappService.processWebhookPayloadLogic(payload);
+        return this.whatsappService.processWebhookPayload(payload);
       },
       {
         connection: workerConnection,
