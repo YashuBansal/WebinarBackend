@@ -162,7 +162,7 @@ export class WhatsappService extends BaseLoggerService {
     // Wrap entire processing in try-catch to ensure no unhandled errors
     // This method is called asynchronously from the controller, so errors must be caught
     try {
-      this.logger.log('Processing webhook payload for WhatsApp messages', JSON.stringify(payload));
+      this.logger.log('Processing webhook payload for WhatsApp messages', payload);
 
       // axios.post('http://localhost:3002/api/v1/whatsapp/webhook', payload)
       //   .then((response) => {

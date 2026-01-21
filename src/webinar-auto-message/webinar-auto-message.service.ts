@@ -188,7 +188,7 @@ export class WebinarAutoMessageService {
 
     const res = await this.whatsappService.sendTemplateMessagev2({
       adminId: adminId,
-      messageType: WabaMessageType.INDIVIDUAL,
+      messageType: WabaMessageType.AUTO_MESSAGE,
       sendTemplateDto: {
         projectId: dto.projectId,
         recipients: [
