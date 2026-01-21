@@ -3400,13 +3400,28 @@ export class WhatsappService extends BaseLoggerService {
 
       // Create WABA message record with proper error handling
       if (messageId) {
+        this.logger.log('Attempting to create WABA message record', {
+          messageId,
+          phoneNumber: normalizedRecipientPhoneNumber,
+          projectId,
+          adminId,
+          templateName,
+          messageType: payload.messageType,
+        });
         try {
-          // Exclude sensitive data from payload
-          const { permanentAccessToken, ...safePayload } = payload;
           await this.wabaMessageService.create({
-            ...safePayload,
+            projectId,
+            adminId,
             phoneNumber: normalizedRecipientPhoneNumber,
             wabaMessageId: messageId,
+            messageType: payload.messageType,
+            templateName,
+            campaignId: payload.campaignId,
+            contactId: payload.contactId,
+            apiCampaignId: payload.apiCampaignId,
+            attendeeId: payload.attendeeId,
+            meetingId: payload.meetingId,
+            occurrenceId: payload.occurrenceId,
             templateLanguage: language || templateStructure.language || 'en_US',
             messageFormat: 'template',
             templateComponents: templateStructure.components || [],
@@ -3415,31 +3430,112 @@ export class WhatsappService extends BaseLoggerService {
             ),
             direction: 'outbound',
           });
+          this.logger.log('WABA message record created successfully', {
+            messageId,
+            phoneNumber: normalizedRecipientPhoneNumber,
+            projectId,
+            adminId,
+            templateName,
+            messageType: payload.messageType,
+          });
         } catch (error) {
-          this.logger.error('Failed to create WABA message record:', error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorStack = error instanceof Error ? error.stack : undefined;
+          this.logger.error('Failed to create WABA message record', {
+            error: errorMessage,
+            stack: errorStack,
+            errorType: error?.constructor?.name || typeof error,
+            messageId,
+            phoneNumber: normalizedRecipientPhoneNumber,
+            templateName,
+            projectId,
+            adminId,
+            messageType: payload.messageType,
+            campaignId: payload.campaignId,
+            contactId: payload.contactId,
+            attendeeId: payload.attendeeId,
+            meetingId: payload.meetingId,
+            occurrenceId: payload.occurrenceId,
+            apiCampaignId: payload.apiCampaignId,
+          });
           // Don't throw error here as the message was sent successfully
           // This is a non-critical operation
         }
+      } else {
+        this.logger.warn('Skipping WABA message record creation: messageId is missing', {
+          phoneNumber: normalizedRecipientPhoneNumber,
+          projectId,
+          adminId,
+          templateName,
+        });
       }
 
       return { success: true, data: response.data, messageId };
     } catch (error) {
       // Handle error message creation with proper error handling
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      this.logger.error('Failed to send template message to Meta API', {
+        error: errorMessage,
+        stack: errorStack,
+        errorType: error?.constructor?.name || typeof error,
+        phoneNumber: normalizedRecipientPhoneNumber,
+        projectId,
+        adminId,
+        templateName,
+        messageType: payload.messageType,
+        campaignId: payload.campaignId,
+        contactId: payload.contactId,
+        attendeeId: payload.attendeeId,
+        meetingId: payload.meetingId,
+        occurrenceId: payload.occurrenceId,
+        apiCampaignId: payload.apiCampaignId,
+      });
+
       try {
-        // Exclude sensitive data from payload
-        const { permanentAccessToken, ...safePayload } = payload;
+        this.logger.log('Attempting to create error message record', {
+          phoneNumber: normalizedRecipientPhoneNumber,
+          projectId,
+          adminId,
+          templateName,
+        });
         await this.createErrorMessage({
-          ...safePayload,
+          projectId,
+          adminId,
           normalizedRecipientPhoneNumber,
-          messageFormat: 'template',
+          contactId: payload.contactId,
+          templateName,
+          error,
+          language: language || 'en_US',
           templateStructure: templateStructure.components || [],
-          error: error,
+          campaignId: payload.campaignId,
+          attendeeId: payload.attendeeId,
+          meetingId: payload.meetingId,
+          occurrenceId: payload.occurrenceId,
+          apiCampaignId: payload.apiCampaignId,
+          messageType: payload.messageType,
+          messageFormat: 'template',
+        });
+        this.logger.log('Error message record created successfully', {
+          phoneNumber: normalizedRecipientPhoneNumber,
+          projectId,
+          adminId,
+          templateName,
         });
       } catch (errorLogError) {
-        this.logger.error(
-          'Failed to create error message record:',
-          errorLogError,
-        );
+        const logError = errorLogError instanceof Error ? errorLogError.message : String(errorLogError);
+        const logErrorStack = errorLogError instanceof Error ? errorLogError.stack : undefined;
+        this.logger.error('Failed to create error message record', {
+          error: logError,
+          stack: logErrorStack,
+          errorType: errorLogError?.constructor?.name || typeof errorLogError,
+          phoneNumber: normalizedRecipientPhoneNumber,
+          templateName,
+          projectId,
+          adminId,
+          originalError: errorMessage,
+        });
         // Continue with error handling even if logging fails
       }
 
