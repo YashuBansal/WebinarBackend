@@ -3241,6 +3241,16 @@ export class WhatsappService extends BaseLoggerService {
   async optimizedSendSingleTemplateMessage(
     payload: ISendSingleTemplateMessagePayload,
   ): Promise<any> {
+    // Entry log to confirm method is being called
+    this.logger.log('optimizedSendSingleTemplateMessage called', {
+      phoneNumber: payload?.formattedPhoneData?.phoneNumber || 'unknown',
+      templateName: payload?.templateName || 'unknown',
+      projectId: payload?.projectId || 'unknown',
+      adminId: payload?.adminId || 'unknown',
+      messageType: payload?.messageType,
+      fromPhoneNumberId: payload?.fromPhoneNumberId,
+    });
+
     const {
       projectId,
       formattedPhoneData,

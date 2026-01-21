@@ -60,8 +60,59 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
       WHATSAPP_TEMPLATE_QUEUE_NAME,
       async (job: Job<ISendSingleTemplateMessagePayload>) => {
         const payload = job.data;
-        // payload is now typed as ISendSingleTemplateMessagePayload
-        return this.whatsappService.optimizedSendSingleTemplateMessage(payload);
+        const phoneNumber = payload?.formattedPhoneData?.phoneNumber || 'unknown';
+        const templateName = payload?.templateName || 'unknown';
+        const projectId = payload?.projectId || 'unknown';
+        const adminId = payload?.adminId || 'unknown';
+        
+        // Log job start with key details
+        this.logger.log('Processing queue job - calling optimizedSendSingleTemplateMessage', {
+          jobId: job.id,
+          jobName: job.name,
+          phoneNumber,
+          templateName,
+          projectId,
+          adminId,
+          messageType: payload?.messageType,
+          attempt: job.attemptsMade + 1,
+          maxAttempts: job.opts?.attempts || 1,
+        });
+
+        try {
+          // Call the method and capture result
+          const result = await this.whatsappService.optimizedSendSingleTemplateMessage(payload);
+          
+          // Log successful completion
+          this.logger.log('Queue job completed successfully', {
+            jobId: job.id,
+            phoneNumber,
+            templateName,
+            projectId,
+            success: result?.success,
+            messageId: result?.messageId,
+          });
+          
+          return result;
+        } catch (error) {
+          // Log error with full context
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorStack = error instanceof Error ? error.stack : undefined;
+          
+          this.logger.error('Queue job failed with error', {
+            jobId: job.id,
+            phoneNumber,
+            templateName,
+            projectId,
+            adminId,
+            error: errorMessage,
+            stack: errorStack,
+            errorType: error?.constructor?.name || typeof error,
+            attempt: job.attemptsMade + 1,
+          });
+          
+          // Re-throw to let BullMQ handle retries
+          throw error;
+        }
       },
       {
         connection: workerConnection,
