@@ -3242,14 +3242,17 @@ export class WhatsappService extends BaseLoggerService {
     payload: ISendSingleTemplateMessagePayload,
   ): Promise<any> {
     // Entry log to confirm method is being called
-    this.logger.log('optimizedSendSingleTemplateMessage called', {
+    const entryLogData = {
       phoneNumber: payload?.formattedPhoneData?.phoneNumber || 'unknown',
       templateName: payload?.templateName || 'unknown',
       projectId: payload?.projectId || 'unknown',
       adminId: payload?.adminId || 'unknown',
       messageType: payload?.messageType,
       fromPhoneNumberId: payload?.fromPhoneNumberId,
-    });
+    };
+    this.logger.log('optimizedSendSingleTemplateMessage called', entryLogData);
+    // Console fallback for visibility
+    console.log(`[WHATSAPP] optimizedSendSingleTemplateMessage called`, entryLogData);
 
     const {
       projectId,

@@ -66,7 +66,7 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
         const adminId = payload?.adminId || 'unknown';
         
         // Log job start with key details
-        this.logger.log('Processing queue job - calling optimizedSendSingleTemplateMessage', {
+        const logData = {
           jobId: job.id,
           jobName: job.name,
           phoneNumber,
@@ -76,21 +76,27 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
           messageType: payload?.messageType,
           attempt: job.attemptsMade + 1,
           maxAttempts: job.opts?.attempts || 1,
-        });
+        };
+        this.logger.log('Processing queue job - calling optimizedSendSingleTemplateMessage', logData);
+        // Console fallback for visibility
+        console.log(`[QUEUE] Processing job ${job.id} - ${phoneNumber} - ${templateName}`, logData);
 
         try {
           // Call the method and capture result
           const result = await this.whatsappService.optimizedSendSingleTemplateMessage(payload);
           
           // Log successful completion
-          this.logger.log('Queue job completed successfully', {
+          const successLogData = {
             jobId: job.id,
             phoneNumber,
             templateName,
             projectId,
             success: result?.success,
             messageId: result?.messageId,
-          });
+          };
+          this.logger.log('Queue job completed successfully', successLogData);
+          // Console fallback for visibility
+          console.log(`[QUEUE] Job ${job.id} completed successfully`, successLogData);
           
           return result;
         } catch (error) {
@@ -98,7 +104,7 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
           const errorMessage = error instanceof Error ? error.message : String(error);
           const errorStack = error instanceof Error ? error.stack : undefined;
           
-          this.logger.error('Queue job failed with error', {
+          const errorLogData = {
             jobId: job.id,
             phoneNumber,
             templateName,
@@ -108,7 +114,10 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
             stack: errorStack,
             errorType: error?.constructor?.name || typeof error,
             attempt: job.attemptsMade + 1,
-          });
+          };
+          this.logger.error('Queue job failed with error', errorLogData);
+          // Console fallback for visibility
+          console.error(`[QUEUE] Job ${job.id} failed`, errorLogData);
           
           // Re-throw to let BullMQ handle retries
           throw error;
