@@ -1,7 +1,6 @@
 import {
   Inject,
   Injectable,
-  Logger,
   OnModuleInit,
   OnModuleDestroy,
 } from '@nestjs/common';
@@ -11,11 +10,11 @@ import { WhatsappService } from './whatsapp.service';
 import { WHATSAPP_TEMPLATE_QUEUE_NAME } from './whatsapp.queue.module';
 import { REDIS_CONNECTION } from 'src/redis/redis.module';
 import { ISendSingleTemplateMessagePayload } from './dto/msg.dto'; // Import the DTO interface
+import { BaseLoggerService } from 'src/logger/base-logger.service';
 
 @Injectable()
-export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
-  // Logger instance for tracking processor activities and errors
-  private readonly logger = new Logger(WhatsappQueueProcessor.name);
+export class WhatsappQueueProcessor extends BaseLoggerService implements OnModuleInit, OnModuleDestroy {
+  // Logger is inherited from BaseLoggerService (Winston/OTEL enabled)
   
   // BullMQ Worker instance handling job processing
   // Enforce the payload type on the Worker
@@ -32,7 +31,9 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
     private readonly connection: any,
     private readonly configService: ConfigService,
     private readonly whatsappService: WhatsappService,
-  ) {}
+  ) {
+    super(); // Initialize BaseLoggerService for Winston/OTEL logging
+  }
 
   /**
    * Lifecycle hook called when the module is initialized.
