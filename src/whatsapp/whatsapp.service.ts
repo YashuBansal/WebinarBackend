@@ -45,6 +45,8 @@ import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.sc
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { CampaignStatus } from 'src/whatsapp-embed/campaign/campaign.schema';
 import {
+  WHATSAPP_TEMPLATE_QUEUE,
+  WHATSAPP_TEMPLATE_QUEUE_NAME,
   WHATSAPP_WEBHOOK_QUEUE,
 } from './whatsapp.queue.module';
 import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-template.service';
@@ -55,9 +57,6 @@ import { BaseLoggerService } from 'src/logger/base-logger.service';
 export class WhatsappService extends BaseLoggerService {
   private readonly webhookVerifyToken: string;
   private readonly axiosInstance: AxiosInstance;
-  
-  // Per-WABA rate limiter: tracks request timestamps per fromPhoneNumberId
-  private readonly rateLimiter: Map<string, number[]> = new Map();
 
   constructor(
     private readonly configService: ConfigService,
@@ -70,6 +69,8 @@ export class WhatsappService extends BaseLoggerService {
     private readonly wabaMessageService: WabaMessageService,
     private readonly fileStorageService: FileStorageService,
     private readonly whatsAppGateway: WhatsAppGateway,
+    @Inject(WHATSAPP_TEMPLATE_QUEUE)
+    private readonly whatsappTemplateQueue: Queue,
     @Inject(WHATSAPP_WEBHOOK_QUEUE)
     private readonly whatsappWebhookQueue: Queue,
     @Inject(forwardRef(() => WabaTemplateService))
@@ -3154,73 +3155,21 @@ export class WhatsappService extends BaseLoggerService {
   }
 
   /**
-   * Per-WABA rate limiter to enforce rate limits before sending messages.
-   * Tracks request timestamps per fromPhoneNumberId and delays if rate limit is exceeded.
-   * 
-   * @param fromPhoneNumberId - The WABA phone number ID
-   * @returns Promise that resolves when rate limit allows sending
-   */
-  private async waitForRateLimit(fromPhoneNumberId: string): Promise<void> {
-    const rateLimitPerSecond =
-      this.configService.get<number>('WHATSAPP_QUEUE_RATE_PER_WABA') || 20;
-    const now = Date.now();
-    const windowMs = 1000; // 1 second window
-
-    // Get or create timestamp array for this WABA
-    if (!this.rateLimiter.has(fromPhoneNumberId)) {
-      this.rateLimiter.set(fromPhoneNumberId, []);
-    }
-    const timestamps = this.rateLimiter.get(fromPhoneNumberId)!;
-
-    // Remove timestamps outside the current window
-    const cutoff = now - windowMs;
-    while (timestamps.length > 0 && timestamps[0] < cutoff) {
-      timestamps.shift();
-    }
-
-    // If we've exceeded the rate limit, wait until we can send
-    if (timestamps.length >= rateLimitPerSecond) {
-      const oldestTimestamp = timestamps[0];
-      const waitTime = windowMs - (now - oldestTimestamp) + 10; // Add 10ms buffer
-      if (waitTime > 0) {
-        this.logger.debug(
-          `Rate limit reached for WABA ${fromPhoneNumberId}, waiting ${waitTime}ms`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-        // Recursively check again after waiting
-        return this.waitForRateLimit(fromPhoneNumberId);
-      }
-    }
-
-    // Add current timestamp
-    timestamps.push(Date.now());
-
-    // Clean up old entries periodically (every 100 requests)
-    if (timestamps.length % 100 === 0) {
-      const currentTime = Date.now();
-      const entries = Array.from(this.rateLimiter.entries());
-      for (const [key, ts] of entries) {
-        // Remove entries older than 5 seconds
-        const filtered = ts.filter((t) => currentTime - t < 5000);
-        if (filtered.length === 0) {
-          this.rateLimiter.delete(key);
-        } else {
-          this.rateLimiter.set(key, filtered);
-        }
-      }
-    }
-  }
-
-  /**
-   * @deprecated This method is deprecated. Message sending is now synchronous.
-   * Use `optimizedSendSingleTemplateMessage` directly instead.
-   * 
    * Enqueues a template send job into the Redis-backed BullMQ queue.
-   * This method is kept for backward compatibility but is no longer used.
+   *
+   * Features:
+   * - Deduplication via custom Job ID (prevent duplicates in 5m window)
+   * - Configurable retries (default 3) and exponential backoff
+   * - Job retention settings (keep completed for 1h, keep failed for inspection)
+   * - Rate limiting is enforced by the worker consuming this queue
    *
    * @param payload - The full payload required to send the message
    * @param options - Optional overrides for jobId or retention
    * @returns Object containing success status, jobId, and queue name
+   */
+  /**
+   * Enqueue a template send job with deduplication and sensible defaults.
+   * This handles the "Producer" role in the queue architecture.
    */
   async enqueueTemplateSendJob(
     payload: ISendSingleTemplateMessagePayload,
@@ -3229,36 +3178,48 @@ export class WhatsappService extends BaseLoggerService {
       removeOnCompleteAgeSeconds?: number;
     },
   ) {
-    this.logger.warn(
-      'enqueueTemplateSendJob is deprecated. Message sending is now synchronous. ' +
-      'Consider using optimizedSendSingleTemplateMessage directly.',
-      {
-        phoneNumber: payload?.formattedPhoneData?.phoneNumber,
-        templateName: payload?.templateName,
-      },
-    );
+    // 1. Determine Job ID
+    // Use provided ID or generate a time-bucketed idempotent ID (default)
+    // This prevents duplicate sends within the bucket window (e.g., 5 mins)
+    const jobId = options?.jobId || this.buildTemplateJobId(payload);
 
-    // For backward compatibility, send synchronously instead of enqueueing
-    try {
-      await this.waitForRateLimit(payload.fromPhoneNumberId);
-      const result = await this.optimizedSendSingleTemplateMessage(payload);
-      
-      // Return a compatible response structure
-      return {
-        success: result?.success || false,
-        jobId: `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        queue: 'synchronous',
-        result,
-      };
-    } catch (error) {
-      this.logger.error('Error in deprecated enqueueTemplateSendJob', error);
-      return {
-        success: false,
-        jobId: null,
-        queue: 'synchronous',
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
+    // 2. Configure Retention
+    // How long to keep completed jobs in Redis (default 1 hour)
+    // Failed jobs are kept indefinitely (removeOnFail: false) for manual inspection
+    const removeOnCompleteAgeSeconds =
+      options?.removeOnCompleteAgeSeconds || 3600;
+
+    // 3. Configure Backoff Strategy
+    // If the job fails (e.g., Rate Limit, Network Error), wait before retrying.
+    // Exponential: 2s -> 4s -> 8s ...
+    const backoff = {
+      type: 'exponential',
+      delay:
+        this.configService.get<number>('WHATSAPP_QUEUE_BACKOFF_MS') || 2000,
+    } as const;
+
+    // 4. Configure Retry Attempts
+    // Maximum number of times to try processing this job before failing permanently
+    const attempts =
+      this.configService.get<number>('WHATSAPP_QUEUE_ATTEMPTS') || 1;
+
+    // 5. Add to BullMQ Queue
+    // Pushes the job to Redis. The 'send-template' is the job name.
+    const job = await this.whatsappTemplateQueue.add('send-template', payload, {
+      jobId, // Idempotency key
+      attempts, // Max retries
+      backoff, // Retry delay strategy
+      removeOnComplete: { age: removeOnCompleteAgeSeconds }, // Auto-cleanup success
+      removeOnFail: false, // Keep failures for debugging
+    });
+
+    // 6. Return Job Details
+    // Return success immediately (async). The status can be tracked via jobId.
+    return {
+      success: true,
+      jobId: job.id,
+      queue: WHATSAPP_TEMPLATE_QUEUE_NAME,
+    };
   }
 
   /**
@@ -3677,16 +3638,16 @@ export class WhatsappService extends BaseLoggerService {
   }
 
   /**
-   * High-level method to prepare and send a template message synchronously.
+   * High-level method to prepare and enqueue a template message.
    *
    * Responsibilities:
    * 1. Fetches Project/WABA details to get credentials (token, phone ID).
    * 2. Resolves the Template from DB to validate structure and headers.
    * 3. Constructs the final `templateStructure` with body params and media headers.
-   * 4. Sends messages directly via `optimizedSendSingleTemplateMessage` with per-WABA rate limiting.
+   * 4. Delegates actual sending to the Queue via `enqueueTemplateSendJob`.
    *
    * @param payload - High level inputs: recipient, template name, variables, media
-   * @returns Send results { success, message, stats: { sent, failed, duplicates, invalid, errors } }
+   * @returns Queue job details { success, jobId, queue }
    */
   async sendTemplateMessagev2(payload: {
     adminId: string;
@@ -3866,14 +3827,14 @@ export class WhatsappService extends BaseLoggerService {
     const uniquePhoneNumbers = new Set<string>();
     const results = {
       total: recipients.length,
-      sent: 0,
+      enqueued: 0,
       failed: 0,
       duplicates: 0,
       invalid: 0,
       errors: [] as string[],
     };
 
-    // Process recipients in chunks to optimize sending speed while managing memory/load
+    // Process recipients in chunks to optimize enqueueing speed while managing memory/load
     const CHUNK_SIZE = 50;
     for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
       const chunk = recipients.slice(i, i + CHUNK_SIZE);
@@ -3903,11 +3864,7 @@ export class WhatsappService extends BaseLoggerService {
             const templateStructure =
               buildTemplateStructureForRecipient(bodyVariables);
 
-            // Apply rate limiting before sending
-            await this.waitForRateLimit(fromPhoneNumberId);
-
-            // Send message directly (synchronous)
-            const sendResult = await this.optimizedSendSingleTemplateMessage({
+            await this.enqueueTemplateSendJob({
               adminId,
               projectId,
               formattedPhoneData: formatted,
@@ -3924,32 +3881,15 @@ export class WhatsappService extends BaseLoggerService {
               attendeeId,
               apiCampaignId,
             });
-
-            if (sendResult?.success) {
-              results.sent++;
-            } else {
-              results.failed++;
-              const errorMsg = sendResult?.message || 'Unknown error';
-              results.errors.push(
-                `${recipientPhoneNumber}: Send failed - ${errorMsg}`,
-              );
-              this.logger.error(
-                `Failed to send message for recipient ${recipientPhoneNumber}`,
-                {
-                  error: errorMsg,
-                  code: sendResult?.code,
-                  details: sendResult?.details,
-                },
-              );
-            }
+            results.enqueued++;
           } catch (error) {
             results.failed++;
             const msg =
               error instanceof Error ? error.message : String(error || '');
             results.errors.push(
-              `${recipient.recipientPhoneNumber}: Send failed - ${msg}`,
+              `${recipient.recipientPhoneNumber}: Enqueue failed - ${msg}`,
             );
-            this.logger.error(`Failed to send message for recipient`, error);
+            this.logger.error(`Failed to enqueue message for recipient`, error);
           }
         }),
       );
@@ -3959,7 +3899,7 @@ export class WhatsappService extends BaseLoggerService {
 
     return {
       success: true,
-      message: `Processing completed. Sent: ${results.sent}, Duplicates: ${results.duplicates}, Invalid: ${results.invalid}, Failed: ${results.failed}`,
+      message: `Processing completed. Enqueued: ${results.enqueued}, Duplicates: ${results.duplicates}, Invalid: ${results.invalid}, Failed: ${results.failed}`,
       stats: results,
     };
   }

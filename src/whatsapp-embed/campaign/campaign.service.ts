@@ -152,48 +152,6 @@ export class CampaignService {
     };
   }
 
-  /**
-   * Generate sample message for preview
-   */
-  // private generateSampleMessage(
-  //   templateBody: string,
-  //   variableMappings: any[],
-  //   sampleContact: any,
-  // ): string {
-  //   if (!variableMappings || variableMappings.length === 0) {
-  //     return templateBody;
-  //   }
-
-  //   let message = templateBody;
-  //   variableMappings.forEach((mapping) => {
-  //     const placeholder = mapping.variable;
-  //     let value = '';
-
-  //     if (mapping.isDynamic) {
-  //       // Use contact field value with fallback
-  //       const contactField = mapping.contactField.replace('$', ''); // Remove $ prefix
-  //       const contactValue = sampleContact[contactField];
-
-  //       // Use contact value if available, otherwise use fallback value
-  //       if (contactValue && contactValue.trim() !== '') {
-  //         value = contactValue;
-  //       } else {
-  //         value = mapping.fallbackValue || placeholder;
-  //       }
-  //     } else {
-  //       // Use static value
-  //       value = mapping.staticValue || placeholder;
-  //     }
-
-  //     message = message.replace(
-  //       new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'),
-  //       value,
-  //     );
-  //   });
-
-  //   return message;
-  // }
-
   async findAll(
     adminId: string,
     projectId?: string,
@@ -681,39 +639,6 @@ export class CampaignService {
       type: 'header',
       parameters: [headerParameter],
     };
-  }
-
-  /**
-   * Process webhook payload for message status updates
-   * Similar to WhatsApp service's processWebhookPayload method
-   */
-  async processWebhookPayload(payload: any): Promise<void> {
-    this.logger.log('Processing webhook payload for campaign messages');
-
-    try {
-      // Process status updates
-      if (payload.entry?.[0]?.changes?.[0]?.value?.statuses) {
-        const statuses = payload.entry[0].changes[0].value.statuses;
-
-        for (const status of statuses) {
-          await this.updateMessageStatus(
-            status.id,
-            status.status,
-            status.timestamp,
-            status.errors?.[0]?.message,
-          );
-        }
-      }
-
-      // Process incoming messages (if needed)
-      if (payload.entry?.[0]?.changes?.[0]?.value?.messages) {
-        const messages = payload.entry[0].changes[0].value.messages;
-        this.logger.log(`Received ${messages.length} incoming messages`);
-        // Handle incoming messages if needed
-      }
-    } catch (error) {
-      this.logger.error('Error processing webhook payload', error);
-    }
   }
 
   /**
