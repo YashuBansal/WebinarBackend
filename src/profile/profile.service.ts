@@ -12,7 +12,8 @@ import axios from 'axios';
 import * as http from 'http';
 import axiosRetry from 'axios-retry';
 import { ProjectsService } from 'src/projects/projects.service';
-import { Types } from 'mongoose';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 import {
   UpdateBusinessProfileDto,
   BusinessProfileResponseDto,
@@ -20,6 +21,7 @@ import {
   DisplayNameStatus,
 } from './dto/profile.dto';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
+import { Profile, ProfileDocument } from './profile.schema';
 
 @Injectable()
 export class ProfileService {
@@ -30,6 +32,8 @@ export class ProfileService {
     private readonly configService: ConfigService,
     private readonly projectService: ProjectsService,
     private readonly whatsappService: WhatsappService,
+    @InjectModel(Profile.name)
+    private readonly profileModel: Model<ProfileDocument>,
   ) {
     // Initialize robust axios instance with IPv4 agent and retry logic
     const httpAgent = new http.Agent({ family: 4 });
@@ -50,6 +54,162 @@ export class ProfileService {
     });
   }
 
+  private async fetchProfileFromMeta(account: any): Promise<BusinessProfileResponseDto> {
+    const { permanentAccessToken, phoneNumberId } = account;
+    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/whatsapp_business_profile`;
+
+    const params = {
+      fields: 'about,address,description,email,profile_picture_url,websites,vertical',
+      access_token: permanentAccessToken,
+    };
+
+    this.logger.log(
+      `Fetching business profile for phone number ${phoneNumberId}`,
+    );
+
+    const response = await this.axiosInstance.get(url, {
+      params,
+      timeout: 5000,
+    });
+
+    this.logger.log(
+      `Successfully fetched business profile for phone number ${phoneNumberId}`,
+    );
+
+    return response.data?.data?.[0] || {};
+  }
+
+  private async upsertProfileCache(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    profile: BusinessProfileResponseDto,
+  ) {
+    const now = new Date();
+    const update: Partial<ProfileDocument> = {
+      about: profile.about,
+      address: profile.address,
+      description: profile.description,
+      email: profile.email,
+      websites: Array.isArray(profile.websites) ? profile.websites : [],
+      vertical: profile.vertical,
+      profile_picture_url: (profile as any).profile_picture_url,
+      last_synced_at: now,
+      raw: profile,
+    };
+
+    await this.profileModel.updateOne(
+      { adminId, projectId },
+      {
+        $set: {
+          adminId,
+          projectId,
+          ...update,
+        },
+      },
+      { upsert: true },
+    );
+
+    return this.profileModel.findOne({ adminId, projectId }).lean();
+  }
+
+  async syncBusinessProfile(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+  ): Promise<{ data: BusinessProfileResponseDto | null }> {
+    const account = await this.projectService.findOne(adminId, projectId);
+    if (!account) {
+      throw new UnauthorizedException(
+        'You do not have permission to access this project.',
+      );
+    }
+
+    if (!account.permanentAccessToken || !account.phoneNumberId) {
+      throw new NotFoundException(
+        'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
+      );
+    }
+
+    try {
+      const profileFromMeta = await this.fetchProfileFromMeta(account);
+      const cached = await this.upsertProfileCache(adminId, projectId, profileFromMeta);
+
+      // Also sync display name status into cache
+      try {
+        const { permanentAccessToken, phoneNumberId } = account;
+        const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+        const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}`;
+
+        const params = {
+          fields:
+            'name_status,display_phone_number, verified_name, quality_rating, throughput, messaging_limit_tier',
+          access_token: permanentAccessToken,
+        };
+
+        const response = await this.axiosInstance.get(url, {
+          params,
+          timeout: 15000,
+        });
+
+        const displayNameStatus = this.mapNameStatus(response.data?.name_status || 'UNKNOWN');
+        const displayPhoneNumber = response.data.display_phone_number || '';
+        const verifiedName = response.data.verified_name || '';
+        const qualityRating = response.data.quality_rating || '';
+        const throughput = response.data?.throughput?.level || 'UNKNOWN';
+
+        const now = new Date();
+        await this.profileModel.updateOne(
+          { adminId, projectId },
+          {
+            $set: {
+              adminId,
+              projectId,
+              display_name_status: displayNameStatus,
+              display_phone_number: displayPhoneNumber,
+              verified_name: verifiedName,
+              quality_rating: qualityRating,
+              throughput,
+              display_name_last_synced_at: now,
+            },
+          },
+          { upsert: true },
+        );
+      } catch (err) {
+        const axiosError = err as AxiosError;
+        this.logger.error(
+          `Failed to sync display name status for project ${projectId}`,
+          {
+            status: axiosError.response?.status,
+            data: axiosError.response?.data,
+            message: axiosError.message,
+          },
+        );
+        // Do not fail the whole profile sync if display name sync fails
+      }
+
+      return { data: (cached as any) ?? null };
+    } catch (error) {
+      this.logger.error(
+        `Failed to sync business profile for project ${projectId}`,
+        (error as any)?.message || error,
+      );
+      throw error;
+    }
+  }
+
+  private mapNameStatus(status: string): DisplayNameStatus {
+    switch (status) {
+      case 'APPROVED':
+        return DisplayNameStatus.APPROVED;
+      case 'PENDING_REVIEW':
+        return DisplayNameStatus.PENDING;
+      case 'DECLINED':
+        return DisplayNameStatus.REJECTED;
+      default:
+        return DisplayNameStatus.UNKNOWN;
+    }
+  }
+
   /**
    * Get business profile information for a specific project
    */
@@ -64,67 +224,23 @@ export class ProfileService {
       );
     }
 
-    // Check if WhatsApp credentials are configured
-    if (!account.permanentAccessToken || !account.phoneNumberId) {
-      throw new NotFoundException(
-        'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
-      );
+    const cached = await this.profileModel
+      .findOne({ adminId, projectId })
+      .lean<BusinessProfileResponseDto & { profile_picture_url?: string }>();
+
+    if (cached) {
+      return {
+        about: cached.about,
+        address: cached.address,
+        description: cached.description,
+        email: cached.email,
+        profile_picture_url: (cached as any).profile_picture_url,
+        websites: cached.websites || [],
+        vertical: cached.vertical,
+      };
     }
 
-    const { permanentAccessToken, phoneNumberId } = account;
-    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
-    const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/whatsapp_business_profile`;
-
-    const params = {
-      fields: 'about,address,description,email,profile_picture_url,websites,vertical',
-      access_token: permanentAccessToken,
-    };
-
-    this.logger.log(
-      `Fetching business profile for phone number ${phoneNumberId}`,
-    );
-
-    try {
-      const response = await this.axiosInstance.get(url, { 
-        params,
-        timeout: 5000,
-      });
-
-      this.logger.log(
-        `Successfully fetched business profile for phone number ${phoneNumberId}`,
-      );
-
-      return response.data?.data[0] || {};
-    } catch (error) {
-      const axiosError = error as AxiosError;
-      this.logger.error(
-        `Failed to fetch business profile for phone number ${phoneNumberId}`,
-        {
-          status: axiosError.response?.status,
-          data: axiosError.response?.data,
-          message: axiosError.message,
-        },
-      );
-
-      // Provide more specific error messages
-      if (axiosError.response?.status === 401) {
-        throw new UnauthorizedException(
-          'Invalid WhatsApp access token. Please reconfigure your WhatsApp Business Account.',
-        );
-      } else if (axiosError.response?.status === 403) {
-        throw new UnauthorizedException(
-          'Access denied. Please check your WhatsApp Business Account permissions.',
-        );
-      } else if (axiosError.response?.status === 404) {
-        throw new NotFoundException(
-          'WhatsApp Business Account not found. Please check your configuration.',
-        );
-      }
-
-      throw new InternalServerErrorException(
-        axiosError.response?.data || 'Could not fetch business profile from Meta.',
-      );
-    }
+    return {} as BusinessProfileResponseDto;
   }
 
   /**
@@ -198,6 +314,25 @@ export class ProfileService {
         `Business profile updated successfully for phone number ${phoneNumberId}`,
       );
 
+      try {
+        const updatedProfile: BusinessProfileResponseDto = {
+          about: updateProfileDto.about ?? undefined,
+          address: updateProfileDto.address ?? undefined,
+          description: updateProfileDto.description ?? undefined,
+          email: updateProfileDto.email ?? undefined,
+          websites: updateProfileDto.websites ?? [],
+          vertical: updateProfileDto.vertical ?? undefined,
+          profile_picture_url: undefined,
+        };
+
+        await this.upsertProfileCache(adminId, projectId, updatedProfile);
+      } catch (cacheError) {
+        this.logger.error(
+          'Failed to update profile cache after profile update',
+          (cacheError as any)?.message || cacheError,
+        );
+      }
+
       return response.data;
     } catch (error) {
       const axiosError = error as AxiosError;
@@ -254,6 +389,18 @@ export class ProfileService {
       );
     }
 
+    // Try cache first
+    const cached = await this.profileModel.findOne({ adminId, projectId }).lean<ProfileDocument>();
+    if (cached && cached.display_name_status) {
+      return {
+        displayNameStatus: this.mapNameStatus(cached.display_name_status),
+        displayPhoneNumber: cached.display_phone_number || '',
+        verifiedName: cached.verified_name || '',
+        qualityRating: cached.quality_rating || '',
+        throughput: cached.throughput || 'UNKNOWN',
+      };
+    }
+
     const { permanentAccessToken, phoneNumberId } = account;
     const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}`;
@@ -278,26 +425,38 @@ export class ProfileService {
         `Successfully fetched display name status for phone number ${phoneNumberId}`,
       );
 
-      // Map the API response to our enum values
-      const mapNameStatus = (status: string): DisplayNameStatus => {
-        switch (status) {
-          case 'APPROVED':
-            return DisplayNameStatus.APPROVED;
-          case 'PENDING_REVIEW':
-            return DisplayNameStatus.PENDING;
-          case 'DECLINED':
-            return DisplayNameStatus.REJECTED;
-          default:
-            return DisplayNameStatus.UNKNOWN;
-        }
-      };
+      const displayNameStatus = this.mapNameStatus(response.data?.name_status || 'UNKNOWN');
+      const displayPhoneNumber = response.data.display_phone_number || '';
+      const verifiedName = response.data.verified_name || '';
+      const qualityRating = response.data.quality_rating || '';
+      const throughput = response.data?.throughput?.level || 'UNKNOWN';
+
+      // Cache display name status in profile document
+      const now = new Date();
+      await this.profileModel.updateOne(
+        { adminId, projectId },
+        {
+          $set: {
+            
+            adminId,
+            projectId,
+            display_name_status: displayNameStatus,
+            display_phone_number: displayPhoneNumber,
+            verified_name: verifiedName,
+            quality_rating: qualityRating,
+            throughput,
+            display_name_last_synced_at: now,
+          },
+        },
+        { upsert: true },
+      );
 
       return {
-        displayNameStatus: mapNameStatus(response.data?.name_status || 'UNKNOWN'),
+        displayNameStatus,
         displayPhoneNumber: response.data.display_phone_number || '',
-        verifiedName: response.data.verified_name || '',
-        qualityRating: response.data.quality_rating || '',
-        throughput: response.data?.throughput?.level || 'UNKNOWN', 
+        verifiedName,
+        qualityRating,
+        throughput,
       };
     } catch (error) {
       const axiosError = error as AxiosError;
