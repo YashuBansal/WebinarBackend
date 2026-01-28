@@ -8,7 +8,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Worker, Job } from 'bullmq'; // Added Job to imports
 import { WhatsappService } from './whatsapp.service';
-import { WHATSAPP_TEMPLATE_QUEUE_NAME } from './whatsapp.queue.module';
+import {
+  getWhatsappTemplateQueueName,
+  getWhatsappQueueNamespace,
+} from './whatsapp.queue.module';
 import { REDIS_CONNECTION } from 'src/redis/redis.module';
 import { ISendSingleTemplateMessagePayload } from './dto/msg.dto'; // Import the DTO interface
 
@@ -54,9 +57,13 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
     // 'duplicate' creates a new connection with the same options
     const workerConnection = this.connection.duplicate();
 
+    // Get namespaced queue name and prefix to ensure isolation between app instances
+    const queueName = getWhatsappTemplateQueueName(this.configService);
+    const namespace = getWhatsappQueueNamespace(this.configService);
+
     // Initialize BullMQ Worker with the specific type
     this.worker = new Worker<ISendSingleTemplateMessagePayload>(
-      WHATSAPP_TEMPLATE_QUEUE_NAME,
+      queueName,
       async (job: Job<ISendSingleTemplateMessagePayload>) => {
         const payload = job.data;
         const phoneNumber = payload?.formattedPhoneData?.phoneNumber || 'unknown';
@@ -125,6 +132,8 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
       {
         connection: workerConnection,
         concurrency,
+        // Prefix ensures BullMQ keys are grouped per instance (matches Queue configuration)
+        prefix: `bull:${namespace}`,
         // lockDuration should be > job timeout to prevent processing same job twice
         // Default is 30s. If job timeout is 20s, 60s is safe.
         lockDuration: Math.max(jobTimeoutMs * 2, 60000),

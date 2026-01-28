@@ -46,8 +46,8 @@ import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { CampaignStatus } from 'src/whatsapp-embed/campaign/campaign.schema';
 import {
   WHATSAPP_TEMPLATE_QUEUE,
-  WHATSAPP_TEMPLATE_QUEUE_NAME,
   WHATSAPP_WEBHOOK_QUEUE,
+  getWhatsappTemplateQueueName,
 } from './whatsapp.queue.module';
 import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-template.service';
 import { WabaTemplateDocument } from 'src/whatsapp-embed/waba-template/waba-template.schema';
@@ -3218,7 +3218,8 @@ export class WhatsappService extends BaseLoggerService {
     return {
       success: true,
       jobId: job.id,
-      queue: WHATSAPP_TEMPLATE_QUEUE_NAME,
+      // Use the same namespaced queue name as the Queue/Worker
+      queue: getWhatsappTemplateQueueName(this.configService),
     };
   }
 

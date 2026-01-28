@@ -8,7 +8,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Worker } from 'bullmq';
 import { WhatsappService } from './whatsapp.service';
-import { WHATSAPP_WEBHOOK_QUEUE_NAME } from './whatsapp.queue.module';
+import {
+  getWhatsappWebhookQueueName,
+  getWhatsappQueueNamespace,
+} from './whatsapp.queue.module';
 import { REDIS_CONNECTION } from 'src/redis/redis.module';
 
 @Injectable()
@@ -30,8 +33,12 @@ export class WhatsappWebhookProcessor implements OnModuleInit, OnModuleDestroy {
     // Use duplicate connection for blocking worker commands
     const workerConnection = this.connection.duplicate();
 
+    // Get namespaced queue name and prefix to ensure isolation between app instances
+    const queueName = getWhatsappWebhookQueueName(this.configService);
+    const namespace = getWhatsappQueueNamespace(this.configService);
+
     this.worker = new Worker(
-      WHATSAPP_WEBHOOK_QUEUE_NAME,
+      queueName,
       async (job) => {
         const payload = job.data;
         // Process the payload using the service logic
@@ -40,6 +47,8 @@ export class WhatsappWebhookProcessor implements OnModuleInit, OnModuleDestroy {
       {
         connection: workerConnection,
         concurrency,
+        // Prefix ensures BullMQ keys are grouped per instance (matches Queue configuration)
+        prefix: `bull:${namespace}`,
         removeOnComplete: { age: 24 * 3600 }, // Keep for 24h
         removeOnFail: { count: 1000 },
       },
