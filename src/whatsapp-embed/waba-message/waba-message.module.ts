@@ -5,6 +5,10 @@ import {
   WabaMessage,
   WabaMessageSchema,
 } from './waba-message.schema';
+import {
+  ChatReadStatus,
+  ChatReadStatusSchema,
+} from './chat-read-status.schema';
 import { WabaMessageController } from './waba-message.controller';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { UsersModule } from 'src/users/users.module';
@@ -13,6 +17,7 @@ import { UsersModule } from 'src/users/users.module';
   imports: [
     MongooseModule.forFeature([
       { name: WabaMessage.name, schema: WabaMessageSchema },
+      { name: ChatReadStatus.name, schema: ChatReadStatusSchema },
     ]),
     forwardRef(() => UsersModule),
   ],

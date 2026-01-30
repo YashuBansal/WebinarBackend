@@ -1,4 +1,4 @@
-import { Controller, Get, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Query, Body, BadRequestException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { Id } from 'src/decorators/custom.decorator';
 import { WabaMessageService } from './waba-message.service';
@@ -40,14 +40,14 @@ export class WabaMessageController {
       throw new BadRequestException('Valid projectId is required');
     }
 
-    const phoneNumbers = await this.wabaMessageService.getUniquePhoneNumbers(
+    const contacts = await this.wabaMessageService.getUniquePhoneNumbers(
       adminId,
       projectId,
     );
 
     return {
-      phoneNumbers,
-      count: phoneNumbers.length,
+      phoneNumbers: contacts,
+      count: contacts.length,
     };
   }
 
@@ -121,5 +121,29 @@ export class WabaMessageController {
       endDate: hasRange ? parsedEndDate!.toISOString() : undefined,
       projectId,
     });
+  }
+
+  @Post('mark-as-read')
+  async markAsRead(
+    @Id() adminId: string,
+    @Body() body: { projectId: string; phoneNumber: string },
+  ) {
+    const { projectId, phoneNumber } = body;
+
+    if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+      throw new BadRequestException('Valid projectId is required');
+    }
+
+    if (!phoneNumber || typeof phoneNumber !== 'string') {
+      throw new BadRequestException('Phone number is required');
+    }
+
+    await this.wabaMessageService.markMessagesAsRead(
+      adminId,
+      projectId,
+      phoneNumber,
+    );
+
+    return { success: true };
   }
 }

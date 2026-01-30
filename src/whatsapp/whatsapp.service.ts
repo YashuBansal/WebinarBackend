@@ -380,8 +380,39 @@ export class WhatsappService extends BaseLoggerService {
 
       try {
         const from = msg.from; // sender's wa id (phone)
-        const textBody = msg.text?.body;
         const msgId = msg.id;
+
+        // Determine message type and normalize payload
+        const messageType = msg.type;
+        let textBody: string | undefined;
+        let messageFormat: 'text' | 'template' | 'media' | undefined;
+        let mimeType: string | undefined;
+        let mediaId: string | undefined;
+        let webhookMediaUrl: string | undefined;
+
+        if (messageType === 'text') {
+          textBody = msg.text?.body;
+          messageFormat = 'text';
+        } else if (messageType === 'image' || messageType === 'video') {
+          const media = messageType === 'image' ? msg.image : msg.video;
+          const caption = media?.caption;
+          mimeType = media?.mime_type;
+          mediaId = media?.id;
+          const webhookMediaUrl = media?.url;
+
+          if (messageType === 'image') {
+            textBody = caption || '[Image]';
+          } else {
+            textBody = caption || '[Video]';
+          }
+
+          messageFormat = 'media';
+        } else {
+          // Fallback for unsupported/other types - log and skip for now
+          this.logger.warn(
+            `Unsupported inbound message type: ${messageType} for message ID: ${msgId}, from: ${from}`,
+          );
+        }
 
         // Validate required fields
         if (!from || typeof from !== 'string' || from.trim() === '') {
@@ -407,6 +438,10 @@ export class WhatsappService extends BaseLoggerService {
           fromPhoneNumberId,
           textBody,
           wabaMessageId: msgId,
+          messageFormat,
+          mimeType,
+          mediaId,
+          mediaUrl: webhookMediaUrl,
         });
       } catch (e) {
         this.logger.error(
@@ -480,11 +515,115 @@ export class WhatsappService extends BaseLoggerService {
     }
   }
 
+  /**
+   * Fetches the media URL from Meta Graph API using the media ID
+   * @param mediaId The media ID from the webhook
+   * @param accessToken The permanent access token for the project
+   * @returns The media URL or null if fetching fails
+   */
+  private async fetchMediaUrl(
+    mediaId: string,
+    accessToken: string,
+  ): Promise<string | null> {
+    if (!mediaId || typeof mediaId !== 'string' || mediaId.trim() === '') {
+      this.logger.warn(`fetchMediaUrl called with invalid mediaId: ${mediaId}`);
+      return null;
+    }
+
+    if (!accessToken || typeof accessToken !== 'string' || accessToken.trim() === '') {
+      this.logger.warn('fetchMediaUrl called with invalid accessToken');
+      return null;
+    }
+
+    try {
+      const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+      const url = `https://graph.facebook.com/${apiVersion}/${mediaId}`;
+      
+      this.logger.log(`Fetching media URL for media ID: ${mediaId}`);
+      
+      const response = await this.axiosInstance.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        params: {
+          access_token: accessToken,
+        },
+        timeout: 15000,
+      });
+
+      const mediaUrl = response.data?.url;
+      if (mediaUrl && typeof mediaUrl === 'string') {
+        this.logger.log(`Successfully fetched media URL for media ID: ${mediaId}`);
+        return mediaUrl;
+      } else {
+        this.logger.warn(
+          `Media URL not found in response for media ID: ${mediaId}`,
+          response.data,
+        );
+        return null;
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to fetch media URL for media ID: ${mediaId}`,
+        error instanceof Error ? error.stack : error,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Proxies WhatsApp media with authentication
+   * @param url The WhatsApp media URL
+   * @param accessToken The permanent access token for the project
+   * @returns The media data and content type
+   */
+  async proxyMedia(
+    url: string,
+    accessToken: string,
+  ): Promise<{ data: Buffer; contentType: string }> {
+    if (!url || typeof url !== 'string' || url.trim() === '') {
+      throw new BadRequestException('Invalid media URL');
+    }
+
+    if (!accessToken || typeof accessToken !== 'string' || accessToken.trim() === '') {
+      throw new BadRequestException('Invalid access token');
+    }
+
+    try {
+      this.logger.log(`Proxying media from URL: ${url}`);
+      
+      const response = await this.axiosInstance.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        responseType: 'arraybuffer',
+        timeout: 30000, // 30 seconds for media
+      });
+
+      const contentType = response.headers['content-type'] || 'application/octet-stream';
+      const data = Buffer.from(response.data);
+
+      this.logger.log(`Successfully proxied media, size: ${data.length} bytes, type: ${contentType}`);
+      
+      return { data, contentType };
+    } catch (error) {
+      this.logger.error(
+        `Failed to proxy media from URL: ${url}`,
+        error instanceof Error ? error.stack : error,
+      );
+      throw new InternalServerErrorException('Failed to fetch media');
+    }
+  }
+
   private async handleInboundTextMessage(args: {
     from: string;
     fromPhoneNumberId?: string;
     textBody?: string;
     wabaMessageId: string;
+    messageFormat?: 'text' | 'template' | 'media';
+    mimeType?: string;
+    mediaId?: string;
+    mediaUrl?: string;
   }) {
     // Validate args object exists
     if (!args || typeof args !== 'object') {
@@ -494,7 +633,16 @@ export class WhatsappService extends BaseLoggerService {
       return;
     }
 
-    const { from, fromPhoneNumberId, textBody, wabaMessageId } = args;
+    const {
+      from,
+      fromPhoneNumberId,
+      textBody,
+      wabaMessageId,
+      messageFormat,
+      mimeType,
+      mediaId,
+      mediaUrl: providedMediaUrl,
+    } = args;
 
     // Validate required fields
     if (!from || typeof from !== 'string' || from.trim() === '') {
@@ -551,6 +699,68 @@ export class WhatsappService extends BaseLoggerService {
     const adminId = project.adminId as any as Types.ObjectId;
     const projectId = project._id as any as Types.ObjectId;
 
+    // Use media URL from webhook if provided, otherwise fetch via Graph API
+    let mediaUrl: string | null = null;
+    if (providedMediaUrl && typeof providedMediaUrl === 'string' && providedMediaUrl.trim() !== '') {
+      // Use URL directly from webhook payload
+      mediaUrl = providedMediaUrl;
+      this.logger.log(
+        `Using media URL from webhook for message ID: ${wabaMessageId}`,
+      );
+    } else if (mediaId && project.permanentAccessToken) {
+      // Fallback: Fetch media URL via Graph API if not provided in webhook
+      mediaUrl = await this.fetchMediaUrl(mediaId, project.permanentAccessToken);
+      if (mediaUrl) {
+        this.logger.log(
+          `Fetched media URL via Graph API for media ID: ${mediaId}, message ID: ${wabaMessageId}`,
+        );
+      } else {
+        this.logger.warn(
+          `Failed to fetch media URL for media ID: ${mediaId}, message ID: ${wabaMessageId}. Continuing without media URL.`,
+        );
+      }
+    }
+
+    // Validate wabaMessageService exists and is usable
+    if (!this.wabaMessageService) {
+      this.logger.error(
+        `wabaMessageService is not available. Cannot persist inbound message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    if (typeof this.wabaMessageService.create !== 'function') {
+      this.logger.error(
+        `wabaMessageService.create is not a function. Cannot persist inbound message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    // Persist inbound message before emitting over websocket
+    try {
+      await this.wabaMessageService.create({
+        projectId: String(projectId),
+        adminId: String(adminId),
+        phoneNumber: from,
+        wabaMessageId,
+        messageType: 'individual',
+        templateName: '',
+        direction: 'inbound',
+        messageFormat: messageFormat || 'text',
+        textBody: textBody || '',
+        displayText: textBody || '',
+        mimeType,
+        mediaUrl: mediaUrl || undefined,
+      } as any);
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist inbound message for projectId: ${projectId}, adminId: ${adminId}, from: ${from}, message ID: ${wabaMessageId}`,
+        error instanceof Error ? error.stack : error,
+      );
+      // Do not emit websocket event if persistence fails
+      return;
+    }
+
     // Validate gateway exists
     if (!this.whatsAppGateway) {
       this.logger.error(
@@ -573,6 +783,9 @@ export class WhatsappService extends BaseLoggerService {
         textBody: textBody || '',
         direction: 'inbound',
         createdAt: new Date().toISOString(),
+        messageFormat: messageFormat || 'text',
+        mimeType,
+        mediaUrl: mediaUrl || undefined,
       });
 
       this.logger.log(

@@ -11,6 +11,10 @@ import {
   WabaMessageDocument,
   WabaMessageType,
 } from './waba-message.schema';
+import {
+  ChatReadStatus,
+  ChatReadStatusDocument,
+} from './chat-read-status.schema';
 
 @Injectable()
 export class WabaMessageService {
@@ -18,6 +22,8 @@ export class WabaMessageService {
   constructor(
     @InjectModel(WabaMessage.name)
     private wabaMessageModel: Model<WabaMessageDocument>,
+    @InjectModel(ChatReadStatus.name)
+    private chatReadStatusModel: Model<ChatReadStatusDocument>,
   ) {}
 
   async create(wabaMessageData: {
@@ -345,12 +351,156 @@ export class WabaMessageService {
   async getUniquePhoneNumbers(
     adminId: string,
     projectId: string,
-  ): Promise<string[]> {
-    return this.wabaMessageModel.distinct('phoneNumber', {
-      adminId: new Types.ObjectId(adminId),
-      projectId: new Types.ObjectId(projectId),
+  ): Promise<
+    Array<{
+      phoneNumber: string;
+      lastMessagePreview?: string;
+      lastMessageAt?: string;
+      unreadCount: number;
+      lastMessageDirection?: 'inbound' | 'outbound';
+    }>
+  > {
+    const adminObjectId = new Types.ObjectId(adminId);
+    const projectObjectId = new Types.ObjectId(projectId);
+
+    // Get all unique phone numbers
+    const phoneNumbers = await this.wabaMessageModel.distinct('phoneNumber', {
+      adminId: adminObjectId,
+      projectId: projectObjectId,
       isDeleted: false,
     });
+
+    // Get last read timestamps for all contacts
+    const readStatuses = await this.chatReadStatusModel.find({
+      adminId: adminObjectId,
+      projectId: projectObjectId,
+      phoneNumber: { $in: phoneNumbers },
+    });
+
+    const readStatusMap = new Map<string, Date>();
+    readStatuses.forEach((status) => {
+      readStatusMap.set(status.phoneNumber, status.lastReadAt);
+    });
+
+    // Get last message for each phone number with aggregation
+    const lastMessages = await this.wabaMessageModel.aggregate([
+      {
+        $match: {
+          adminId: adminObjectId,
+          projectId: projectObjectId,
+          isDeleted: false,
+        },
+      },
+      {
+        $sort: { createdAt: -1 },
+      },
+      {
+        $group: {
+          _id: '$phoneNumber',
+          lastMessage: { $first: '$$ROOT' },
+        },
+      },
+    ]);
+
+    // Create a map for quick lookup
+    const lastMessageMap = new Map();
+    lastMessages.forEach((item) => {
+      lastMessageMap.set(item._id, item.lastMessage);
+    });
+
+    // Calculate unread counts for all contacts in one aggregation
+    const unreadCountsPipeline: any[] = [
+      {
+        $match: {
+          adminId: adminObjectId,
+          projectId: projectObjectId,
+          direction: 'inbound',
+          isDeleted: false,
+        },
+      },
+      {
+        $group: {
+          _id: '$phoneNumber',
+          messages: { $push: { createdAt: '$createdAt' } },
+        },
+      },
+    ];
+
+    const unreadCountsResult = await this.wabaMessageModel.aggregate(
+      unreadCountsPipeline,
+    );
+
+    const unreadCountMap = new Map<string, number>();
+    unreadCountsResult.forEach((item) => {
+      const phoneNumber = item._id;
+      const lastReadAt = readStatusMap.get(phoneNumber);
+      if (lastReadAt) {
+        // Count messages after lastReadAt
+        const count = item.messages.filter(
+          (msg: { createdAt: Date }) => msg.createdAt > lastReadAt,
+        ).length;
+        unreadCountMap.set(phoneNumber, count);
+      } else {
+        // If no read status, count all inbound messages
+        unreadCountMap.set(phoneNumber, item.messages.length);
+      }
+    });
+
+    // Build result array
+    const result = phoneNumbers.map((phoneNumber) => {
+      const lastMessage = lastMessageMap.get(phoneNumber);
+      const lastReadAt = readStatusMap.get(phoneNumber);
+
+      // Get unread count
+      const unreadCount = unreadCountMap.get(phoneNumber) || 0;
+
+      // Get last message preview
+      let lastMessagePreview: string | undefined;
+      let lastMessageAt: string | undefined;
+      let lastMessageDirection: 'inbound' | 'outbound' | undefined;
+
+      if (lastMessage) {
+        lastMessageAt = lastMessage.createdAt.toISOString();
+        lastMessageDirection = lastMessage.direction;
+
+        if (lastMessage.messageFormat === 'media') {
+          if (lastMessage.mimeType?.startsWith('image/')) {
+            lastMessagePreview = 'Image';
+          } else if (lastMessage.mimeType?.startsWith('video/')) {
+            lastMessagePreview = 'Video';
+          } else {
+            lastMessagePreview = 'Media';
+          }
+        } else if (lastMessage.messageFormat === 'template') {
+          lastMessagePreview = lastMessage.displayText || lastMessage.textBody || '[Template]';
+        } else {
+          lastMessagePreview = lastMessage.textBody || lastMessage.displayText;
+        }
+
+        // Truncate preview to 50 characters
+        if (lastMessagePreview && lastMessagePreview.length > 50) {
+          lastMessagePreview = lastMessagePreview.substring(0, 50) + '...';
+        }
+      }
+
+      return {
+        phoneNumber,
+        lastMessagePreview,
+        lastMessageAt,
+        unreadCount,
+        lastMessageDirection,
+      };
+    });
+
+    // Sort by lastMessageAt descending (newest first)
+    result.sort((a, b) => {
+      if (!a.lastMessageAt && !b.lastMessageAt) return 0;
+      if (!a.lastMessageAt) return 1;
+      if (!b.lastMessageAt) return -1;
+      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    });
+
+    return result;
   }
 
   async getEligibleSessionMessageContacts(
@@ -363,16 +513,23 @@ export class WabaMessageService {
       lastInboundMessageAt: string;
       windowExpiresAt: string;
       timeRemaining: number;
+      lastMessagePreview?: string;
+      lastMessageAt?: string;
+      unreadCount: number;
+      lastMessageDirection?: 'inbound' | 'outbound';
     }>
   > {
+    const adminObjectId = new Types.ObjectId(adminId);
+    const projectObjectId = new Types.ObjectId(projectId);
+
     // Calculate timestamp for 23 hours ago
     const twentyFourHoursAgo = new Date(Date.now() - 23 * 60 * 60 * 1000);
 
     const result = await this.wabaMessageModel.aggregate([
       {
         $match: {
-          adminId: new Types.ObjectId(adminId),
-          projectId: new Types.ObjectId(projectId),
+          adminId: adminObjectId,
+          projectId: projectObjectId,
           direction: 'inbound',
           isDeleted: false,
           createdAt: { $gte: twentyFourHoursAgo },
@@ -399,23 +556,172 @@ export class WabaMessageService {
       },
     ]);
 
+    // Get phone numbers for eligible contacts
+    const eligiblePhoneNumbers = result.map((r) => r.phoneNumber);
+
+    // Get last read timestamps
+    const readStatuses = await this.chatReadStatusModel.find({
+      adminId: adminObjectId,
+      projectId: projectObjectId,
+      phoneNumber: { $in: eligiblePhoneNumbers },
+    });
+
+    const readStatusMap = new Map<string, Date>();
+    readStatuses.forEach((status) => {
+      readStatusMap.set(status.phoneNumber, status.lastReadAt);
+    });
+
+    // Get last message (any direction) for each eligible contact
+    const lastMessages = await this.wabaMessageModel.aggregate([
+      {
+        $match: {
+          adminId: adminObjectId,
+          projectId: projectObjectId,
+          phoneNumber: { $in: eligiblePhoneNumbers },
+          isDeleted: false,
+        },
+      },
+      {
+        $sort: { createdAt: -1 },
+      },
+      {
+        $group: {
+          _id: '$phoneNumber',
+          lastMessage: { $first: '$$ROOT' },
+        },
+      },
+    ]);
+
+    const lastMessageMap = new Map();
+    lastMessages.forEach((item) => {
+      lastMessageMap.set(item._id, item.lastMessage);
+    });
+
+    // Calculate unread counts
+    const unreadCountsResult = await this.wabaMessageModel.aggregate([
+      {
+        $match: {
+          adminId: adminObjectId,
+          projectId: projectObjectId,
+          phoneNumber: { $in: eligiblePhoneNumbers },
+          direction: 'inbound',
+          isDeleted: false,
+        },
+      },
+      {
+        $group: {
+          _id: '$phoneNumber',
+          messages: { $push: { createdAt: '$createdAt' } },
+        },
+      },
+    ]);
+
+    const unreadCountMap = new Map<string, number>();
+    unreadCountsResult.forEach((item) => {
+      const phoneNumber = item._id;
+      const lastReadAt = readStatusMap.get(phoneNumber);
+      if (lastReadAt) {
+        const count = item.messages.filter(
+          (msg: { createdAt: Date }) => msg.createdAt > lastReadAt,
+        ).length;
+        unreadCountMap.set(phoneNumber, count);
+      } else {
+        unreadCountMap.set(phoneNumber, item.messages.length);
+      }
+    });
+
     // Calculate window expiry and time remaining for each contact
     const now = new Date();
-    return result.map((contact) => {
+    const enrichedResult = result.map((contact) => {
       const lastMessageDate = new Date(contact.lastInboundMessageAt);
       const windowExpiresAt = new Date(
         lastMessageDate.getTime() + 24 * 60 * 60 * 1000,
       );
       const timeRemaining = windowExpiresAt.getTime() - now.getTime();
 
+      const lastMessage = lastMessageMap.get(contact.phoneNumber);
+      const lastReadAt = readStatusMap.get(contact.phoneNumber);
+      const unreadCount = unreadCountMap.get(contact.phoneNumber) || 0;
+
+      // Get last message preview
+      let lastMessagePreview: string | undefined;
+      let lastMessageAt: string | undefined;
+      let lastMessageDirection: 'inbound' | 'outbound' | undefined;
+
+      if (lastMessage) {
+        lastMessageAt = lastMessage.createdAt.toISOString();
+        lastMessageDirection = lastMessage.direction;
+
+        if (lastMessage.messageFormat === 'media') {
+          if (lastMessage.mimeType?.startsWith('image/')) {
+            lastMessagePreview = 'Image';
+          } else if (lastMessage.mimeType?.startsWith('video/')) {
+            lastMessagePreview = 'Video';
+          } else {
+            lastMessagePreview = 'Media';
+          }
+        } else if (lastMessage.messageFormat === 'template') {
+          lastMessagePreview = lastMessage.displayText || lastMessage.textBody || '[Template]';
+        } else {
+          lastMessagePreview = lastMessage.textBody || lastMessage.displayText;
+        }
+
+        // Truncate preview to 50 characters
+        if (lastMessagePreview && lastMessagePreview.length > 50) {
+          lastMessagePreview = lastMessagePreview.substring(0, 50) + '...';
+        }
+      }
+
       return {
         phoneNumber: contact.phoneNumber,
         contactId: contact.contactId?.toString(),
         lastInboundMessageAt: contact.lastInboundMessageAt.toISOString(),
         windowExpiresAt: windowExpiresAt.toISOString(),
-        timeRemaining: Math.max(0, timeRemaining), // Ensure non-negative
+        timeRemaining: Math.max(0, timeRemaining),
+        lastMessagePreview,
+        lastMessageAt,
+        unreadCount,
+        lastMessageDirection,
       };
     });
+
+    // Sort by lastMessageAt descending (newest first)
+    enrichedResult.sort((a, b) => {
+      if (!a.lastMessageAt && !b.lastMessageAt) return 0;
+      if (!a.lastMessageAt) return 1;
+      if (!b.lastMessageAt) return -1;
+      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    });
+
+    return enrichedResult;
+  }
+
+  async markMessagesAsRead(
+    adminId: string,
+    projectId: string,
+    phoneNumber: string,
+  ): Promise<void> {
+    const adminObjectId = new Types.ObjectId(adminId);
+    const projectObjectId = new Types.ObjectId(projectId);
+
+    // Upsert: update if exists, create if not
+    await this.chatReadStatusModel.findOneAndUpdate(
+      {
+        adminId: adminObjectId,
+        projectId: projectObjectId,
+        phoneNumber: phoneNumber.replace('+', ''),
+      },
+      {
+        adminId: adminObjectId,
+        projectId: projectObjectId,
+        phoneNumber: phoneNumber.replace('+', ''),
+        lastReadAt: new Date(),
+      },
+      {
+        upsert: true,
+        new: true,
+      },
+    );
   }
 
   async getAnalyticsSummary(options: {

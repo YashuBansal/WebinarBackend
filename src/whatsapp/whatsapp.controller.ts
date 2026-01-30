@@ -17,6 +17,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
@@ -535,5 +536,56 @@ export class WhatsappController {
       message: 'Direct message permission checked',
       data: result,
     };
+  }
+
+  @Get('media-proxy')
+  async proxyMedia(
+    @Id() adminId: string,
+    @Query('url') url: string,
+    @Query('projectId') projectId: string,
+    @Res() res: Response,
+  ) {
+    if (!url) {
+      throw new BadRequestException('Media URL is required');
+    }
+    if (!mongoose.isValidObjectId(projectId)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+    if (!mongoose.isValidObjectId(adminId)) {
+      throw new BadRequestException('Invalid admin ID');
+    }
+
+    try {
+      // Get project to retrieve access token
+      const project = await this.whatsappService['projectService'].findOne(
+        new Types.ObjectId(adminId),
+        new Types.ObjectId(projectId),
+      );
+
+      if (!project) {
+        throw new ForbiddenException('Project not found or access denied');
+      }
+
+      if (!project.permanentAccessToken) {
+        throw new BadRequestException('Project access token not configured');
+      }
+
+      // Proxy the media with authentication
+      const { data, contentType } = await this.whatsappService.proxyMedia(
+        url,
+        project.permanentAccessToken,
+      );
+
+      // Set appropriate headers and send the media
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', data.length);
+      res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+      res.send(data);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException('Failed to proxy media', error);
+    }
   }
 }
