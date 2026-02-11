@@ -343,6 +343,9 @@ export class SubscriptionService {
     }
 
     const durationConfig = plan.planDurationConfig.get(durationType);
+    if(!durationConfig.isEnabled){
+      throw new NotAcceptableException('Duration type is not enabled');
+    }
 
     let billingStartDate = null;
 
@@ -826,6 +829,10 @@ export class SubscriptionService {
     const durationConfig = plan.planDurationConfig.get(durationType);
     if (!durationConfig)
       throw new NotAcceptableException('Duration type not found.');
+
+    if(!durationConfig.isEnabled){
+      throw new NotAcceptableException('Duration type is not enabled');
+    }
 
     const { totalWithGST } = this.generatePriceForPlan(
       durationConfig,
