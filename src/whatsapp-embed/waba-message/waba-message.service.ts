@@ -10,6 +10,7 @@ import {
   WabaMessage,
   WabaMessageDocument,
   WabaMessageType,
+  WabaMessageDirection,
 } from './waba-message.schema';
 import {
   ChatReadStatus,
@@ -722,6 +723,242 @@ export class WabaMessageService {
         new: true,
       },
     );
+  }
+
+  async getMessageCountsByAdminAndProject(
+    adminId: string,
+    projectId?: string,
+  ): Promise<{ inbound: number; outbound: number }> {
+    const match: any = {
+      adminId: new Types.ObjectId(adminId),
+      isDeleted: false,
+    };
+    if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+      match.projectId = new Types.ObjectId(projectId);
+    }
+
+    const result = await this.wabaMessageModel.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: '$direction',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const inbound =
+      result.find((r) => r._id === WabaMessageDirection.INBOUND)?.count ?? 0;
+    const outbound =
+      result.find((r) => r._id === WabaMessageDirection.OUTBOUND)?.count ?? 0;
+
+    return { inbound, outbound };
+  }
+
+  async getAllMessageCountsPaginated(options: {
+    startDate?: string;
+    endDate?: string;
+    page: number;
+    limit: number;
+  }): Promise<{
+    data: Array<{
+      adminId: string;
+      projectId: string;
+      companyName?: string;
+      email?: string;
+      phone?: string;
+      projectName?: string;
+      inbound: number;
+      outbound: number;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    dateRange?: { start: string; end: string };
+  }> {
+    const { startDate, endDate, page, limit } = options;
+
+    const baseMatch: any = { isDeleted: false };
+
+    let rangeStart: Date;
+    let rangeEnd: Date;
+
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      rangeStart = new Date(start);
+      rangeStart.setHours(0, 0, 0, 0);
+      const endDay = new Date(end);
+      endDay.setHours(0, 0, 0, 0);
+      endDay.setDate(endDay.getDate() + 1);
+      rangeEnd = endDay;
+      baseMatch.createdAt = { $gte: rangeStart, $lt: rangeEnd };
+    } else if (startDate) {
+      rangeStart = new Date(startDate);
+      rangeStart.setHours(0, 0, 0, 0);
+      rangeEnd = new Date();
+      baseMatch.createdAt = { $gte: rangeStart };
+    } else if (endDate) {
+      rangeStart = new Date(0);
+      const endDay = new Date(endDate);
+      endDay.setHours(23, 59, 59, 999);
+      rangeEnd = endDay;
+      baseMatch.createdAt = { $lte: rangeEnd };
+    } else {
+      rangeStart = new Date(0);
+      rangeEnd = new Date();
+    }
+
+    const skip = (page - 1) * limit;
+
+    const countPipeline: any[] = [
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: { adminId: '$adminId', projectId: '$projectId' },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id.adminId',
+          foreignField: '_id',
+          as: 'adminDoc',
+        },
+      },
+      {
+        $lookup: {
+          from: 'projects',
+          localField: '_id.projectId',
+          foreignField: '_id',
+          as: 'projectDoc',
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $gt: [{ $size: '$adminDoc' }, 0] },
+              { $gt: [{ $size: '$projectDoc' }, 0] },
+            ],
+          },
+        },
+      },
+      { $count: 'total' },
+    ];
+
+    const dataPipeline: any[] = [
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: { adminId: '$adminId', projectId: '$projectId' },
+          inbound: {
+            $sum: {
+              $cond: [
+                { $eq: ['$direction', WabaMessageDirection.INBOUND] },
+                1,
+                0,
+              ],
+            },
+          },
+          outbound: {
+            $sum: {
+              $cond: [
+                { $eq: ['$direction', WabaMessageDirection.OUTBOUND] },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id.adminId',
+          foreignField: '_id',
+          as: 'adminDoc',
+        },
+      },
+      {
+        $lookup: {
+          from: 'projects',
+          localField: '_id.projectId',
+          foreignField: '_id',
+          as: 'projectDoc',
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $gt: [{ $size: '$adminDoc' }, 0] },
+              { $gt: [{ $size: '$projectDoc' }, 0] },
+            ],
+          },
+        },
+      },
+      { $sort: { '_id.adminId': 1, '_id.projectId': 1 } },
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $project: {
+          _id: 0,
+          adminId: { $toString: '$_id.adminId' },
+          projectId: { $toString: '$_id.projectId' },
+          companyName: { $arrayElemAt: ['$adminDoc.companyName', 0] },
+          email: { $arrayElemAt: ['$adminDoc.email', 0] },
+          phone: { $arrayElemAt: ['$projectDoc.phone', 0] },
+          projectName: { $arrayElemAt: ['$projectDoc.projectName', 0] },
+          inbound: 1,
+          outbound: 1,
+        },
+      },
+    ];
+
+    const [countResult, dataResult] = await Promise.all([
+      this.wabaMessageModel.aggregate(countPipeline),
+      this.wabaMessageModel.aggregate(dataPipeline),
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    const data = dataResult ?? [];
+
+    const totalPages = Math.ceil(total / limit);
+
+    const result: {
+      data: Array<{
+        adminId: string;
+        projectId: string;
+        companyName?: string;
+        email?: string;
+        phone?: string;
+        projectName?: string;
+        inbound: number;
+        outbound: number;
+      }>;
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+      dateRange?: { start: string; end: string };
+    } = {
+      data,
+      total,
+      page,
+      limit,
+      totalPages,
+    };
+
+    if (startDate || endDate) {
+      result.dateRange = {
+        start: rangeStart.toISOString(),
+        end: rangeEnd.toISOString(),
+      };
+    }
+
+    return result;
   }
 
   async getAnalyticsSummary(options: {

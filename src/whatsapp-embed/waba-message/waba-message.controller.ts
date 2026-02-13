@@ -31,6 +31,58 @@ export class WabaMessageController {
     return this.wabaMessageService.findPaginatedAll(query, { page, limit });
   }
 
+  @Get('counts')
+  async getMessageCounts(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    let parsedStartDate: string | undefined;
+    let parsedEndDate: string | undefined;
+
+    if (startDate) {
+      const start = new Date(startDate);
+      if (isNaN(start.getTime())) {
+        throw new BadRequestException('Invalid "startDate" format');
+      }
+      parsedStartDate = start.toISOString();
+    }
+
+    if (endDate) {
+      const end = new Date(endDate);
+      if (isNaN(end.getTime())) {
+        throw new BadRequestException('Invalid "endDate" format');
+      }
+      parsedEndDate = end.toISOString();
+    }
+
+    if (parsedStartDate && parsedEndDate) {
+      if (new Date(parsedStartDate) > new Date(parsedEndDate)) {
+        throw new BadRequestException(
+          '"startDate" must be before or equal to "endDate"',
+        );
+      }
+    }
+
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+
+    if (isNaN(pageNum) || pageNum < 1) {
+      throw new BadRequestException('page must be a positive integer');
+    }
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 200) {
+      throw new BadRequestException('limit must be between 1 and 200');
+    }
+
+    return this.wabaMessageService.getAllMessageCountsPaginated({
+      startDate: parsedStartDate,
+      endDate: parsedEndDate,
+      page: pageNum,
+      limit: limitNum,
+    });
+  }
+
   @Get('unique-phone-numbers')
   async getUniquePhoneNumbers(
     @Id() adminId: string,
