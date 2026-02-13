@@ -772,6 +772,8 @@ export class WabaMessageService {
       outbound: number;
     }>;
     total: number;
+    totalReceived: number;
+    totalSent: number;
     page: number;
     limit: number;
     totalPages: number;
@@ -917,13 +919,76 @@ export class WabaMessageService {
       },
     ];
 
-    const [countResult, dataResult] = await Promise.all([
+    const totalsPipeline: any[] = [
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: { adminId: '$adminId', projectId: '$projectId' },
+          inbound: {
+            $sum: {
+              $cond: [
+                { $eq: ['$direction', WabaMessageDirection.INBOUND] },
+                1,
+                0,
+              ],
+            },
+          },
+          outbound: {
+            $sum: {
+              $cond: [
+                { $eq: ['$direction', WabaMessageDirection.OUTBOUND] },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id.adminId',
+          foreignField: '_id',
+          as: 'adminDoc',
+        },
+      },
+      {
+        $lookup: {
+          from: 'projects',
+          localField: '_id.projectId',
+          foreignField: '_id',
+          as: 'projectDoc',
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $gt: [{ $size: '$adminDoc' }, 0] },
+              { $gt: [{ $size: '$projectDoc' }, 0] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalReceived: { $sum: '$inbound' },
+          totalSent: { $sum: '$outbound' },
+        },
+      },
+    ];
+
+    const [countResult, dataResult, totalsResult] = await Promise.all([
       this.wabaMessageModel.aggregate(countPipeline),
       this.wabaMessageModel.aggregate(dataPipeline),
+      this.wabaMessageModel.aggregate(totalsPipeline),
     ]);
 
     const total = countResult[0]?.total ?? 0;
     const data = dataResult ?? [];
+    const totalReceived = totalsResult[0]?.totalReceived ?? 0;
+    const totalSent = totalsResult[0]?.totalSent ?? 0;
 
     const totalPages = Math.ceil(total / limit);
 
@@ -939,6 +1004,8 @@ export class WabaMessageService {
         outbound: number;
       }>;
       total: number;
+      totalReceived: number;
+      totalSent: number;
       page: number;
       limit: number;
       totalPages: number;
@@ -946,6 +1013,8 @@ export class WabaMessageService {
     } = {
       data,
       total,
+      totalReceived,
+      totalSent,
       page,
       limit,
       totalPages,
