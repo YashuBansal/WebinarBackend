@@ -776,6 +776,14 @@ export class UsersService implements OnModuleInit {
     return user;
   }
 
+  async getAdminIdByEmail(email: string): Promise<string | null> {
+    const normalized = email.trim().toLowerCase();
+    const user = await this.userModel
+      .findOne({ email: normalized })
+      .select('_id');
+    return user ? String(user._id) : null;
+  }
+
   async getUserById(id: string) {
     return await this.userModel.findById(id).select('-password');
   }

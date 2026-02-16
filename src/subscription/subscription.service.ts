@@ -302,10 +302,27 @@ export class SubscriptionService {
   }
 
   async updateClientPlan(
-    adminId: string,
+    adminIdOrEmail: string,
     planId: string,
     durationType: DurationType,
   ) {
+    let adminId: string;
+    if (adminIdOrEmail.includes('@')) {
+      const normalizedEmail = adminIdOrEmail.trim().toLowerCase();
+      const resolvedId = await this.userService.getAdminIdByEmail(normalizedEmail);
+      if (!resolvedId) {
+        throw new NotFoundException(
+          `User not found for email ${normalizedEmail}`,
+        );
+      }
+      adminId = resolvedId;
+    } else {
+      if (!Types.ObjectId.isValid(adminIdOrEmail)) {
+        throw new BadRequestException('Invalid admin ID');
+      }
+      adminId = adminIdOrEmail;
+    }
+
     const subscription = await this.SubscriptionModel.findOne({
       admin: new Types.ObjectId(`${adminId}`),
     });
