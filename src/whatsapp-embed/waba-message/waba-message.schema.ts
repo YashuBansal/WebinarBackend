@@ -16,6 +16,7 @@ export enum WabaMessageType {
   AUTO_MESSAGE = 'auto-message',
   ZOOM_EVENT = 'zoom-event',
   API_CAMPAIGN = 'api-campaign',
+  PROGRAM = 'program',
 }
 
 export enum WabaMessageDirection {
@@ -100,6 +101,12 @@ export class WabaMessage extends Document {
     required: false,
   })
   occurrenceId?: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Program', required: false })
+  programId?: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'ProgramAssignment', required: false })
+  programAssignmentId?: Types.ObjectId;
 
   @Prop({
     type: String,

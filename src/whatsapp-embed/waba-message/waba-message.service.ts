@@ -47,6 +47,8 @@ export class WabaMessageService {
     textBody?: string;
     displayText?: string;
     occurrenceId?: string;
+    programId?: string;
+    programAssignmentId?: string;
   }): Promise<WabaMessage> {
     this.logger.log(
       'wabaMessageData ------------------------- > ',
@@ -68,6 +70,12 @@ export class WabaMessageService {
         : undefined,
       attendeeId: mongoose.isValidObjectId(wabaMessageData.attendeeId)
         ? new Types.ObjectId(wabaMessageData.attendeeId)
+        : undefined,
+      programId: mongoose.isValidObjectId(wabaMessageData.programId)
+        ? new Types.ObjectId(wabaMessageData.programId)
+        : undefined,
+      programAssignmentId: mongoose.isValidObjectId(wabaMessageData.programAssignmentId)
+        ? new Types.ObjectId(wabaMessageData.programAssignmentId)
         : undefined,
       messageType: wabaMessageData.messageType || 'individual',
       meetingId: wabaMessageData.meetingId || undefined,

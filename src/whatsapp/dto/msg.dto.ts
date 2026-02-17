@@ -149,4 +149,11 @@ export interface ISendSingleTemplateMessagePayload {
   meetingId?: string;
   occurrenceId?: string;
   apiCampaignId?: string;
+  // Program-based messaging (optional)
+  programId?: string;
+  programAssignmentId?: string;
+  occurrenceIndex?: number;
+  timeSlotIndex?: number;
+  executionLogId?: string;
+  programMessageType?: 'template' | 'session';
 }
