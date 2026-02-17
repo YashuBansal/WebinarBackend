@@ -302,10 +302,27 @@ export class SubscriptionService {
   }
 
   async updateClientPlan(
-    adminId: string,
+    adminIdOrEmail: string,
     planId: string,
     durationType: DurationType,
   ) {
+    let adminId: string;
+    if (adminIdOrEmail.includes('@')) {
+      const normalizedEmail = adminIdOrEmail.trim().toLowerCase();
+      const resolvedId = await this.userService.getAdminIdByEmail(normalizedEmail);
+      if (!resolvedId) {
+        throw new NotFoundException(
+          `User not found for email ${normalizedEmail}`,
+        );
+      }
+      adminId = resolvedId;
+    } else {
+      if (!Types.ObjectId.isValid(adminIdOrEmail)) {
+        throw new BadRequestException('Invalid admin ID');
+      }
+      adminId = adminIdOrEmail;
+    }
+
     const subscription = await this.SubscriptionModel.findOne({
       admin: new Types.ObjectId(`${adminId}`),
     });
@@ -343,6 +360,9 @@ export class SubscriptionService {
     }
 
     const durationConfig = plan.planDurationConfig.get(durationType);
+    if(!durationConfig.isEnabled){
+      throw new NotAcceptableException('Duration type is not enabled');
+    }
 
     let billingStartDate = null;
 
@@ -826,6 +846,10 @@ export class SubscriptionService {
     const durationConfig = plan.planDurationConfig.get(durationType);
     if (!durationConfig)
       throw new NotAcceptableException('Duration type not found.');
+
+    if(!durationConfig.isEnabled){
+      throw new NotAcceptableException('Duration type is not enabled');
+    }
 
     const { totalWithGST } = this.generatePriceForPlan(
       durationConfig,

@@ -1,5 +1,6 @@
 import {
   IsDateString,
+  IsEmail,
   IsEnum,
   IsInt,
   IsMongoId,
@@ -9,6 +10,7 @@ import {
   IsString,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
 
 export class SubscriptionDto {
@@ -61,8 +63,9 @@ export class UpdateSubscriptionDto {
 
 export class UpdatePlanDTO {
   @IsNotEmpty()
-  @IsMongoId()
-  adminId: string;
+  @IsEmail()
+  @Transform(({ value }) => value?.trim()?.toLowerCase())
+  email: string;
 
   @IsNotEmpty()
   @IsMongoId()

@@ -223,4 +223,6 @@ UserSchema.path('adminId').default(() => rolesEnv.SUPER_ADMIN);
 
 export { UserSchema };
 
+// Email must be globally unique (even for soft-deleted users)
+UserSchema.index({ email: 1 }, { unique: true });
 UserSchema.index({ adminId: 1 });
