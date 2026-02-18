@@ -30,6 +30,7 @@ import {
 } from './program-scheduler.util';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { ConfigService } from '@nestjs/config';
+import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
 @Injectable()
 export class ProgramService {
@@ -42,7 +43,6 @@ export class ProgramService {
     @InjectModel(ProgramSlot.name)
     private programSlotModel: Model<ProgramSlotDocument>,
     private readonly projectService: ProjectsService,
-    @Inject(forwardRef(() => WhatsappService))
     private readonly whatsappService: WhatsappService,
     private readonly configService: ConfigService,
   ) {}
@@ -386,17 +386,157 @@ export class ProgramService {
           ? slot.programAssignmentId.toString()
           : new Types.ObjectId(slot.programAssignmentId).toString();
 
-        await this.whatsappService.enqueueProgramSlot({
+        // Load assignment with populated program data
+        const assignment = await this.getAssignmentByIdForWorker(assignmentId);
+        if (!assignment) {
+          this.logger.warn(`Program assignment not found: ${assignmentId}`);
+          await this.programSlotModel.updateOne(
+            { _id: slot._id },
+            {
+              $set: {
+                status: 'failed',
+                lastError: 'Program assignment not found',
+              },
+            },
+          );
+          continue;
+        }
+
+        const program: any = (assignment as any).programId;
+        if (!program) {
+          this.logger.warn(`Program missing for assignment: ${assignmentId}`);
+          await this.programSlotModel.updateOne(
+            { _id: slot._id },
+            {
+              $set: {
+                status: 'failed',
+                lastError: 'Program missing for assignment',
+              },
+            },
+          );
+          continue;
+        }
+
+        const adminId = (assignment as any).adminId?.toString();
+        const projectId = (assignment as any).projectId?.toString();
+        if (!adminId || !projectId) {
+          this.logger.warn(
+            `Missing adminId/projectId on assignment ${assignmentId}`,
+          );
+          await this.programSlotModel.updateOne(
+            { _id: slot._id },
+            {
+              $set: {
+                status: 'failed',
+                lastError: 'Missing adminId or projectId on assignment',
+              },
+            },
+          );
+          continue;
+        }
+
+        const occurrenceTimeSlots = (program as any).occurrenceTimeSlots ?? [];
+        const occurrenceSlots =
+          occurrenceTimeSlots[slot.occurrenceIndex - 1] ?? [];
+        const slotConfig = occurrenceSlots[slot.timeSlotIndex];
+        const messageConfig = slotConfig?.messageConfig;
+        if (!messageConfig) {
+          this.logger.warn(
+            `No message config for slot ${slot.timeSlotIndex} in program ${programId}`,
+          );
+          await this.programSlotModel.updateOne(
+            { _id: slot._id },
+            {
+              $set: {
+                status: 'failed',
+                lastError: 'No message config for program slot',
+              },
+            },
+          );
+          continue;
+        }
+
+        const templateName = messageConfig.templateName;
+        const dynamicVariables = (assignment as any).dynamicVariables ?? {};
+        const bodyVariables: string[] = (
+          messageConfig.variableMappings ?? []
+        ).map(
+          (m: {
+            isDynamic?: boolean;
+            contactField?: string;
+            staticValue?: string;
+            fallbackValue?: string;
+          }) => {
+            if (m.isDynamic) {
+              const field = (m.contactField ?? '').replace(/^\$/, '');
+              return dynamicVariables[field] ?? m.fallbackValue ?? '';
+            }
+            return m.staticValue ?? m.fallbackValue ?? '';
+          },
+        );
+
+        const phone = (assignment as any).phone ?? '';
+        if (!phone) {
+          this.logger.warn(
+            `Missing phone on assignment ${assignmentId}, cannot send program message`,
+          );
+          await this.programSlotModel.updateOne(
+            { _id: slot._id },
+            {
+              $set: {
+                status: 'failed',
+                lastError: 'Missing phone on assignment',
+              },
+            },
+          );
+          continue;
+        }
+
+        const result = await this.whatsappService.sendTemplateMessagev2({
+          adminId,
+          messageType: WabaMessageType.PROGRAM,
+          sendTemplateDto: {
+            projectId,
+            recipients: [
+              {
+                recipientPhoneNumber: phone,
+                bodyVariables,
+              },
+            ],
+            templateName,
+            headerMediaAssetId: messageConfig.headerMediaAssetId,
+            language: messageConfig.language,
+          },
           programId,
           programAssignmentId: assignmentId,
-          occurrenceIndex: slot.occurrenceIndex,
-          timeSlotIndex: slot.timeSlotIndex,
+          programSlotId: slot._id.toString(),
         });
 
-        await this.programSlotModel.updateOne(
-          { _id: slot._id, status: 'pending' },
-          { $set: { status: 'enqueued', lastError: undefined } },
-        );
+        const stats = result?.stats;
+        const enqueued = stats?.enqueued ?? 0;
+        if (enqueued === 1) {
+          await this.programSlotModel.updateOne(
+            { _id: slot._id, status: 'pending' },
+            { $set: { status: 'enqueued', lastError: undefined } },
+          );
+        } else {
+          const errorMessage =
+            stats?.errors?.[0] ||
+            result?.message ||
+            'Failed to enqueue program slot message';
+          this.logger.warn(
+            `sendTemplateMessagev2 did not enqueue message for program slot ${slot._id}: ${errorMessage}`,
+          );
+          await this.programSlotModel.updateOne(
+            { _id: slot._id },
+            {
+              $set: {
+                status: 'failed',
+                lastError: errorMessage,
+              },
+            },
+          );
+        }
       } catch (err) {
         this.logger.warn(
           `Failed to enqueue program slot ${slot._id}: ${

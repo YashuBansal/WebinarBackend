@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Program } from './program.schema';
 import { ProgramAssignment } from './program-assignment.schema';
+import { WabaMessage } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
 export type ProgramSlotStatus = 'pending' | 'enqueued' | 'sent' | 'failed' | 'skipped';
 
@@ -9,10 +10,10 @@ export type ProgramSlotDocument = ProgramSlot & Document;
 
 @Schema({ timestamps: true })
 export class ProgramSlot extends Document {
-  @Prop({ type: Types.ObjectId, ref: Program.name, required: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: Program.name, required: true })
   programId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: ProgramAssignment.name, required: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: ProgramAssignment.name, required: true })
   programAssignmentId: Types.ObjectId;
 
   @Prop({ type: Number, required: true, min: 1 }) // 1-based occurrence index
@@ -21,7 +22,7 @@ export class ProgramSlot extends Document {
   @Prop({ type: Number, required: true, min: 0 }) // 0-based time slot index within the occurrence
   timeSlotIndex: number;
 
-  @Prop({ type: Date, required: true, index: true })
+  @Prop({ type: Date, required: true })
   scheduledAt: Date;
 
   @Prop({

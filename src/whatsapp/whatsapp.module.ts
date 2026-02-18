@@ -21,7 +21,6 @@ import { WhatsappQueueModule } from './whatsapp.queue.module';
 import { WhatsappQueueProcessor } from './whatsapp.queue.processor';
 import { WhatsappWebhookProcessor } from './whatsapp.webhook.processor';
 import { WabaTemplateModule } from 'src/whatsapp-embed/waba-template/waba-template.module';
-import { ProgramModule } from 'src/whatsapp-program/program.module';
 
 @Module({
   imports: [
@@ -36,7 +35,6 @@ import { ProgramModule } from 'src/whatsapp-program/program.module';
     ]),
     WhatsappQueueModule,
     forwardRef(() => WabaTemplateModule),
-    forwardRef(() => ProgramModule),
   ],
   providers: [
     WhatsappService,

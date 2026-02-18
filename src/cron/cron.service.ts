@@ -43,7 +43,7 @@ export class CronService implements OnModuleInit {
         this.alarmService.processDueReminders(),
         this.alarmService.processDueAlarms(),
         this.campaignService.processScheduledCampaigns(),
-        this.programService.processDueProgramSlots(),
+        // this.programService.processDueProgramSlots(),
       ]);
     } catch (error) {
       // This is a top-level catch for unexpected errors in the Promise.all

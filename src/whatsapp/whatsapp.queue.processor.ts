@@ -4,42 +4,36 @@ import {
   Logger,
   OnModuleInit,
   OnModuleDestroy,
-  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Worker, Job } from 'bullmq';
+import { Worker, Job } from 'bullmq'; // Added Job to imports
 import { WhatsappService } from './whatsapp.service';
 import {
   getWhatsappTemplateQueueName,
   getWhatsappQueueNamespace,
 } from './whatsapp.queue.module';
 import { REDIS_CONNECTION } from 'src/redis/redis.module';
-import { ISendSingleTemplateMessagePayload } from './dto/msg.dto';
-import { ProgramService } from 'src/whatsapp-program/program.service';
-import { Types } from 'mongoose';
-
-function isRetryableError(error: any): boolean {
-  const status = error?.response?.status;
-  const code = error?.code;
-  if (status === 429 || (status >= 500 && status < 600)) return true;
-  if (code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'ENOTFOUND') return true;
-  if (status === 400 || status === 401 || status === 403) return false;
-  return true;
-}
+import { ISendSingleTemplateMessagePayload } from './dto/msg.dto'; // Import the DTO interface
 
 @Injectable()
 export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WhatsappQueueProcessor.name);
-
+  
+  // BullMQ Worker instance handling job processing
+  // Enforce the payload type on the Worker
   private worker: Worker<ISendSingleTemplateMessagePayload> | null = null;
 
+  /**
+   * Initializes the processor with required dependencies.
+   * @param connection Redis connection for BullMQ
+   * @param configService Service to access configuration variables
+   * @param whatsappService Service to handle actual WhatsApp message sending
+   */
   constructor(
     @Inject(REDIS_CONNECTION)
     private readonly connection: any,
     private readonly configService: ConfigService,
     private readonly whatsappService: WhatsappService,
-    @Inject(forwardRef(() => ProgramService))
-    private readonly programService: ProgramService,
   ) {}
 
   /**
@@ -76,10 +70,11 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
         const templateName = payload?.templateName || 'unknown';
         const projectId = payload?.projectId || 'unknown';
         const adminId = payload?.adminId || 'unknown';
-        const programAssignmentId = payload?.programAssignmentId;
-
+        
+        // Log job start with key details
         const logData = {
           jobId: job.id,
+          jobName: job.name,
           phoneNumber,
           templateName,
           projectId,
@@ -88,63 +83,49 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
           attempt: job.attemptsMade + 1,
           maxAttempts: job.opts?.attempts || 1,
         };
-        this.logger.log(
-          'Processing queue job - calling optimizedSendSingleTemplateMessage',
-          logData,
-        );
+        this.logger.log('Processing queue job - calling optimizedSendSingleTemplateMessage', logData);
+        // Console fallback for visibility
+        console.log(`[QUEUE] Processing job ${job.id} - ${phoneNumber} - ${templateName}`, logData);
 
         try {
-          const result =
-            await this.whatsappService.optimizedSendSingleTemplateMessage(
-              payload,
-            );
-
-          this.logger.log('Queue job completed successfully', {
+          // Call the method and capture result
+          const result = await this.whatsappService.optimizedSendSingleTemplateMessage(payload);
+          
+          // Log successful completion
+          const successLogData = {
             jobId: job.id,
             phoneNumber,
             templateName,
+            projectId,
             success: result?.success,
             messageId: result?.messageId,
-          });
+          };
+          this.logger.log('Queue job completed successfully', successLogData);
+          // Console fallback for visibility
+          console.log(`[QUEUE] Job ${job.id} completed successfully`, successLogData);
+          
           return result;
         } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
+          // Log error with full context
+          const errorMessage = error instanceof Error ? error.message : String(error);
           const errorStack = error instanceof Error ? error.stack : undefined;
-          this.logger.error('Queue job failed with error', {
+          
+          const errorLogData = {
             jobId: job.id,
             phoneNumber,
             templateName,
+            projectId,
+            adminId,
             error: errorMessage,
+            stack: errorStack,
+            errorType: error?.constructor?.name || typeof error,
             attempt: job.attemptsMade + 1,
-          });
-
-          if (programAssignmentId) {
-            await this.programService.incrementAssignmentFailureCount(
-              new Types.ObjectId(programAssignmentId),
-            );
-            const assignment =
-              await this.programService.getAssignmentByIdForWorker(
-                programAssignmentId,
-              );
-            if (assignment && (assignment as any).failureCount >= 3) {
-              await this.programService.pauseAssignmentOnFailure(
-                new Types.ObjectId(programAssignmentId),
-              );
-            }
-          }
-
-          const retryable = isRetryableError(error);
-          if (!retryable) {
-            this.logger.log(
-              `Non-retryable error for job ${job.id}, not rethrowing`,
-            );
-            return {
-              success: false,
-              code: (error as any)?.response?.data?.error?.code ?? 'UNKNOWN',
-              message: errorMessage,
-            };
-          }
+          };
+          this.logger.error('Queue job failed with error', errorLogData);
+          // Console fallback for visibility
+          console.error(`[QUEUE] Job ${job.id} failed`, errorLogData);
+          
+          // Re-throw to let BullMQ handle retries
           throw error;
         }
       },

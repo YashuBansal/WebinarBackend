@@ -52,7 +52,6 @@ import {
 import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-template.service';
 import { WabaTemplateDocument } from 'src/whatsapp-embed/waba-template/waba-template.schema';
 import { BaseLoggerService } from 'src/logger/base-logger.service';
-import { ProgramService } from 'src/whatsapp-program/program.service';
 
 @Injectable()
 export class WhatsappService extends BaseLoggerService {
@@ -76,8 +75,6 @@ export class WhatsappService extends BaseLoggerService {
     private readonly whatsappWebhookQueue: Queue,
     @Inject(forwardRef(() => WabaTemplateService))
     private readonly wabaTemplateService: WabaTemplateService,
-    @Inject(forwardRef(() => ProgramService))
-    private readonly programService: ProgramService,
   ) {
     super();
     this.webhookVerifyToken = this.configService.get<string>(
@@ -2196,6 +2193,9 @@ export class WhatsappService extends BaseLoggerService {
     apiCampaignId,
     messageType,
     messageFormat,
+    programId,
+    programAssignmentId,
+    programSlotId,
   }: {
     projectId: string;
     adminId: string;
@@ -2212,6 +2212,9 @@ export class WhatsappService extends BaseLoggerService {
     apiCampaignId?: string;
     messageType: WabaMessageType;
     messageFormat: 'text' | 'template' | 'media';
+    programId?: string;
+    programAssignmentId?: string;
+    programSlotId?: string;
   }) {
     try {
       const wabaMessageId = uuidv4();
@@ -2236,6 +2239,9 @@ export class WhatsappService extends BaseLoggerService {
         attendeeId,
         meetingId,
         occurrenceId,
+        programId,
+        programAssignmentId,
+        programSlotId,
       });
     } catch (error) {
       this.logger.error('Failed to create error message:', error);
@@ -3439,160 +3445,7 @@ export class WhatsappService extends BaseLoggerService {
     };
   }
 
-  /**
-   * Build and enqueue a single program slot send job.
-   * Loads assignment, program, contact; resolves variables; builds template payload; enqueues with jobId = executionLogId.
-   */
-  async enqueueProgramSlot(params: {
-    programId: string;
-    programAssignmentId: string;
-    occurrenceIndex: number;
-    timeSlotIndex: number;
-  }): Promise<{ success: boolean; jobId?: string }> {
-    const { programId, programAssignmentId, occurrenceIndex, timeSlotIndex } =
-      params;
-    const assignment = await this.programService.getAssignmentByIdForWorker(
-      programAssignmentId,
-    );
-    if (!assignment) {
-      this.logger.warn(`Program assignment not found: ${programAssignmentId}`);
-      return { success: false };
-    }
-    const program = (assignment as any).programId;
-    if (!program) {
-      this.logger.warn(
-        `Program missing for assignment: ${programAssignmentId}`,
-      );
-      return { success: false };
-    }
-    const adminId = (assignment as any).adminId?.toString();
-    const projectId = (assignment as any).projectId?.toString();
-    if (!adminId || !projectId) {
-      return { success: false };
-    }
-    const occurrenceTimeSlots = (program as any).occurrenceTimeSlots ?? [];
-    const occurrenceSlots = occurrenceTimeSlots[occurrenceIndex - 1] ?? [];
-    const slot = occurrenceSlots[timeSlotIndex];
-    const config = slot?.messageConfig;
-    if (!config) {
-      this.logger.warn(
-        `No message config for slot ${timeSlotIndex} in program ${programId}`,
-      );
-      return { success: false };
-    }
-    const templateName = config.templateName;
-    const dynamicVariables = (assignment as any).dynamicVariables ?? {};
-    const bodyVariables: string[] = (config.variableMappings ?? []).map(
-      (m: { isDynamic?: boolean; contactField?: string; staticValue?: string; fallbackValue?: string }) => {
-        if (m.isDynamic) {
-          const field = (m.contactField ?? '').replace(/^\$/, '');
-          return (
-            dynamicVariables[field] ??
-            m.fallbackValue ??
-            ''
-          );
-        }
-        return m.staticValue ?? m.fallbackValue ?? '';
-      },
-    );
-    const account = await this.projectService.findOne(
-      new Types.ObjectId(adminId),
-      new Types.ObjectId(projectId),
-    );
-    if (!account) {
-      this.logger.warn(`Project not found: ${projectId}`);
-      return { success: false };
-    }
-    const template = await this.wabaTemplateService.getByTemplateName(
-      new Types.ObjectId(adminId),
-      new Types.ObjectId(projectId),
-      templateName,
-    );
-    if (!template) {
-      this.logger.warn(`Template not found: ${templateName}`);
-      return { success: false };
-    }
-    const headerComponent = (template as any).components?.find(
-      (c: { type: string }) => c.type === 'HEADER',
-    );
-    const baseTemplateStructure: any = {
-      name: templateName,
-      language: { code: (template as any).language ?? 'en_US' },
-      components: [],
-    };
-    if (headerComponent) {
-      const headerFormat = (headerComponent as any).format;
-      const mediaHeaderFormats = ['IMAGE', 'VIDEO', 'DOCUMENT'];
-      if (mediaHeaderFormats.includes(headerFormat) && config.headerMediaAssetId) {
-        const mediaAsset = await this.mediaAssetModel.findById(
-          config.headerMediaAssetId,
-        );
-        if (mediaAsset) {
-          let headerParameter: any;
-          if (headerFormat === 'IMAGE') {
-            headerParameter = {
-              type: 'image',
-              image: { link: mediaAsset.filePath },
-            };
-          } else if (headerFormat === 'VIDEO') {
-            headerParameter = {
-              type: 'video',
-              video: { link: mediaAsset.filePath },
-            };
-          } else {
-            headerParameter = {
-              type: 'document',
-              document: {
-                link: mediaAsset.filePath,
-                filename: mediaAsset.fileName,
-              },
-            };
-          }
-          baseTemplateStructure.components.push({
-            type: 'header',
-            parameters: [headerParameter],
-          });
-        }
-      }
-    }
-    if (bodyVariables.length > 0) {
-      baseTemplateStructure.components.push({
-        type: 'body',
-        parameters: bodyVariables.map((v) => ({ type: 'text', text: v })),
-      });
-    }
-    if (baseTemplateStructure.components.length === 0) {
-      delete baseTemplateStructure.components;
-    }
-    const phone = (assignment as any).phone ?? '';
-    const formatted = this.formatIndianRecipient(phone);
-    if (!formatted.isValid) {
-      this.logger.warn(`Invalid phone for contact: ${phone}`);
-      return { success: false };
-    }
-    const payload: ISendSingleTemplateMessagePayload = {
-      adminId,
-      projectId,
-      formattedPhoneData: formatted,
-      templateName,
-      fromPhoneNumberId: account.phoneNumberId,
-      permanentAccessToken: account.permanentAccessToken,
-      messageType: WabaMessageType.PROGRAM,
-      templateStructure: baseTemplateStructure,
-      language: config.language ?? (template as any).language ?? 'en_US',
-      contactId: undefined,
-      programId,
-      programAssignmentId,
-      occurrenceIndex,
-      timeSlotIndex,
-      programMessageType: config.messageType ?? 'template',
-    };
-    const jobId = `program_${programAssignmentId}_${occurrenceIndex}_${timeSlotIndex}`;
-    await this.enqueueTemplateSendJob(payload, {
-      jobId,
-    });
-    return { success: true, jobId };
-  }
+ 
 
   /**
    * Core logic to send a single template message via Meta Graph API.
@@ -3794,7 +3647,7 @@ export class WhatsappService extends BaseLoggerService {
           messageType: payload.messageType,
         });
         try {
-          await this.wabaMessageService.create({
+          const wabaMessage = await this.wabaMessageService.create({
             projectId,
             adminId,
             phoneNumber: normalizedRecipientPhoneNumber,
@@ -3809,6 +3662,7 @@ export class WhatsappService extends BaseLoggerService {
             occurrenceId: payload.occurrenceId,
             programId: payload.programId,
             programAssignmentId: payload.programAssignmentId,
+            programSlotId: payload.programSlotId,
             templateLanguage: language || templateStructure.language || 'en_US',
             messageFormat: 'template',
             templateComponents: templateStructure.components || [],
@@ -3844,6 +3698,9 @@ export class WhatsappService extends BaseLoggerService {
             meetingId: payload.meetingId,
             occurrenceId: payload.occurrenceId,
             apiCampaignId: payload.apiCampaignId,
+            programId: payload.programId,
+            programAssignmentId: payload.programAssignmentId,
+            programSlotId: payload.programSlotId,
           });
           // Don't throw error here as the message was sent successfully
           // This is a non-critical operation
@@ -3878,6 +3735,9 @@ export class WhatsappService extends BaseLoggerService {
         meetingId: payload.meetingId,
         occurrenceId: payload.occurrenceId,
         apiCampaignId: payload.apiCampaignId,
+        programId: payload.programId,
+        programAssignmentId: payload.programAssignmentId,
+        programSlotId: payload.programSlotId,
       });
 
       try {
@@ -3903,6 +3763,9 @@ export class WhatsappService extends BaseLoggerService {
           apiCampaignId: payload.apiCampaignId,
           messageType: payload.messageType,
           messageFormat: 'template',
+          programId: payload.programId,
+          programAssignmentId: payload.programAssignmentId,
+          programSlotId: payload.programSlotId,
         });
         this.logger.log('Error message record created successfully', {
           phoneNumber: normalizedRecipientPhoneNumber,
@@ -4043,9 +3906,9 @@ export class WhatsappService extends BaseLoggerService {
     campaignId?: string;
     attendeeId?: string;
     apiCampaignId?: string;
-
-
-
+    programId?: string;
+    programAssignmentId?: string;
+    programSlotId?: string;
   }): Promise<any> {
     const {
       adminId,
@@ -4057,6 +3920,9 @@ export class WhatsappService extends BaseLoggerService {
       campaignId,
       attendeeId,
       apiCampaignId,
+      programId,
+      programAssignmentId, 
+      programSlotId,
     } = payload;
 
     const { projectId, recipients, templateName, headerMediaAssetId } =
@@ -4254,6 +4120,9 @@ export class WhatsappService extends BaseLoggerService {
               campaignId,
               attendeeId,
               apiCampaignId,
+              programId,
+              programAssignmentId,
+              programSlotId,
             });
             results.enqueued++;
           } catch (error) {

@@ -26,7 +26,7 @@ import { UsersModule } from 'src/users/users.module';
     ProjectsModule,
     ContactsModule,
     forwardRef(() => UsersModule),
-    forwardRef(() => WhatsappModule),
+    WhatsappModule,
   ],
   controllers: [ProgramController],
   providers: [ProgramService],
