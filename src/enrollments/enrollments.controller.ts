@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -9,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { AdminId, Id } from 'src/decorators/custom.decorator';
 import {
+  BulkWebinarEnrollmentDto,
   CreateEnrollmentDto,
   EnrollmentsByLevelOrProductDTO,
   GetEnrollmentsByEmailDto,
@@ -33,6 +35,25 @@ export class EnrollmentsController {
       userId,
     );
     return enrollment;
+  }
+
+  @Post('bulk-webinar')
+  async bulkCreateEnrollmentsForWebinar(
+    @AdminId() adminId: string,
+    @Body() body: BulkWebinarEnrollmentDto,
+  ): Promise<any> {
+    if (
+      body.scope === 'selected' &&
+      (!Array.isArray(body.attendeeIds) || body.attendeeIds.length === 0)
+    ) {
+      throw new BadRequestException(
+        'attendeeIds is required when scope is "selected"',
+      );
+    }
+    return this.enrollmentsService.bulkCreateEnrollmentsForWebinar(
+      body,
+      adminId,
+    );
   }
 
   @Get('webinar/:id')

@@ -42,7 +42,7 @@ import { TagsModule } from 'src/tags/tags.module';
     forwardRef(() => AssignmentModule),
     NotificationModule,
     AlarmModule,
-    EnrollmentsModule,
+    forwardRef(() => EnrollmentsModule),
     NotesModule,
     AttendeeAssociationModule,
     AttendeeLogModule,

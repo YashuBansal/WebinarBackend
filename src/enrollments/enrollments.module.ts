@@ -14,6 +14,7 @@ import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { UsersModule } from 'src/users/users.module';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 import { WebinarModule } from 'src/webinar/webinar.module';
+import { AttendeesModule } from 'src/attendees/attendees.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { WebinarModule } from 'src/webinar/webinar.module';
     forwardRef(() => ProductsModule),
     forwardRef(() => UsersModule),
     forwardRef(() => WebinarModule),
+    forwardRef(() => AttendeesModule),
     AttendeeLogModule,
   ],
   providers: [EnrollmentsService],
