@@ -96,6 +96,14 @@ export class ProgramController {
     return this.programService.findAssignment(assignmentId, adminId);
   }
 
+  @Get('assignments/:assignmentId/slots')
+  getAssignmentSlots(
+    @Param('assignmentId') assignmentId: string,
+    @Id() adminId: string,
+  ) {
+    return this.programService.getAssignmentSlots(assignmentId, adminId);
+  }
+
   @Post('assignments/:assignmentId/pause')
   pauseAssignment(
     @Param('assignmentId') assignmentId: string,

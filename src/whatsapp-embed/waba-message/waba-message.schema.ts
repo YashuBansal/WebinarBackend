@@ -279,5 +279,7 @@ WabaMessageSchema.index({ sentAt: -1 });
 WabaMessageSchema.index({ deliveredAt: -1 });
 WabaMessageSchema.index({ readAt: -1 });
 WabaMessageSchema.index({ projectId: 1, phoneNumber: 1, createdAt: -1 });
+WabaMessageSchema.index({ programAssignmentId: 1 });
+WabaMessageSchema.index({ programSlotId: 1 });
 
 export { WabaMessageSchema };

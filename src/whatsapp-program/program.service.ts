@@ -321,6 +321,12 @@ export class ProgramService {
               slot.time,
               slot.timezone || savedAssignment.timezone,
             );
+
+            // Skip slots that are scheduled in the past
+            if (scheduledAt < new Date()) {
+              continue;
+            }
+
             slotsToInsert.push({
               programId: savedAssignment.programId,
               programAssignmentId: savedAssignment._id,
@@ -564,7 +570,7 @@ export class ProgramService {
     page = 1,
     limit = 10,
   ): Promise<{
-    assignments: ProgramAssignment[];
+    assignments: any[];
     total: number;
     page: number;
     limit: number;
@@ -574,7 +580,7 @@ export class ProgramService {
     if (projectId) filter.projectId = new Types.ObjectId(projectId);
     if (status) filter.status = status;
     const skip = (page - 1) * limit;
-    const [assignments, total] = await Promise.all([
+    const [assignmentsData, total] = await Promise.all([
       this.programAssignmentModel
         .find(filter)
         .populate(
@@ -584,9 +590,65 @@ export class ProgramService {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
+        .lean()
         .exec(),
       this.programAssignmentModel.countDocuments(filter),
     ]);
+
+    const assignmentIds = assignmentsData.map((a: any) => a._id);
+    let statsMap = new Map<string, any>();
+
+    if (assignmentIds.length > 0) {
+      const statsAggregation = await this.programSlotModel.aggregate([
+        { $match: { programAssignmentId: { $in: assignmentIds } } },
+        {
+          $group: {
+            _id: '$programAssignmentId',
+            totalSlots: { $sum: 1 },
+            completedSlots: {
+              $sum: {
+                $cond: [{ $in: ['$status', ['sent', 'skipped', 'enqueued']] }, 1, 0],
+              },
+            },
+            pendingSlots: {
+              $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
+            },
+            failedSlots: {
+              $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
+            },
+            nextSlotDate: {
+              $min: {
+                $cond: [{ $eq: ['$status', 'pending'] }, '$scheduledAt', null],
+              },
+            },
+            currentOccurrence: {
+              $max: {
+                $cond: [
+                  { $in: ['$status', ['sent', 'skipped', 'enqueued']] },
+                  '$occurrenceIndex',
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]);
+      statsMap = new Map(statsAggregation.map((s) => [s._id.toString(), s]));
+    }
+
+    const assignments = assignmentsData.map((a: any) => ({
+      ...a,
+      stats: statsMap.get(a._id.toString()) || {
+        totalSlots: 0,
+        completedSlots: 0,
+        pendingSlots: 0,
+        failedSlots: 0,
+        nextSlotDate: null,
+        currentOccurrence: 0,
+      },
+      id: a._id.toString(),
+    }));
+
     return { assignments, total, page, limit };
   }
 
@@ -605,6 +667,46 @@ export class ProgramService {
       throw new NotFoundException(`Assignment "${assignmentId}" not found.`);
     }
     return assignment as ProgramAssignmentDocument;
+  }
+
+  async getAssignmentSlots(
+    assignmentId: string,
+    adminId: string,
+  ): Promise<any[]> {
+    // Validate assignment exists and belongs to admin
+    await this.findAssignment(assignmentId, adminId);
+    
+    return this.programSlotModel
+      .aggregate([
+        { $match: { programAssignmentId: new Types.ObjectId(assignmentId) } },
+        { $sort: { occurrenceIndex: 1, timeSlotIndex: 1 } },
+        {
+          $lookup: {
+            from: 'wabamessages',
+            let: { slot_id: '$_id' },
+            pipeline: [
+              { $match: { $expr: { $eq: ['$programSlotId', '$$slot_id'] } } },
+              { $project: {
+                status: 1,
+                statusHistory: 1,
+                failureReason: 1,
+                sentAt: 1,
+                deliveredAt: 1,
+                readAt: 1,
+                wabaMessageId: 1
+              }}
+            ],
+            as: 'wabaMessage',
+          },
+        },
+        {
+          $unwind: {
+            path: '$wabaMessage',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+      ])
+      .exec();
   }
 
   async pauseAssignment(
