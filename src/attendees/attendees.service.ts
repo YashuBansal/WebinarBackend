@@ -1706,6 +1706,33 @@ export class AttendeesService {
     }
   }
 
+  async getAttendeeEmailsByIds(
+    attendeeIds: string[],
+    webinarId: string,
+    adminId: string,
+    isAttended: boolean,
+  ): Promise<string[]> {
+    if (!attendeeIds?.length) return [];
+    const docs = await this.attendeeModel
+      .find({
+        _id: { $in: attendeeIds.map((id) => new Types.ObjectId(id)) },
+        webinar: new Types.ObjectId(webinarId),
+        adminId: new Types.ObjectId(adminId),
+        isAttended,
+        isDeleted: { $ne: true },
+      })
+      .select('email')
+      .lean()
+      .exec();
+    const emails = (docs || [])
+      .map((d: any) => d?.email)
+      .filter(
+        (email): email is string =>
+          typeof email === 'string' && email.trim().length > 0,
+      );
+    return Array.from(new Set(emails.map((e) => e.toLowerCase().trim())));
+  }
+
   async swapFields(payload: SwapAttendeeFieldsDTO, adminId: string) {
     const {
       attendees: attendeesIds,

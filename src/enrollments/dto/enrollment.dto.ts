@@ -1,10 +1,16 @@
+import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
+  IsIn,
   IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
+  ValidateNested,
 } from 'class-validator';
+import { AttendeesFilterDto } from 'src/attendees/dto/attendees.dto';
 
 export class CreateEnrollmentDto {
   @IsString()
@@ -95,4 +101,45 @@ export class EnrollmentsByLevelOrProductDTO {
   @IsString()
   @IsNotEmpty()
   limit?: string;
+}
+
+export class BulkWebinarEnrollmentDto {
+  @IsMongoId()
+  @IsNotEmpty()
+  webinarId: string;
+
+  @IsMongoId()
+  @IsNotEmpty()
+  productId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(['selected', 'filtered'])
+  scope: 'selected' | 'filtered';
+
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  attendeeIds?: string[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AttendeesFilterDto)
+  filters?: AttendeesFilterDto;
+
+  @IsOptional()
+  @IsString()
+  validCall?: string;
+
+  @IsOptional()
+  @IsString()
+  assignmentType?: string;
+
+  @IsBoolean()
+  isAttended: boolean;
+
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{6}$/, { message: 'confirmationCode must be exactly 6 digits' })
+  confirmationCode: string;
 }
