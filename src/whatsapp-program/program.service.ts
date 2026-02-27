@@ -31,6 +31,11 @@ import {
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { ConfigService } from '@nestjs/config';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
+import { Queue } from 'bullmq';
+import { PROGRAM_AUTO_ASSIGN_QUEUE } from './program.queue.module';
+import { AttendeesService } from 'src/attendees/attendees.service';
+import { AdvanceFilterResponseType } from 'src/attendees/dto/advance-attendee-filters.dto';
+import { AutoAssignJobPayload } from './program-auto-assign.processor';
 
 @Injectable()
 export class ProgramService {
@@ -45,6 +50,10 @@ export class ProgramService {
     private readonly projectService: ProjectsService,
     private readonly whatsappService: WhatsappService,
     private readonly configService: ConfigService,
+    @Inject(PROGRAM_AUTO_ASSIGN_QUEUE)
+    private readonly autoAssignQueue: Queue,
+    @Inject(forwardRef(() => AttendeesService))
+    private readonly attendeesService: AttendeesService,
   ) {}
 
   /**
@@ -113,7 +122,10 @@ export class ProgramService {
     });
   }
 
-  async create(dto: CreateProgramDto, adminId: string): Promise<Program> {
+  async create(
+    dto: CreateProgramDto,
+    adminId: string,
+  ): Promise<{ program: Program; eligibleCount?: number }> {
     await this.projectService.findOne(
       new Types.ObjectId(adminId),
       new Types.ObjectId(dto.projectId),
@@ -138,14 +150,44 @@ export class ProgramService {
       projectId: new Types.ObjectId(dto.projectId),
       isActive: dto.isActive ?? true,
     });
-    return program.save();
+    
+    const savedProgram = await program.save();
+
+    let eligibleCount = 0;
+    if (savedProgram.isAutoAssignable && savedProgram.autoAssignCriteria) {
+       try {
+         const criteria = savedProgram.autoAssignCriteria;
+         const matchData = await this.attendeesService.fetchAttendeesByAdvanceFilters(
+           {
+             responseType: AdvanceFilterResponseType.COUNT,
+             webinarIds: criteria.webinarIds || [],
+             isAttended: criteria.isAttended,
+             units: criteria.conditions || [],
+           } as any,
+           adminId
+         );
+         eligibleCount = matchData?.count || 0;
+         
+         if (eligibleCount > 0) {
+           await this.autoAssignQueue.add('bulk-auto-assign', {
+             type: 'BULK_ASSIGN',
+             adminId,
+             programId: savedProgram._id.toString()
+           }, { removeOnComplete: true });
+         }
+       } catch (err) {
+         this.logger.error(`Error enqueueing bulk assign on create`, err.stack);
+       }
+    }
+
+    return { program: savedProgram, eligibleCount };
   }
 
   async update(
     programId: string,
     dto: UpdateProgramDto,
     adminId: string,
-  ): Promise<Program> {
+  ): Promise<{ program: Program; eligibleCount?: number }> {
     const program = await this.findOne(programId, adminId);
     const merged = {
       occurrenceCount: dto.occurrenceCount ?? (program as any).occurrenceCount,
@@ -161,9 +203,44 @@ export class ProgramService {
         'occurrenceTimeSlots',
       );
     }
+    
+    // Check if auto assign criteria was newly added or changed
+    const wasAutoAssignable = program.isAutoAssignable;
+    
     Object.assign(program, dto);
     if (dto.projectId) program.projectId = new Types.ObjectId(dto.projectId);
-    return program.save();
+    
+    const savedProgram = await program.save();
+
+    let eligibleCount = 0;
+    // We run bulk assign on update if they changed the criteria or turned it on
+    if (savedProgram.isAutoAssignable && savedProgram.autoAssignCriteria && dto.autoAssignCriteria) {
+       try {
+         const criteria = savedProgram.autoAssignCriteria;
+         const matchData = await this.attendeesService.fetchAttendeesByAdvanceFilters(
+           {
+             responseType: AdvanceFilterResponseType.COUNT,
+             webinarIds: criteria.webinarIds || [],
+             isAttended: criteria.isAttended,
+             units: criteria.conditions || [],
+           } as any,
+           adminId
+         );
+         eligibleCount = matchData?.count || 0;
+         
+         if (eligibleCount > 0) {
+           await this.autoAssignQueue.add('bulk-auto-assign', {
+             type: 'BULK_ASSIGN',
+             adminId,
+             programId: savedProgram._id.toString()
+           }, { removeOnComplete: true });
+         }
+       } catch (err) {
+         this.logger.error(`Error enqueueing bulk assign on update`, err.stack);
+       }
+    }
+
+    return { program: savedProgram, eligibleCount };
   }
 
   async findOne(programId: string, adminId: string): Promise<ProgramDocument> {
@@ -229,16 +306,41 @@ export class ProgramService {
     const existing = await this.programAssignmentModel.findOne({
       programId: new Types.ObjectId(dto.programId),
       phone: dto.phone,
-      status: { $in: ['scheduled', 'running', 'paused'] },
     });
     if (existing) {
       throw new ConflictException(
-        'This contact already has an active assignment for this program.',
+        'This contact already has an assignment for this program.',
       );
     }
-    const startAt = new Date(dto.startAt);
+    let startAt = new Date(dto.startAt);
     if (isNaN(startAt.getTime())) {
       throw new BadRequestException('Invalid startAt date.');
+    }
+
+    // Auto assignment logic for shifting start date if slots would be missed today
+    if (dto.source === 'auto') {
+      const prog: any = program;
+      const firstDaySlots = prog.occurrenceTimeSlots?.[0] || [];
+      if (firstDaySlots.length > 0) {
+        // get current time in attendee's timezone
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: dto.timezone || 'UTC',
+            hour12: false,
+            hourCycle: 'h23',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+        const nowInTimezone = formatter.format(new Date()); 
+        
+        // if any slot is earlier than nowInTimezone, we shift startAt to tomorrow 00:00:00 natively
+        const missedAny = firstDaySlots.some(slot => slot.time < nowInTimezone);
+        if (missedAny) {
+           this.logger.log(`Shifting auto-assignment to next day for ${dto.phone} due to missed slots (now: ${nowInTimezone}).`)
+           
+           const tomorrowDate = new Date(startAt.getTime() + 24 * 60 * 60 * 1000);
+           startAt = getScheduledAtUTC(tomorrowDate, '00:00', dto.timezone || 'UTC');
+        }
+      }
     }
     const assignment = new this.programAssignmentModel({
       programId: new Types.ObjectId(dto.programId),
@@ -249,6 +351,8 @@ export class ProgramService {
       status: startAt <= new Date() ? 'running' : 'scheduled',
       dynamicVariables: dto.dynamicVariables ?? {},
       phone: dto.phone,
+      source: dto.source || 'manual',
+      attendeeId: dto.attendeeId ? new Types.ObjectId(dto.attendeeId) : undefined,
     });
     const savedAssignment = await assignment.save();
 
@@ -607,11 +711,11 @@ export class ProgramService {
             totalSlots: { $sum: 1 },
             completedSlots: {
               $sum: {
-                $cond: [{ $in: ['$status', ['sent', 'skipped', 'enqueued']] }, 1, 0],
+                $cond: [{ $in: ['$status', ['sent', 'skipped', 'enqueued', '']] }, 1, 0],
               },
             },
             pendingSlots: {
-              $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] },
+              $sum: { $cond: [{ $in: ['$status', ['pending', 'paused']] }, 1, 0] },
             },
             failedSlots: {
               $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
@@ -721,7 +825,18 @@ export class ProgramService {
     }
     assignment.status = 'paused';
     assignment.pausedAt = new Date();
-    return assignment.save();
+    await assignment.save();
+
+    // Pause all pending/enqueued slots
+    await this.programSlotModel.updateMany(
+      {
+        programAssignmentId: assignment._id,
+        status: { $in: ['pending', 'enqueued'] },
+      },
+      { $set: { status: 'paused' } }
+    );
+
+    return assignment;
   }
 
   async resumeAssignment(
@@ -736,7 +851,45 @@ export class ProgramService {
     }
     assignment.status = 'running';
     assignment.pausedAt = undefined;
-    return assignment.save();
+    await assignment.save();
+
+    // Find all paused slots that belong to this assignment and handle them
+    const pausedSlots = await this.programSlotModel.find({
+      programAssignmentId: assignment._id,
+      status: 'paused',
+    });
+
+    if (pausedSlots.length > 0) {
+      const now = new Date();
+      const pastSlotIds = [];
+      const futureSlotIds = [];
+
+      for (const slot of pausedSlots) {
+        if (slot.scheduledAt < now) {
+          pastSlotIds.push(slot._id);
+        } else {
+          futureSlotIds.push(slot._id);
+        }
+      }
+
+      // Past slots get skipped
+      if (pastSlotIds.length > 0) {
+        await this.programSlotModel.updateMany(
+          { _id: { $in: pastSlotIds } },
+          { $set: { status: 'skipped' } }
+        );
+      }
+
+      // Future slots get resumed
+      if (futureSlotIds.length > 0) {
+        await this.programSlotModel.updateMany(
+          { _id: { $in: futureSlotIds } },
+          { $set: { status: 'pending' } }
+        );
+      }
+    }
+
+    return assignment;
   }
 
   async cancelAssignment(
@@ -753,7 +906,18 @@ export class ProgramService {
       );
     }
     assignment.status = 'cancelled';
-    return assignment.save();
+    await assignment.save();
+
+    // Cancel all slots that haven't been completed or permanently failed
+    await this.programSlotModel.updateMany(
+      {
+        programAssignmentId: assignment._id,
+        status: { $in: ['pending', 'enqueued', 'paused'] },
+      },
+      { $set: { status: 'cancelled' } }
+    );
+
+    return assignment;
   }
 
   async getAssignmentById(
@@ -797,6 +961,150 @@ export class ProgramService {
         { $set: { status: 'paused', pausedAt: new Date() } },
       )
       .exec();
+  }
+
+  // --- Auto Assign Logic ---
+
+  async processBulkAutoAssignJob(payload: AutoAssignJobPayload) {
+    const { adminId, programId } = payload;
+    if (!programId) return;
+
+    const program = await this.findOne(programId, adminId);
+    if (!program.isAutoAssignable || !program.autoAssignCriteria) return;
+
+    try {
+      // 1. Fetch eligible attendees
+      const criteria = program.autoAssignCriteria;
+      // Convert to DTO expected by attendeesService
+      const matchData = await this.attendeesService.fetchAttendeesByAdvanceFilters(
+        {
+          responseType: AdvanceFilterResponseType.DATA,
+          webinarIds: criteria.webinarIds || [],
+          isAttended: criteria.isAttended,
+          units: criteria.conditions || [],
+        } as any, // bypassing strict class validation since it's internal trusted payload
+        adminId
+      );
+
+      const eligibleAttendees = matchData?.data || [];
+      if (!eligibleAttendees.length) return;
+
+      this.logger.log(`Found ${eligibleAttendees.length} eligible attendees for bulk auto-assignment to program ${programId}`);
+
+      // 2. Loop and assign
+      for (const attendee of eligibleAttendees) {
+        if (!attendee.phone) continue;
+
+        // Check if assignment already exists, ignore status to avoid duplicates on failures
+        const existing = await this.programAssignmentModel.findOne({
+          programId: new Types.ObjectId(programId),
+          phone: attendee.phone,
+        });
+
+        if (existing) continue;
+
+        // Create assignment (starting immediately)
+        try {
+          await this.createAssignment(
+            {
+              programId: programId,
+              projectId: program.projectId.toString(),
+              startAt: new Date().toISOString(),
+              timezone: attendee.timezone || 'UTC', // Default to UTC if not found
+              phone: attendee.phone,
+              dynamicVariables: {
+                firstName: attendee.firstName || '',
+                lastName: attendee.lastName || '',
+                email: attendee.email || '',
+              },
+              source: 'auto',
+              attendeeId: attendee._id.toString()
+            },
+            adminId
+          );
+        } catch (assignErr) {
+          this.logger.error(`Failed to bulk auto-assign attendee ${attendee._id} to program ${programId}: ${assignErr.message}`);
+        }
+      }
+    } catch (err) {
+      this.logger.error(`Error processing bulk auto-assign job for program ${programId}`, err.stack);
+    }
+  }
+
+  async evaluateAllAutoAssignments(): Promise<void> {
+    try {
+      // 1. Find all active auto-assignable programs
+      const activePrograms = await this.programModel.find({
+        isActive: true,
+        isDeleted: false,
+        isAutoAssignable: true,
+      });
+
+      if (!activePrograms.length) return;
+      this.logger.log(`Cron: Evaluating auto-assignments for ${activePrograms.length} programs`);
+
+      for (const program of activePrograms) {
+        if (!program.autoAssignCriteria) continue;
+        const criteria = program.autoAssignCriteria;
+        const adminId = program.adminId.toString();
+
+        const matchData = await this.attendeesService.fetchAttendeesByAdvanceFilters(
+          {
+            responseType: AdvanceFilterResponseType.DATA,
+            webinarIds: criteria.webinarIds || [],
+            isAttended: criteria.isAttended,
+            units: criteria.conditions || [],
+          } as any,
+          adminId
+        );
+
+        const eligibleAttendees = matchData?.data || [];
+        if (!eligibleAttendees.length) continue;
+
+        let assignedCount = 0;
+        for (const attendee of eligibleAttendees) {
+          if (!attendee.phone) continue;
+
+          // Check if ANY assignment already exists for this program + phone combo
+          const existing = await this.programAssignmentModel.findOne({
+            programId: program._id,
+            phone: attendee.phone,
+          });
+
+          if (existing) continue;
+
+          // Create assignment
+          try {
+            await this.createAssignment(
+              {
+                programId: program._id.toString(),
+                projectId: program.projectId.toString(),
+                startAt: new Date().toISOString(),
+                timezone: (attendee as any).timezone || 'UTC',
+                phone: attendee.phone,
+                dynamicVariables: {
+                  firstName: attendee.firstName || '',
+                  lastName: attendee.lastName || '',
+                  email: attendee.email || '',
+                },
+                source: 'auto',
+                attendeeId: attendee._id.toString()
+              },
+              adminId
+            );
+            assignedCount++;
+          } catch (assignErr) {
+            this.logger.error(`Failed to cron auto-assign attendee ${attendee._id} to program ${program._id}: ${assignErr.message}`);
+          }
+        }
+
+        if (assignedCount > 0) {
+           this.logger.log(`Cron auto-assigned ${assignedCount} new attendees to program ${program._id}`);
+        }
+      }
+    } catch (err) {
+      this.logger.error(`Error in evaluateAllAutoAssignments cron`, err.stack);
+    }
   }
 
   async markAssignmentCompleted(assignmentId: Types.ObjectId): Promise<void> {

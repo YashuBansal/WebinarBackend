@@ -11,6 +11,7 @@ import {
   Max,
   ValidateNested,
   MaxLength,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -118,4 +119,12 @@ export class CreateProgramDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isAutoAssignable?: boolean;
+
+  @IsOptional()
+  @IsObject()
+  autoAssignCriteria?: any;
 }

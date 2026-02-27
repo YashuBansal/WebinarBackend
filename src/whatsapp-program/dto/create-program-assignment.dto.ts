@@ -5,6 +5,7 @@ import {
   IsMongoId,
   IsDateString,
   IsObject,
+  IsEnum
 } from 'class-validator';
 
 export class CreateProgramAssignmentDto {
@@ -31,4 +32,12 @@ export class CreateProgramAssignmentDto {
   @IsOptional()
   @IsObject()
   dynamicVariables?: Record<string, string>;
+
+  @IsOptional()
+  @IsEnum(['manual', 'auto'])
+  source?: 'manual' | 'auto';
+
+  @IsOptional()
+  @IsMongoId()
+  attendeeId?: string;
 }

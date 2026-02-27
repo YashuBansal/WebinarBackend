@@ -14,6 +14,9 @@ import { ContactsModule } from 'src/contacts/contacts.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 import { UsersModule } from 'src/users/users.module';
+import { ProgramQueueModule } from './program.queue.module';
+import { ProgramAutoAssignProcessor } from './program-auto-assign.processor';
+import { AttendeesModule } from 'src/attendees/attendees.module';
 
 @Module({
   imports: [
@@ -27,9 +30,11 @@ import { UsersModule } from 'src/users/users.module';
     ContactsModule,
     forwardRef(() => UsersModule),
     WhatsappModule,
+    ProgramQueueModule,
+    forwardRef(() => AttendeesModule),
   ],
   controllers: [ProgramController],
-  providers: [ProgramService],
+  providers: [ProgramService, ProgramAutoAssignProcessor],
   exports: [ProgramService],
 })
 export class ProgramModule {

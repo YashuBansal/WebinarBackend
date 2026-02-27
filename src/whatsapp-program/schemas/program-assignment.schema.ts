@@ -27,6 +27,9 @@ export class ProgramAssignment extends Document {
   })
   phone: string;
 
+  @Prop({ type: Types.ObjectId, ref: 'Attendee', index: true })
+  attendeeId: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: User.name, required: true, index: true })
   adminId: Types.ObjectId;
 
@@ -64,6 +67,14 @@ export class ProgramAssignment extends Document {
 
   @Prop({ type: Number, default: 0 })
   failureCount: number;
+
+  @Prop({
+    type: String,
+    enum: ['manual', 'auto'],
+    default: 'manual',
+    index: true,
+  })
+  source: 'manual' | 'auto';
 }
 
 const ProgramAssignmentSchema = SchemaFactory.createForClass(ProgramAssignment);
@@ -78,10 +89,13 @@ ProgramAssignmentSchema.pre('save', function (next) {
   if (typeof this.projectId === 'string') {
     this.projectId = new Types.ObjectId(this.projectId);
   }
+  if (this.attendeeId && typeof this.attendeeId === 'string') {
+    this.attendeeId = new Types.ObjectId(this.attendeeId);
+  }
   next();
 });
 
-ProgramAssignmentSchema.index({ programId: 1, phone: 1 });
+ProgramAssignmentSchema.index({ programId: 1, phone: 1 }, { unique: true });
 ProgramAssignmentSchema.index({ status: 1, startAt: 1 });
 ProgramAssignmentSchema.index({ projectId: 1, status: 1 });
 

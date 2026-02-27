@@ -4,7 +4,7 @@ import { Program } from './program.schema';
 import { ProgramAssignment } from './program-assignment.schema';
 import { WabaMessage } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
-export type ProgramSlotStatus = 'pending' | 'enqueued' | 'sent' | 'failed' | 'skipped';
+export type ProgramSlotStatus = 'pending' | 'enqueued' | 'sent' | 'failed' | 'skipped' | 'cancelled' | 'paused';
 
 export type ProgramSlotDocument = ProgramSlot & Document;
 
@@ -27,7 +27,7 @@ export class ProgramSlot extends Document {
 
   @Prop({
     type: String,
-    enum: ['pending', 'enqueued', 'sent', 'failed', 'skipped'],
+    enum: ['pending', 'enqueued', 'sent', 'failed', 'skipped', 'cancelled', 'paused'],
     default: 'pending',
     index: true,
   })

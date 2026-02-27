@@ -81,6 +81,12 @@ export class Program extends Document {
   isActive: boolean;
 
   @Prop({ type: Boolean, default: false })
+  isAutoAssignable: boolean;
+
+  @Prop({ type: Object, default: null })
+  autoAssignCriteria?: any;
+
+  @Prop({ type: Boolean, default: false })
   isDeleted: boolean;
 }
 

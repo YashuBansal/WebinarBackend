@@ -33,6 +33,16 @@ export class CronService implements OnModuleInit {
     await this.everyWeekJobs();
   }
 
+  @Cron(CronExpression.EVERY_MINUTE) // Every 10 minutes
+  async handleAutoAssignments() {
+    this.logger.log('Running auto-assignments evaluation...');
+    try {
+      await this.programService.evaluateAllAutoAssignments();
+    } catch (error) {
+      this.logger.error('Error during auto-assignments evaluation', error);
+    }
+  }
+
   @Cron(CronExpression.EVERY_MINUTE)
   async handleScheduledTasks() {
     this.logger.log('Running scheduled tasks check...');
