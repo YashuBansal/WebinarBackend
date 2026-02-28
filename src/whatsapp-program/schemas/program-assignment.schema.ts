@@ -3,15 +3,22 @@ import { Document, Types } from 'mongoose';
 import { User } from 'src/schemas/User.schema';
 import { Project } from 'src/schemas/project.schema';
 import { Program } from './program.schema';
+import { Attendee } from 'src/schemas/Attendee.schema';
 
 export type ProgramAssignmentDocument = ProgramAssignment & Document;
 
-export type ProgramAssignmentStatus =
-  | 'scheduled'
-  | 'running'
-  | 'paused'
-  | 'completed'
-  | 'cancelled';
+export enum ProgramAssignmentStatus {
+  SCHEDULED = 'scheduled',
+  RUNNING = 'running',
+  PAUSED = 'paused',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
+}
+
+export enum ProgramAssignmentSource {
+  MANUAL = 'manual',
+  AUTO = 'auto',
+}
 
 @Schema({ timestamps: true })
 export class ProgramAssignment extends Document {
@@ -27,7 +34,7 @@ export class ProgramAssignment extends Document {
   })
   phone: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Attendee', index: true })
+  @Prop({ type: Types.ObjectId, ref: Attendee.name, index: true })
   attendeeId: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: User.name, required: true, index: true })
@@ -44,8 +51,8 @@ export class ProgramAssignment extends Document {
 
   @Prop({
     type: String,
-    enum: ['scheduled', 'running', 'paused', 'completed', 'cancelled'],
-    default: 'scheduled',
+    enum: Object.values(ProgramAssignmentStatus),
+    default: ProgramAssignmentStatus.SCHEDULED,
     index: true,
   })
   status: ProgramAssignmentStatus;
@@ -70,11 +77,11 @@ export class ProgramAssignment extends Document {
 
   @Prop({
     type: String,
-    enum: ['manual', 'auto'],
-    default: 'manual',
+    enum: Object.values(ProgramAssignmentSource),
+    default: ProgramAssignmentSource.MANUAL,
     index: true,
   })
-  source: 'manual' | 'auto';
+  source: ProgramAssignmentSource;
 }
 
 const ProgramAssignmentSchema = SchemaFactory.createForClass(ProgramAssignment);

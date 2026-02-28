@@ -10,15 +10,17 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Program, ProgramDocument } from './schemas/program.schema';
+import { Program, ProgramDocument, IntervalUnit, ProgramMessageType } from './schemas/program.schema';
 import {
   ProgramAssignment,
   ProgramAssignmentDocument,
   ProgramAssignmentStatus,
+  ProgramAssignmentSource,
 } from './schemas/program-assignment.schema';
 import {
   ProgramSlot,
   ProgramSlotDocument,
+  ProgramSlotStatus,
 } from './schemas/program-slot.schema';
 import { CreateProgramDto } from './dto/create-program.dto';
 import { UpdateProgramDto } from './dto/update-program.dto';
@@ -65,7 +67,7 @@ export class ProgramService {
     weekdays?: number[];
   }): number {
     const count = program.occurrenceCount ?? 0;
-    if (program.intervalUnit === 'week' && program.weekdays?.length) {
+    if (program.intervalUnit === IntervalUnit.WEEK && program.weekdays?.length) {
       return count * program.weekdays.length;
     }
     return count;
@@ -133,7 +135,7 @@ export class ProgramService {
     if (!dto.occurrenceTimeSlots?.length) {
       throw new BadRequestException('occurrenceTimeSlots is required');
     }
-    if (dto.intervalUnit === 'week' && dto.weekdays?.length === 0) {
+    if (dto.intervalUnit === IntervalUnit.WEEK && dto.weekdays?.length === 0) {
       throw new BadRequestException(
         'When interval unit is week, at least one weekday is required',
       );
@@ -248,7 +250,6 @@ export class ProgramService {
       .findOne({
         _id: new Types.ObjectId(programId),
         adminId: new Types.ObjectId(adminId),
-        isDeleted: false,
       })
       .exec();
     if (!program) {
@@ -270,7 +271,6 @@ export class ProgramService {
   }> {
     const filter: any = {
       adminId: new Types.ObjectId(adminId),
-      isDeleted: false,
     };
     if (projectId) {
       filter.projectId = new Types.ObjectId(projectId);
@@ -289,9 +289,53 @@ export class ProgramService {
   }
 
   async remove(programId: string, adminId: string): Promise<void> {
-    const program = await this.findOne(programId, adminId);
-    (program as any).isDeleted = true;
-    await program.save();
+    const session = await this.programModel.startSession();
+    session.startTransaction();
+    try {
+      const program = await this.programModel.findOne({
+        _id: new Types.ObjectId(programId),
+        adminId: new Types.ObjectId(adminId),
+      }).session(session);
+
+      if (!program) {
+        throw new NotFoundException(`Program with ID "${programId}" not found.`);
+      }
+
+      program.isDeleted = true;
+      program.isActive = false;
+      await program.save({ session });
+
+      const assignmentsToCancel = await this.programAssignmentModel.find({
+        programId: program._id,
+        status: { $in: [ProgramAssignmentStatus.SCHEDULED, ProgramAssignmentStatus.RUNNING, ProgramAssignmentStatus.PAUSED] },
+      }).session(session);
+
+      const assignmentIds = assignmentsToCancel.map(a => a._id);
+
+      if (assignmentIds.length > 0) {
+        await this.programAssignmentModel.updateMany(
+          { _id: { $in: assignmentIds } },
+          { $set: { status: '$$CANCELLED_SLOT_ASSIGN_PLACEHOLDER$$' } },
+          { session }
+        );
+
+        await this.programSlotModel.updateMany(
+          {
+            programAssignmentId: { $in: assignmentIds },
+            status: { $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.ENQUEUED, ProgramSlotStatus.PAUSED] },
+          },
+          { $set: { status: '$$CANCELLED_SLOT_ASSIGN_PLACEHOLDER$$' } },
+          { session }
+        );
+      }
+
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
   }
 
   async createAssignment(
@@ -318,7 +362,7 @@ export class ProgramService {
     }
 
     // Auto assignment logic for shifting start date if slots would be missed today
-    if (dto.source === 'auto') {
+    if (dto.source === ProgramAssignmentSource.AUTO) {
       const prog: any = program;
       const firstDaySlots = prog.occurrenceTimeSlots?.[0] || [];
       if (firstDaySlots.length > 0) {
@@ -348,10 +392,10 @@ export class ProgramService {
       projectId: new Types.ObjectId(dto.projectId),
       startAt,
       timezone: dto.timezone,
-      status: startAt <= new Date() ? 'running' : 'scheduled',
+      status: startAt <= new Date() ? ProgramAssignmentStatus.RUNNING : ProgramAssignmentStatus.SCHEDULED,
       dynamicVariables: dto.dynamicVariables ?? {},
       phone: dto.phone,
-      source: dto.source || 'manual',
+      source: dto.source || ProgramAssignmentSource.MANUAL,
       attendeeId: dto.attendeeId ? new Types.ObjectId(dto.attendeeId) : undefined,
     });
     const savedAssignment = await assignment.save();
@@ -378,7 +422,7 @@ export class ProgramService {
           `No occurrenceTimeSlots for program ${prog._id}, skipping ProgramSlot creation`,
         );
       } else {
-        const intervalUnit: 'day' | 'week' = prog.intervalUnit ?? 'day';
+        const intervalUnit: IntervalUnit = prog.intervalUnit ?? IntervalUnit.DAY;
         const weekdays: number[] | undefined = prog.weekdays;
         const slotsToInsert: Partial<ProgramSlotDocument>[] = [];
 
@@ -389,14 +433,14 @@ export class ProgramService {
           }
 
           let baseDate: Date;
-          if (intervalUnit === 'day') {
+          if (intervalUnit === IntervalUnit.DAY) {
             baseDate = getBaseDateForOccurrence(
               startAt,
               occ,
               'day',
               prog.intervalValue ?? 1,
             );
-          } else if (intervalUnit === 'week' && weekdays?.length) {
+          } else if (intervalUnit === IntervalUnit.WEEK && weekdays?.length) {
             const weekIndex = Math.floor((occ - 1) / weekdays.length);
             const weekday = weekdays[(occ - 1) % weekdays.length];
             baseDate = getBaseDateForOccurrence(
@@ -437,7 +481,7 @@ export class ProgramService {
               occurrenceIndex: occ,
               timeSlotIndex,
               scheduledAt,
-              status: 'pending',
+              status: ProgramSlotStatus.PENDING,
             } as any);
           }
         }
@@ -472,7 +516,7 @@ export class ProgramService {
 
     const pendingSlots = await this.programSlotModel
       .find({
-        status: 'pending',
+        status: ProgramSlotStatus.PENDING,
         scheduledAt: { $lte: now },
       })
       .sort({ scheduledAt: 1 })
@@ -504,7 +548,7 @@ export class ProgramService {
             { _id: slot._id },
             {
               $set: {
-                status: 'failed',
+                status: ProgramSlotStatus.FAILED,
                 lastError: 'Program assignment not found',
               },
             },
@@ -519,7 +563,7 @@ export class ProgramService {
             { _id: slot._id },
             {
               $set: {
-                status: 'failed',
+                status: ProgramSlotStatus.FAILED,
                 lastError: 'Program missing for assignment',
               },
             },
@@ -537,7 +581,7 @@ export class ProgramService {
             { _id: slot._id },
             {
               $set: {
-                status: 'failed',
+                status: ProgramSlotStatus.FAILED,
                 lastError: 'Missing adminId or projectId on assignment',
               },
             },
@@ -558,7 +602,7 @@ export class ProgramService {
             { _id: slot._id },
             {
               $set: {
-                status: 'failed',
+                status: ProgramSlotStatus.FAILED,
                 lastError: 'No message config for program slot',
               },
             },
@@ -594,7 +638,7 @@ export class ProgramService {
             { _id: slot._id },
             {
               $set: {
-                status: 'failed',
+                status: ProgramSlotStatus.FAILED,
                 lastError: 'Missing phone on assignment',
               },
             },
@@ -626,8 +670,8 @@ export class ProgramService {
         const enqueued = stats?.enqueued ?? 0;
         if (enqueued === 1) {
           await this.programSlotModel.updateOne(
-            { _id: slot._id, status: 'pending' },
-            { $set: { status: 'enqueued', lastError: undefined } },
+            { _id: slot._id, status: ProgramSlotStatus.PENDING },
+            { $set: { status: ProgramSlotStatus.ENQUEUED, lastError: undefined } },
           );
         } else {
           const errorMessage =
@@ -641,7 +685,7 @@ export class ProgramService {
             { _id: slot._id },
             {
               $set: {
-                status: 'failed',
+                status: ProgramSlotStatus.FAILED,
                 lastError: errorMessage,
               },
             },
@@ -657,7 +701,7 @@ export class ProgramService {
           { _id: slot._id },
           {
             $set: {
-              status: 'failed',
+              status: ProgramSlotStatus.FAILED,
               lastError: err instanceof Error ? err.message : String(err),
             },
           },
@@ -711,24 +755,24 @@ export class ProgramService {
             totalSlots: { $sum: 1 },
             completedSlots: {
               $sum: {
-                $cond: [{ $in: ['$status', ['sent', 'skipped', 'enqueued', '']] }, 1, 0],
+                $cond: [{ $in: ['$status', [ProgramSlotStatus.SENT, ProgramSlotStatus.SKIPPED, ProgramSlotStatus.ENQUEUED, '']] }, 1, 0],
               },
             },
             pendingSlots: {
-              $sum: { $cond: [{ $in: ['$status', ['pending', 'paused']] }, 1, 0] },
+              $sum: { $cond: [{ $in: ['$status', [ProgramSlotStatus.PENDING, ProgramSlotStatus.PAUSED]] }, 1, 0] },
             },
             failedSlots: {
-              $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
+              $sum: { $cond: [{ $eq: ['$status', ProgramSlotStatus.FAILED] }, 1, 0] },
             },
             nextSlotDate: {
               $min: {
-                $cond: [{ $eq: ['$status', 'pending'] }, '$scheduledAt', null],
+                $cond: [{ $eq: ['$status', ProgramSlotStatus.PENDING] }, '$scheduledAt', null],
               },
             },
             currentOccurrence: {
               $max: {
                 $cond: [
-                  { $in: ['$status', ['sent', 'skipped', 'enqueued']] },
+                  { $in: ['$status', [ProgramSlotStatus.SENT, ProgramSlotStatus.SKIPPED, ProgramSlotStatus.ENQUEUED]] },
                   '$occurrenceIndex',
                   0,
                 ],
@@ -818,12 +862,12 @@ export class ProgramService {
     adminId: string,
   ): Promise<ProgramAssignment> {
     const assignment = await this.findAssignment(assignmentId, adminId);
-    if (assignment.status !== 'running' && assignment.status !== 'scheduled') {
+    if (assignment.status !== ProgramAssignmentStatus.RUNNING && assignment.status !== ProgramAssignmentStatus.SCHEDULED) {
       throw new BadRequestException(
         `Cannot pause assignment in status "${assignment.status}".`,
       );
     }
-    assignment.status = 'paused';
+    assignment.status = ProgramAssignmentStatus.PAUSED;
     assignment.pausedAt = new Date();
     await assignment.save();
 
@@ -831,9 +875,9 @@ export class ProgramService {
     await this.programSlotModel.updateMany(
       {
         programAssignmentId: assignment._id,
-        status: { $in: ['pending', 'enqueued'] },
+        status: { $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.ENQUEUED] },
       },
-      { $set: { status: 'paused' } }
+      { $set: { status: ProgramSlotStatus.PAUSED } }
     );
 
     return assignment;
@@ -844,19 +888,19 @@ export class ProgramService {
     adminId: string,
   ): Promise<ProgramAssignment> {
     const assignment = await this.findAssignment(assignmentId, adminId);
-    if (assignment.status !== 'paused') {
+    if (assignment.status !== ProgramAssignmentStatus.PAUSED) {
       throw new BadRequestException(
         `Cannot resume assignment in status "${assignment.status}".`,
       );
     }
-    assignment.status = 'running';
+    assignment.status = ProgramAssignmentStatus.RUNNING;
     assignment.pausedAt = undefined;
     await assignment.save();
 
     // Find all paused slots that belong to this assignment and handle them
     const pausedSlots = await this.programSlotModel.find({
       programAssignmentId: assignment._id,
-      status: 'paused',
+      status: ProgramSlotStatus.PAUSED,
     });
 
     if (pausedSlots.length > 0) {
@@ -876,7 +920,7 @@ export class ProgramService {
       if (pastSlotIds.length > 0) {
         await this.programSlotModel.updateMany(
           { _id: { $in: pastSlotIds } },
-          { $set: { status: 'skipped' } }
+          { $set: { status: ProgramSlotStatus.SKIPPED } }
         );
       }
 
@@ -884,7 +928,7 @@ export class ProgramService {
       if (futureSlotIds.length > 0) {
         await this.programSlotModel.updateMany(
           { _id: { $in: futureSlotIds } },
-          { $set: { status: 'pending' } }
+          { $set: { status: ProgramSlotStatus.PENDING } }
         );
       }
     }
@@ -898,23 +942,23 @@ export class ProgramService {
   ): Promise<ProgramAssignment> {
     const assignment = await this.findAssignment(assignmentId, adminId);
     if (
-      assignment.status === 'completed' ||
-      assignment.status === 'cancelled'
+      assignment.status === ProgramAssignmentStatus.COMPLETED ||
+      assignment.status === ProgramAssignmentStatus.CANCELLED
     ) {
       throw new BadRequestException(
         `Assignment is already ${assignment.status}.`,
       );
     }
-    assignment.status = 'cancelled';
+    assignment.status = ProgramAssignmentStatus.CANCELLED;
     await assignment.save();
 
     // Cancel all slots that haven't been completed or permanently failed
     await this.programSlotModel.updateMany(
       {
         programAssignmentId: assignment._id,
-        status: { $in: ['pending', 'enqueued', 'paused'] },
+        status: { $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.ENQUEUED, ProgramSlotStatus.PAUSED] },
       },
-      { $set: { status: 'cancelled' } }
+      { $set: { status: '$$CANCELLED_SLOT_ASSIGN_PLACEHOLDER$$' } }
     );
 
     return assignment;
@@ -958,7 +1002,7 @@ export class ProgramService {
     await this.programAssignmentModel
       .updateOne(
         { _id: assignmentId },
-        { $set: { status: 'paused', pausedAt: new Date() } },
+        { $set: { status: ProgramSlotStatus.PAUSED, pausedAt: new Date() } },
       )
       .exec();
   }
@@ -1017,7 +1061,7 @@ export class ProgramService {
                 lastName: attendee.lastName || '',
                 email: attendee.email || '',
               },
-              source: 'auto',
+              source: ProgramAssignmentSource.AUTO,
               attendeeId: attendee._id.toString()
             },
             adminId
@@ -1087,7 +1131,7 @@ export class ProgramService {
                   lastName: attendee.lastName || '',
                   email: attendee.email || '',
                 },
-                source: 'auto',
+                source: ProgramAssignmentSource.AUTO,
                 attendeeId: attendee._id.toString()
               },
               adminId
@@ -1111,7 +1155,7 @@ export class ProgramService {
     await this.programAssignmentModel
       .updateOne(
         { _id: assignmentId },
-        { $set: { status: 'completed', completedAt: new Date() } },
+        { $set: { status: ProgramAssignmentStatus.COMPLETED, completedAt: new Date() } },
       )
       .exec();
   }
@@ -1131,13 +1175,13 @@ export class ProgramService {
     const now = new Date();
     await this.programAssignmentModel
       .updateMany(
-        { status: 'scheduled', startAt: { $lte: now } },
-        { $set: { status: 'running' } },
+        { status: ProgramAssignmentStatus.SCHEDULED, startAt: { $lte: now } },
+        { $set: { status: ProgramAssignmentStatus.RUNNING } },
       )
       .exec();
     return this.programAssignmentModel
       .find({
-        status: 'running',
+        status: ProgramAssignmentStatus.RUNNING,
         failureCount: { $lt: 3 },
       })
       .populate('programId')

@@ -6,11 +6,19 @@ import { VariableMapping } from 'src/webinar-auto-message/webinar-auto-message.s
 
 export type ProgramDocument = Program & Document;
 
-export type IntervalUnit = 'day' | 'week';
-export type ProgramMessageType = 'template' | 'session';
+export enum IntervalUnit {
+  DAY = 'day',
+  WEEK = 'week',
+}
+
+export enum ProgramMessageType {
+  TEMPLATE = 'template',
+  SESSION = 'session',
+}
+
 @Schema({ _id: false })
 export class ProgramMessageConfig {
-  @Prop({ type: String, enum: ['template', 'session'], default: 'template' })
+  @Prop({ type: String, enum: Object.values(ProgramMessageType), default: ProgramMessageType.TEMPLATE })
   messageType: ProgramMessageType;
 
   @Prop({ type: String, required: true })
@@ -61,7 +69,7 @@ export class Program extends Document {
 
   @Prop({
     type: String,
-    enum: ['day', 'week'],
+    enum: Object.values(IntervalUnit),
     required: true,
   })
   intervalUnit: IntervalUnit;
