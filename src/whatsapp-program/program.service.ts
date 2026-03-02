@@ -3,7 +3,6 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
-  UnauthorizedException,
   ConflictException,
   Inject,
   forwardRef,
@@ -315,16 +314,16 @@ export class ProgramService {
       if (assignmentIds.length > 0) {
         await this.programAssignmentModel.updateMany(
           { _id: { $in: assignmentIds } },
-          { $set: { status: '$$CANCELLED_SLOT_ASSIGN_PLACEHOLDER$$' } },
+          { $set: { status: ProgramAssignmentStatus.CANCELLED } },
           { session }
         );
 
         await this.programSlotModel.updateMany(
           {
             programAssignmentId: { $in: assignmentIds },
-            status: { $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.ENQUEUED, ProgramSlotStatus.PAUSED] },
+            status: { $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.PAUSED] },
           },
-          { $set: { status: '$$CANCELLED_SLOT_ASSIGN_PLACEHOLDER$$' } },
+          { $set: { status: ProgramSlotStatus.CANCELLED } },
           { session }
         );
       }
@@ -875,7 +874,7 @@ export class ProgramService {
     await this.programSlotModel.updateMany(
       {
         programAssignmentId: assignment._id,
-        status: { $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.ENQUEUED] },
+        status: { $in: [ProgramSlotStatus.PENDING] },
       },
       { $set: { status: ProgramSlotStatus.PAUSED } }
     );
@@ -956,9 +955,9 @@ export class ProgramService {
     await this.programSlotModel.updateMany(
       {
         programAssignmentId: assignment._id,
-        status: { $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.ENQUEUED, ProgramSlotStatus.PAUSED] },
+        status: { $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.PAUSED] },
       },
-      { $set: { status: '$$CANCELLED_SLOT_ASSIGN_PLACEHOLDER$$' } }
+      { $set: { status: ProgramSlotStatus.CANCELLED } }
     );
 
     return assignment;
