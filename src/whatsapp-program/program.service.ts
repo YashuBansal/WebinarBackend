@@ -56,7 +56,7 @@ export class ProgramService {
     private readonly autoAssignQueue: Queue,
     @Inject(forwardRef(() => AttendeesService))
     private readonly attendeesService: AttendeesService,
-  ) {}
+  ) { }
 
   /**
    * Total occurrence slots: when unit is day, occurrenceCount; when unit is week, occurrenceCount * (weekdays.length or 1).
@@ -152,34 +152,34 @@ export class ProgramService {
       projectId: new Types.ObjectId(dto.projectId),
       isActive: dto.isActive ?? true,
     });
-    
+
     const savedProgram = await program.save();
 
     let eligibleCount = 0;
     if (savedProgram.isAutoAssignable && savedProgram.autoAssignCriteria) {
-       try {
-         const criteria = savedProgram.autoAssignCriteria;
-         const matchData = await this.attendeesService.fetchAttendeesByAdvanceFilters(
-           {
-             responseType: AdvanceFilterResponseType.COUNT,
-             webinarIds: criteria.webinarIds || [],
-             isAttended: criteria.isAttended,
-             units: criteria.conditions || [],
-           } as any,
-           adminId
-         );
-         eligibleCount = matchData?.count || 0;
-         
-         if (eligibleCount > 0) {
-           await this.autoAssignQueue.add('bulk-auto-assign', {
-             type: 'BULK_ASSIGN',
-             adminId,
-             programId: savedProgram._id.toString()
-           }, { removeOnComplete: true });
-         }
-       } catch (err) {
-         this.logger.error(`Error enqueueing bulk assign on create`, err.stack);
-       }
+      try {
+        const criteria = savedProgram.autoAssignCriteria;
+        const matchData = await this.attendeesService.fetchAttendeesByAdvanceFilters(
+          {
+            responseType: AdvanceFilterResponseType.COUNT,
+            webinarIds: criteria.webinarIds || [],
+            isAttended: criteria.isAttended,
+            units: criteria.conditions || [],
+          } as any,
+          adminId
+        );
+        eligibleCount = matchData?.count || 0;
+
+        if (eligibleCount > 0) {
+          await this.autoAssignQueue.add('bulk-auto-assign', {
+            type: 'BULK_ASSIGN',
+            adminId,
+            programId: savedProgram._id.toString()
+          }, { removeOnComplete: true });
+        }
+      } catch (err) {
+        this.logger.error(`Error enqueueing bulk assign on create`, err.stack);
+      }
     }
 
     return { program: savedProgram, eligibleCount };
@@ -205,41 +205,41 @@ export class ProgramService {
         'occurrenceTimeSlots',
       );
     }
-    
+
     // Check if auto assign criteria was newly added or changed
     const wasAutoAssignable = program.isAutoAssignable;
-    
+
     Object.assign(program, dto);
     if (dto.projectId) program.projectId = new Types.ObjectId(dto.projectId);
-    
+
     const savedProgram = await program.save();
 
     let eligibleCount = 0;
     // We run bulk assign on update if they changed the criteria or turned it on
     if (savedProgram.isAutoAssignable && savedProgram.autoAssignCriteria && dto.autoAssignCriteria) {
-       try {
-         const criteria = savedProgram.autoAssignCriteria;
-         const matchData = await this.attendeesService.fetchAttendeesByAdvanceFilters(
-           {
-             responseType: AdvanceFilterResponseType.COUNT,
-             webinarIds: criteria.webinarIds || [],
-             isAttended: criteria.isAttended,
-             units: criteria.conditions || [],
-           } as any,
-           adminId
-         );
-         eligibleCount = matchData?.count || 0;
-         
-         if (eligibleCount > 0) {
-           await this.autoAssignQueue.add('bulk-auto-assign', {
-             type: 'BULK_ASSIGN',
-             adminId,
-             programId: savedProgram._id.toString()
-           }, { removeOnComplete: true });
-         }
-       } catch (err) {
-         this.logger.error(`Error enqueueing bulk assign on update`, err.stack);
-       }
+      try {
+        const criteria = savedProgram.autoAssignCriteria;
+        const matchData = await this.attendeesService.fetchAttendeesByAdvanceFilters(
+          {
+            responseType: AdvanceFilterResponseType.COUNT,
+            webinarIds: criteria.webinarIds || [],
+            isAttended: criteria.isAttended,
+            units: criteria.conditions || [],
+          } as any,
+          adminId
+        );
+        eligibleCount = matchData?.count || 0;
+
+        if (eligibleCount > 0) {
+          await this.autoAssignQueue.add('bulk-auto-assign', {
+            type: 'BULK_ASSIGN',
+            adminId,
+            programId: savedProgram._id.toString()
+          }, { removeOnComplete: true });
+        }
+      } catch (err) {
+        this.logger.error(`Error enqueueing bulk assign on update`, err.stack);
+      }
     }
 
     return { program: savedProgram, eligibleCount };
@@ -368,21 +368,21 @@ export class ProgramService {
       if (firstDaySlots.length > 0) {
         // get current time in attendee's timezone
         const formatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: dto.timezone || 'UTC',
-            hour12: false,
-            hourCycle: 'h23',
-            hour: '2-digit',
-            minute: '2-digit',
+          timeZone: dto.timezone || 'UTC',
+          hour12: false,
+          hourCycle: 'h23',
+          hour: '2-digit',
+          minute: '2-digit',
         });
-        const nowInTimezone = formatter.format(new Date()); 
-        
+        const nowInTimezone = formatter.format(new Date());
+
         // if any slot is earlier than nowInTimezone, we shift startAt to tomorrow 00:00:00 natively
         const missedAny = firstDaySlots.some(slot => slot.time < nowInTimezone);
         if (missedAny) {
-           this.logger.log(`Shifting auto-assignment to next day for ${dto.phone} due to missed slots (now: ${nowInTimezone}).`)
-           
-           const tomorrowDate = new Date(startAt.getTime() + 24 * 60 * 60 * 1000);
-           startAt = getScheduledAtUTC(tomorrowDate, '00:00', dto.timezone || 'UTC');
+          this.logger.log(`Shifting auto-assignment to next day for ${dto.phone} due to missed slots (now: ${nowInTimezone}).`)
+
+          const tomorrowDate = new Date(startAt.getTime() + 24 * 60 * 60 * 1000);
+          startAt = getScheduledAtUTC(tomorrowDate, '00:00', dto.timezone || 'UTC');
         }
       }
     }
@@ -495,8 +495,7 @@ export class ProgramService {
       }
     } catch (err) {
       this.logger.error(
-        `Failed to precompute ProgramSlots for assignment ${assignment._id}: ${
-          err instanceof Error ? err.message : String(err)
+        `Failed to precompute ProgramSlots for assignment ${assignment._id}: ${err instanceof Error ? err.message : String(err)
         }`,
       );
     }
@@ -693,8 +692,7 @@ export class ProgramService {
         }
       } catch (err) {
         this.logger.warn(
-          `Failed to enqueue program slot ${slot._id}: ${
-            err instanceof Error ? err.message : String(err)
+          `Failed to enqueue program slot ${slot._id}: ${err instanceof Error ? err.message : String(err)
           }`,
         );
         await this.programSlotModel.updateOne(
@@ -755,7 +753,7 @@ export class ProgramService {
             totalSlots: { $sum: 1 },
             completedSlots: {
               $sum: {
-                $cond: [{ $in: ['$status', [ProgramSlotStatus.SENT, ProgramSlotStatus.SKIPPED, ProgramSlotStatus.ENQUEUED, '']] }, 1, 0],
+                $cond: [{ $in: ['$status', [ProgramSlotStatus.SKIPPED, ProgramSlotStatus.ENQUEUED, '']] }, 1, 0],
               },
             },
             pendingSlots: {
@@ -772,7 +770,7 @@ export class ProgramService {
             currentOccurrence: {
               $max: {
                 $cond: [
-                  { $in: ['$status', [ProgramSlotStatus.SENT, ProgramSlotStatus.SKIPPED, ProgramSlotStatus.ENQUEUED]] },
+                  { $in: ['$status', [ProgramSlotStatus.SKIPPED, ProgramSlotStatus.ENQUEUED]] },
                   '$occurrenceIndex',
                   0,
                 ],
@@ -823,7 +821,7 @@ export class ProgramService {
   ): Promise<any[]> {
     // Validate assignment exists and belongs to admin
     await this.findAssignment(assignmentId, adminId);
-    
+
     return this.programSlotModel
       .aggregate([
         { $match: { programAssignmentId: new Types.ObjectId(assignmentId) } },
@@ -834,15 +832,17 @@ export class ProgramService {
             let: { slot_id: '$_id' },
             pipeline: [
               { $match: { $expr: { $eq: ['$programSlotId', '$$slot_id'] } } },
-              { $project: {
-                status: 1,
-                statusHistory: 1,
-                failureReason: 1,
-                sentAt: 1,
-                deliveredAt: 1,
-                readAt: 1,
-                wabaMessageId: 1
-              }}
+              {
+                $project: {
+                  status: 1,
+                  statusHistory: 1,
+                  failureReason: 1,
+                  sentAt: 1,
+                  deliveredAt: 1,
+                  readAt: 1,
+                  wabaMessageId: 1
+                }
+              }
             ],
             as: 'wabaMessage',
           },
@@ -1143,7 +1143,7 @@ export class ProgramService {
         }
 
         if (assignedCount > 0) {
-           this.logger.log(`Cron auto-assigned ${assignedCount} new attendees to program ${program._id}`);
+          this.logger.log(`Cron auto-assigned ${assignedCount} new attendees to program ${program._id}`);
         }
       }
     } catch (err) {

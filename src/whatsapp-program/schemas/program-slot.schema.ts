@@ -11,6 +11,7 @@ export enum ProgramSlotStatus {
   SKIPPED = 'skipped',
   CANCELLED = 'cancelled',
   PAUSED = 'paused',
+  FAILED = 'failed'
 }
 
 export type ProgramSlotDocument = ProgramSlot & Document;
