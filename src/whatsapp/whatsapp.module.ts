@@ -21,6 +21,8 @@ import { WhatsappQueueModule } from './whatsapp.queue.module';
 import { WhatsappQueueProcessor } from './whatsapp.queue.processor';
 import { WhatsappWebhookProcessor } from './whatsapp.webhook.processor';
 import { WabaTemplateModule } from 'src/whatsapp-embed/waba-template/waba-template.module';
+import { ChatbotTriggerModule } from 'src/chatbot-trigger/chatbot-trigger.module';
+import { ChatbotTriggerController } from 'src/chatbot-trigger/chatbot-trigger.controller';
 
 @Module({
   imports: [
@@ -35,6 +37,7 @@ import { WabaTemplateModule } from 'src/whatsapp-embed/waba-template/waba-templa
     ]),
     WhatsappQueueModule,
     forwardRef(() => WabaTemplateModule),
+    ChatbotTriggerModule,
   ],
   providers: [
     WhatsappService,
@@ -51,6 +54,6 @@ export class WhatsappModule {
     consumer
       .apply(AuthAdminTokenMiddleware)
       .exclude({ path: 'whatsapp/webhook', method: RequestMethod.ALL })
-      .forRoutes(WhatsappController);
+      .forRoutes(WhatsappController, ChatbotTriggerController);
   }
 }

@@ -9,7 +9,26 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Program, ProgramDocument, IntervalUnit, ProgramMessageType } from './schemas/program.schema';
+import {
+  Program,
+  ProgramDocument,
+  IntervalUnit,
+} from './schemas/program.schema';
+
+/** Minimal slot shape for validation (DTO and schema both satisfy this). */
+interface OccurrenceSlotInput {
+  time?: string;
+  timezone?: string;
+  messageConfig?: {
+    templateName?: string;
+    variableMappings?: Array<{
+      isDynamic?: boolean;
+      contactField?: string;
+      fallbackValue?: string;
+      staticValue?: string;
+    }>;
+  };
+}
 import {
   ProgramAssignment,
   ProgramAssignmentDocument,
@@ -57,12 +76,41 @@ export class ProgramService {
     private readonly attendeesService: AttendeesService,
   ) { }
 
+  /** Input shape for computing total occurrence count (day vs week × weekdays). */
+  private static readonly OCCURRENCE_CONFIG_MAX_NAME_LENGTH = 100;
+
+  /**
+   * Validates programId and returns ObjectId. Throws BadRequestException if missing or invalid.
+   */
+  private parseProgramId(programId: string): Types.ObjectId {
+    if (programId == null || String(programId).trim() === '') {
+      throw new BadRequestException('Program ID is required');
+    }
+    if (!Types.ObjectId.isValid(programId)) {
+      throw new BadRequestException(`Invalid program ID: "${programId}"`);
+    }
+    return new Types.ObjectId(programId);
+  }
+
+  /**
+   * Validates assignmentId and returns ObjectId. Throws BadRequestException if missing or invalid.
+   */
+  private parseAssignmentId(assignmentId: string): Types.ObjectId {
+    if (assignmentId == null || String(assignmentId).trim() === '') {
+      throw new BadRequestException('Assignment ID is required');
+    }
+    if (!Types.ObjectId.isValid(assignmentId)) {
+      throw new BadRequestException(`Invalid assignment ID: "${assignmentId}"`);
+    }
+    return new Types.ObjectId(assignmentId);
+  }
+
   /**
    * Total occurrence slots: when unit is day, occurrenceCount; when unit is week, occurrenceCount * (weekdays.length or 1).
    */
   getTotalOccurrenceCount(program: {
     occurrenceCount: number;
-    intervalUnit: string;
+    intervalUnit: IntervalUnit | string;
     weekdays?: number[];
   }): number {
     const count = program.occurrenceCount ?? 0;
@@ -73,11 +121,7 @@ export class ProgramService {
   }
 
   private validateOccurrenceTimeSlots(
-    occurrenceTimeSlots: {
-      time?: string;
-      timezone?: string;
-      messageConfig?: any;
-    }[][],
+    occurrenceTimeSlots: OccurrenceSlotInput[][],
     totalRequired: number,
     prefix: string,
   ): void {
@@ -91,23 +135,23 @@ export class ProgramService {
     }
     occurrenceTimeSlots.forEach((slots, occIndex) => {
       (slots ?? []).forEach((slot, slotIndex) => {
-        if (!slot.time || !slot.timezone) {
+        if (!slot.time?.trim() || !slot.timezone?.trim()) {
           throw new BadRequestException(
             `${prefix}[${occIndex}][${slotIndex}] must have valid time and timezone`,
           );
         }
-        if (!slot.messageConfig) {
+        const cfg = slot.messageConfig;
+        if (!cfg) {
           throw new BadRequestException(
             `${prefix}[${occIndex}][${slotIndex}].messageConfig is required`,
           );
         }
-        const cfg: any = slot.messageConfig;
-        if (!cfg.templateName || !cfg.templateName.trim()) {
+        if (!cfg.templateName?.trim()) {
           throw new BadRequestException(
             `${prefix}[${occIndex}][${slotIndex}].messageConfig.templateName is required`,
           );
         }
-        const mappings: any[] = cfg.variableMappings ?? [];
+        const mappings = cfg.variableMappings ?? [];
         const hasInvalidMapping = mappings.some((vm) => {
           if (vm.isDynamic) {
             return !vm.contactField?.trim() || !vm.fallbackValue?.trim();
@@ -190,12 +234,48 @@ export class ProgramService {
     adminId: string,
   ): Promise<{ program: Program; eligibleCount?: number }> {
     const program = await this.findOne(programId, adminId);
-    const merged = {
-      occurrenceCount: dto.occurrenceCount ?? (program as any).occurrenceCount,
-      intervalUnit: dto.intervalUnit ?? (program as any).intervalUnit,
-      weekdays:
-        dto.weekdays !== undefined ? dto.weekdays : (program as any).weekdays,
+
+    const scheduleChanged =
+      dto.occurrenceTimeSlots != null || dto.occurrenceCount != null;
+
+    // Validations: name (if provided)
+    if (dto.name !== undefined) {
+      const trimmed = typeof dto.name === 'string' ? dto.name.trim() : '';
+      if (trimmed.length === 0) {
+        throw new BadRequestException('Program name cannot be empty');
+      }
+      if (trimmed.length > ProgramService.OCCURRENCE_CONFIG_MAX_NAME_LENGTH) {
+        throw new BadRequestException(
+          `Program name must not exceed ${ProgramService.OCCURRENCE_CONFIG_MAX_NAME_LENGTH} characters`,
+        );
+      }
+    }
+
+    // Validations: occurrenceCount (if provided)
+    if (dto.occurrenceCount !== undefined) {
+      const count = Number(dto.occurrenceCount);
+      if (!Number.isInteger(count) || count < 1) {
+        throw new BadRequestException(
+          'occurrenceCount must be a positive integer',
+        );
+      }
+    }
+
+    // User is not allowed to change interval unit/value; use existing for validation and persist
+    const existingIntervalUnit = program.intervalUnit;
+    const existingIntervalValue = program.intervalValue;
+    const existingWeekdays = program.weekdays;
+
+    const merged: {
+      occurrenceCount: number;
+      intervalUnit: IntervalUnit;
+      weekdays?: number[];
+    } = {
+      occurrenceCount: dto.occurrenceCount ?? program.occurrenceCount,
+      intervalUnit: existingIntervalUnit,
+      weekdays: existingWeekdays,
     };
+
     if (dto.occurrenceTimeSlots != null) {
       const totalRequired = this.getTotalOccurrenceCount(merged);
       this.validateOccurrenceTimeSlots(
@@ -205,49 +285,75 @@ export class ProgramService {
       );
     }
 
-    // Check if auto assign criteria was newly added or changed
-    const wasAutoAssignable = program.isAutoAssignable;
-
     Object.assign(program, dto);
-    if (dto.projectId) program.projectId = new Types.ObjectId(dto.projectId);
+    if (dto.projectId != null) {
+      program.projectId = new Types.ObjectId(dto.projectId);
+    }
+    // Keep existing interval unit and value; user is not allowed to edit them
+    program.intervalUnit = existingIntervalUnit;
+    program.intervalValue = existingIntervalValue;
+    program.weekdays = existingWeekdays;
 
     const savedProgram = await program.save();
 
     let eligibleCount = 0;
-    // We run bulk assign on update if they changed the criteria or turned it on
-    if (savedProgram.isAutoAssignable && savedProgram.autoAssignCriteria && dto.autoAssignCriteria) {
+    if (
+      savedProgram.isAutoAssignable &&
+      savedProgram.autoAssignCriteria &&
+      dto.autoAssignCriteria != null
+    ) {
       try {
         const criteria = savedProgram.autoAssignCriteria;
         const matchData = await this.attendeesService.fetchAttendeesByAdvanceFilters(
           {
             responseType: AdvanceFilterResponseType.COUNT,
-            webinarIds: criteria.webinarIds || [],
+            webinarIds: Array.isArray(criteria.webinarIds) ? criteria.webinarIds : [],
             isAttended: criteria.isAttended,
-            units: criteria.conditions || [],
-          } as any,
-          adminId
+            units: criteria.conditions ?? [],
+          },
+          adminId,
         );
-        eligibleCount = matchData?.count || 0;
+        eligibleCount = matchData?.count ?? 0;
 
         if (eligibleCount > 0) {
-          await this.autoAssignQueue.add('bulk-auto-assign', {
-            type: 'BULK_ASSIGN',
-            adminId,
-            programId: savedProgram._id.toString()
-          }, { removeOnComplete: true });
+          await this.autoAssignQueue.add(
+            'bulk-auto-assign',
+            {
+              type: 'BULK_ASSIGN',
+              adminId,
+              programId: savedProgram._id.toString(),
+            },
+            { removeOnComplete: true },
+          );
         }
       } catch (err) {
-        this.logger.error(`Error enqueueing bulk assign on update`, err.stack);
+        this.logger.error(
+          'Error enqueueing bulk assign on update',
+          err instanceof Error ? err.stack : String(err),
+        );
       }
+    }
+
+    if (scheduleChanged) {
+      await this.rebuildFutureSlotsForProgram(
+        savedProgram as ProgramDocument,
+        adminId,
+      );
     }
 
     return { program: savedProgram, eligibleCount };
   }
 
+  /**
+   * Finds a program by id and admin. Returns only non-deleted programs.
+   * @throws BadRequestException if programId is invalid
+   * @throws NotFoundException if program does not exist or is deleted
+   */
   async findOne(programId: string, adminId: string): Promise<ProgramDocument> {
+    const id = this.parseProgramId(programId);
     const program = await this.programModel
       .findOne({
-        _id: new Types.ObjectId(programId),
+        _id: id,
         adminId: new Types.ObjectId(adminId),
       })
       .exec();
@@ -288,13 +394,16 @@ export class ProgramService {
   }
 
   async remove(programId: string, adminId: string): Promise<void> {
+    const id = this.parseProgramId(programId);
     const session = await this.programModel.startSession();
     session.startTransaction();
     try {
-      const program = await this.programModel.findOne({
-        _id: new Types.ObjectId(programId),
-        adminId: new Types.ObjectId(adminId),
-      }).session(session);
+      const program = await this.programModel
+        .findOne({
+          _id: id,
+          adminId: new Types.ObjectId(adminId),
+        })
+        .session(session);
 
       if (!program) {
         throw new NotFoundException(`Program with ID "${programId}" not found.`);
@@ -397,109 +506,214 @@ export class ProgramService {
       source: dto.source || ProgramAssignmentSource.MANUAL,
       attendeeId: dto.attendeeId ? new Types.ObjectId(dto.attendeeId) : undefined,
     });
-    const savedAssignment = await assignment.save();
+    const savedAssignment = (await assignment.save()) as ProgramAssignmentDocument;
 
     // Precompute ProgramSlot documents for this assignment
     try {
-      const prog: any = program;
-      const totalOccurrences = this.getTotalOccurrenceCount(prog);
-      let occurrenceTimeSlots: any[] = prog.occurrenceTimeSlots ?? [];
-      // Legacy fallback: flat timeSlots reused for each occurrence
-      if (
-        (!occurrenceTimeSlots || occurrenceTimeSlots.length === 0) &&
-        Array.isArray(prog.timeSlots) &&
-        prog.timeSlots.length > 0
-      ) {
-        occurrenceTimeSlots = Array.from(
-          { length: totalOccurrences },
-          () => prog.timeSlots,
+      const slotsToInsert = this.buildProgramSlotsForAssignment(
+        program as ProgramDocument,
+        savedAssignment,
+        1,
+      );
+
+      if (slotsToInsert.length > 0) {
+        await this.programSlotModel.insertMany(slotsToInsert);
+        this.logger.log(
+          `Created ${slotsToInsert.length} program slots for assignment ${savedAssignment._id}`,
         );
-      }
-
-      if (!occurrenceTimeSlots || occurrenceTimeSlots.length === 0) {
-        this.logger.warn(
-          `No occurrenceTimeSlots for program ${prog._id}, skipping ProgramSlot creation`,
-        );
-      } else {
-        const intervalUnit: IntervalUnit = prog.intervalUnit ?? IntervalUnit.DAY;
-        const weekdays: number[] | undefined = prog.weekdays;
-        const slotsToInsert: Partial<ProgramSlotDocument>[] = [];
-
-        for (let occ = 1; occ <= totalOccurrences; occ++) {
-          const slotsForOccurrence = occurrenceTimeSlots[occ - 1] ?? [];
-          if (!slotsForOccurrence || slotsForOccurrence.length === 0) {
-            continue;
-          }
-
-          let baseDate: Date;
-          if (intervalUnit === IntervalUnit.DAY) {
-            baseDate = getBaseDateForOccurrence(
-              startAt,
-              occ,
-              'day',
-              prog.intervalValue ?? 1,
-            );
-          } else if (intervalUnit === IntervalUnit.WEEK && weekdays?.length) {
-            const weekIndex = Math.floor((occ - 1) / weekdays.length);
-            const weekday = weekdays[(occ - 1) % weekdays.length];
-            baseDate = getBaseDateForOccurrence(
-              startAt,
-              weekIndex + 1,
-              'week',
-              weekday,
-            );
-          } else {
-            baseDate = getBaseDateForOccurrence(
-              startAt,
-              occ,
-              'week',
-              prog.intervalValue ?? 1,
-            );
-          }
-
-          for (
-            let timeSlotIndex = 0;
-            timeSlotIndex < slotsForOccurrence.length;
-            timeSlotIndex++
-          ) {
-            const slot = slotsForOccurrence[timeSlotIndex];
-            const scheduledAt = getScheduledAtUTC(
-              baseDate,
-              slot.time,
-              slot.timezone || savedAssignment.timezone,
-            );
-
-            // Skip slots that are scheduled in the past
-            if (scheduledAt < new Date()) {
-              continue;
-            }
-
-            slotsToInsert.push({
-              programId: savedAssignment.programId,
-              programAssignmentId: savedAssignment._id,
-              occurrenceIndex: occ,
-              timeSlotIndex,
-              scheduledAt,
-              status: ProgramSlotStatus.PENDING,
-            } as any);
-          }
-        }
-
-        if (slotsToInsert.length > 0) {
-          await this.programSlotModel.insertMany(slotsToInsert);
-          this.logger.log(
-            `Created ${slotsToInsert.length} program slots for assignment ${savedAssignment._id}`,
-          );
-        }
       }
     } catch (err) {
       this.logger.error(
-        `Failed to precompute ProgramSlots for assignment ${assignment._id}: ${err instanceof Error ? err.message : String(err)
+        `Failed to precompute ProgramSlots for assignment ${assignment._id}: ${
+          err instanceof Error ? err.message : String(err)
         }`,
       );
     }
 
     return savedAssignment;
+  }
+
+  private buildProgramSlotsForAssignment(
+    program: ProgramDocument,
+    assignment: ProgramAssignmentDocument,
+    fromOccurrence: number,
+    totalOccurrencesOverride?: number,
+    now: Date = new Date(),
+  ): Partial<ProgramSlotDocument>[] {
+    const totalOccurrences =
+      typeof totalOccurrencesOverride === 'number'
+        ? totalOccurrencesOverride
+        : this.getTotalOccurrenceCount({
+            occurrenceCount: program.occurrenceCount,
+            intervalUnit: program.intervalUnit,
+            weekdays: program.weekdays,
+          });
+
+    let occurrenceTimeSlots: OccurrenceSlotInput[][] =
+      (program.occurrenceTimeSlots as unknown as OccurrenceSlotInput[][]) ?? [];
+
+    type ProgramWithLegacySlots = ProgramDocument & {
+      timeSlots?: OccurrenceSlotInput[];
+    };
+
+    const legacyTimeSlots = (program as ProgramWithLegacySlots).timeSlots;
+
+    // Legacy fallback: flat timeSlots reused for each occurrence
+    if (
+      (!occurrenceTimeSlots || occurrenceTimeSlots.length === 0) &&
+      Array.isArray(legacyTimeSlots) &&
+      legacyTimeSlots.length > 0
+    ) {
+      occurrenceTimeSlots = Array.from(
+        { length: totalOccurrences },
+        () => legacyTimeSlots,
+      );
+    }
+
+    if (!occurrenceTimeSlots || occurrenceTimeSlots.length === 0) {
+      this.logger.warn(
+        `No occurrenceTimeSlots for program ${program._id}, skipping ProgramSlot creation`,
+      );
+      return [];
+    }
+
+    const intervalUnit: IntervalUnit = program.intervalUnit ?? IntervalUnit.DAY;
+    const weekdays: number[] | undefined = program.weekdays;
+    const slotsToInsert: Partial<ProgramSlotDocument>[] = [];
+    const startAt = assignment.startAt;
+
+    for (let occ = Math.max(1, fromOccurrence); occ <= totalOccurrences; occ++) {
+      const slotsForOccurrence = occurrenceTimeSlots[occ - 1] ?? [];
+      if (!slotsForOccurrence || slotsForOccurrence.length === 0) {
+        continue;
+      }
+
+      let baseDate: Date;
+      if (intervalUnit === IntervalUnit.DAY) {
+        baseDate = getBaseDateForOccurrence(
+          startAt,
+          occ,
+          'day',
+          program.intervalValue ?? 1,
+        );
+      } else if (intervalUnit === IntervalUnit.WEEK && weekdays?.length) {
+        const weekIndex = Math.floor((occ - 1) / weekdays.length);
+        const weekday = weekdays[(occ - 1) % weekdays.length];
+        baseDate = getBaseDateForOccurrence(
+          startAt,
+          weekIndex + 1,
+          'week',
+          weekday,
+        );
+      } else {
+        baseDate = getBaseDateForOccurrence(
+          startAt,
+          occ,
+          'week',
+          program.intervalValue ?? 1,
+        );
+      }
+
+      for (
+        let timeSlotIndex = 0;
+        timeSlotIndex < slotsForOccurrence.length;
+        timeSlotIndex++
+      ) {
+        const slot = slotsForOccurrence[timeSlotIndex];
+        if (!slot.time || !slot.timezone) {
+          continue;
+        }
+
+        const scheduledAt = getScheduledAtUTC(
+          baseDate,
+          slot.time,
+          slot.timezone || assignment.timezone,
+        );
+
+        // Skip slots that are scheduled in the past
+        if (scheduledAt < now) {
+          continue;
+        }
+
+        slotsToInsert.push({
+          programId: assignment.programId,
+          programAssignmentId: assignment._id as Types.ObjectId,
+          occurrenceIndex: occ,
+          timeSlotIndex,
+          scheduledAt,
+          status: ProgramSlotStatus.PENDING,
+        });
+      }
+    }
+
+    return slotsToInsert;
+  }
+
+  private async rebuildFutureSlotsForProgram(
+    program: ProgramDocument,
+    adminId: string,
+  ): Promise<void> {
+    const totalOccurrences = this.getTotalOccurrenceCount({
+      occurrenceCount: program.occurrenceCount,
+      intervalUnit: program.intervalUnit,
+      weekdays: program.weekdays,
+    });
+
+    if (totalOccurrences <= 0) {
+      return;
+    }
+
+    const activeStatuses = [
+      ProgramAssignmentStatus.SCHEDULED,
+      ProgramAssignmentStatus.RUNNING,
+      ProgramAssignmentStatus.PAUSED,
+    ];
+
+    const assignments = await this.programAssignmentModel
+      .find({
+        programId: program._id,
+        adminId: program.adminId,
+        status: { $in: activeStatuses },
+      })
+      .exec();
+
+    if (!assignments.length) {
+      return;
+    }
+
+    const now = new Date();
+
+    for (const assignment of assignments) {
+      const cutoffOcc =
+        typeof assignment.currentOccurrence === 'number' &&
+        assignment.currentOccurrence > 0
+          ? assignment.currentOccurrence
+          : 0;
+      const fromOccurrence = cutoffOcc <= 0 ? 1 : cutoffOcc + 1;
+
+      if (fromOccurrence > totalOccurrences) {
+        continue;
+      }
+
+      await this.programSlotModel
+        .deleteMany({
+          programAssignmentId: assignment._id,
+          occurrenceIndex: { $gte: fromOccurrence },
+        })
+        .exec();
+
+      const slotsToInsert = this.buildProgramSlotsForAssignment(
+        program,
+        assignment,
+        fromOccurrence,
+        totalOccurrences,
+        now,
+      );
+
+      if (slotsToInsert.length > 0) {
+        await this.programSlotModel.insertMany(slotsToInsert);
+      }
+    }
   }
 
   /**

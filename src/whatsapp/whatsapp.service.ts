@@ -44,6 +44,7 @@ import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-t
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { CampaignStatus } from 'src/whatsapp-embed/campaign/campaign.schema';
+import { ChatbotTriggerService } from 'src/chatbot-trigger/chatbot-trigger.service';
 import {
   WHATSAPP_TEMPLATE_QUEUE,
   WHATSAPP_WEBHOOK_QUEUE,
@@ -75,6 +76,7 @@ export class WhatsappService extends BaseLoggerService {
     private readonly whatsappWebhookQueue: Queue,
     @Inject(forwardRef(() => WabaTemplateService))
     private readonly wabaTemplateService: WabaTemplateService,
+    private readonly chatbotTriggerService: ChatbotTriggerService,
   ) {
     super();
     this.webhookVerifyToken = this.configService.get<string>(
@@ -796,6 +798,33 @@ export class WhatsappService extends BaseLoggerService {
         `Failed to emit websocket event for inbound message - From: ${from}, Message ID: ${wabaMessageId}, Admin ID: ${adminId}`,
         error instanceof Error ? error.stack : error,
       );
+    }
+
+    // Chatbot triggers: if user sent text, check for a matching trigger and send response
+    if (textBody && this.chatbotTriggerService) {
+      try {
+        const match = await this.chatbotTriggerService.findMatchingTrigger(
+          projectId,
+          textBody,
+        );
+        if (match && match.responseValue) {
+          this.logger.log(
+            `Chatbot trigger matched for keyword "${match.keyword}" - sending response to ${from}`,
+          );
+          await this.sendTextMessage(
+            adminId,
+            projectId,
+            from,
+            match.responseValue,
+            undefined,
+          );
+        }
+      } catch (triggerError) {
+        this.logger.error(
+          `Chatbot trigger evaluation or send failed for from: ${from}, message ID: ${wabaMessageId}`,
+          triggerError instanceof Error ? triggerError.stack : triggerError,
+        );
+      }
     }
   }
 
