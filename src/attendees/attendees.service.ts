@@ -1221,8 +1221,6 @@ export class AttendeesService {
       }
     }
 
-    console.log(`${JSON.stringify(associationFilter)}`);
-
     const basePipeline: PipelineStage[] = [
       {
         $match: {
@@ -1854,7 +1852,6 @@ export class AttendeesService {
     if (!attendeeBeforeUpdate) {
       throw new NotFoundException('Attendee not found.');
     }
-    console.log('attendee service ---- > ', attendeeBeforeUpdate, userId);
 
     // Permission check: Allow if userId is the assignedTo, tempAssignedTo, or adminId of the *existing* attendee
     if (
@@ -3608,7 +3605,7 @@ export class AttendeesService {
       );
     }
     if (!updates || updates.length === 0) {
-      console.log(
+      this.logger.log(
         'bulkUpdateAttendees called with no updates. Returning early.',
       );
       // Return a result object indicating no operations were performed
@@ -3979,8 +3976,6 @@ export class AttendeesService {
         isAttended,
       };
 
-      this.logger.log(`Security filters: ${JSON.stringify(securityFilters, null, 2)}`);
-      this.logger.log(`Initial match: ${JSON.stringify(initialMatch, null, 2)}`);
 
       const basePipeline: PipelineStage[] = [
         {
@@ -4097,7 +4092,6 @@ export class AttendeesService {
           }
         }
       ];
-      this.logger.log(`Base pipeline: ${JSON.stringify(basePipeline, null, 2)}`);
 
       // Build count pipeline (always needed for accurate count)
       const countPipeline: PipelineStage[] = [
@@ -4169,16 +4163,7 @@ export class AttendeesService {
         isDeleted: { $ne: true },
       };
 
-      this.logger.log(
-        `Grouped Security filters: ${JSON.stringify(
-          securityFilters,
-          null,
-          2,
-        )}`,
-      );
-      this.logger.log(
-        `Grouped Initial match: ${JSON.stringify(initialMatch, null, 2)}`,
-      );
+     
 
       // First apply the same enrichment lookups as fetchAttendeesByAdvanceFilters,
       // then aggregate/group by email similar to fetchGroupedAttendees.
@@ -4404,9 +4389,7 @@ export class AttendeesService {
         },
       ];
 
-      this.logger.log(
-        `Grouped Base pipeline: ${JSON.stringify(basePipeline, null, 2)}`,
-      );
+    
 
       // Build count pipeline (count distinct grouped contacts)
       const countPipeline: PipelineStage[] = [

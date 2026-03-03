@@ -44,6 +44,7 @@ import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-t
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { CampaignStatus } from 'src/whatsapp-embed/campaign/campaign.schema';
+import { ChatbotTriggerService } from 'src/chatbot-trigger/chatbot-trigger.service';
 import {
   WHATSAPP_TEMPLATE_QUEUE,
   WHATSAPP_WEBHOOK_QUEUE,
@@ -75,6 +76,7 @@ export class WhatsappService extends BaseLoggerService {
     private readonly whatsappWebhookQueue: Queue,
     @Inject(forwardRef(() => WabaTemplateService))
     private readonly wabaTemplateService: WabaTemplateService,
+    private readonly chatbotTriggerService: ChatbotTriggerService,
   ) {
     super();
     this.webhookVerifyToken = this.configService.get<string>(
@@ -796,6 +798,33 @@ export class WhatsappService extends BaseLoggerService {
         `Failed to emit websocket event for inbound message - From: ${from}, Message ID: ${wabaMessageId}, Admin ID: ${adminId}`,
         error instanceof Error ? error.stack : error,
       );
+    }
+
+    // Chatbot triggers: if user sent text, check for a matching trigger and send response
+    if (textBody && this.chatbotTriggerService) {
+      try {
+        const match = await this.chatbotTriggerService.findMatchingTrigger(
+          projectId,
+          textBody,
+        );
+        if (match && match.responseValue) {
+          this.logger.log(
+            `Chatbot trigger matched for keyword "${match.keyword}" - sending response to ${from}`,
+          );
+          await this.sendTextMessage(
+            adminId,
+            projectId,
+            from,
+            match.responseValue,
+            undefined,
+          );
+        }
+      } catch (triggerError) {
+        this.logger.error(
+          `Chatbot trigger evaluation or send failed for from: ${from}, message ID: ${wabaMessageId}`,
+          triggerError instanceof Error ? triggerError.stack : triggerError,
+        );
+      }
     }
   }
 
@@ -2193,6 +2222,9 @@ export class WhatsappService extends BaseLoggerService {
     apiCampaignId,
     messageType,
     messageFormat,
+    programId,
+    programAssignmentId,
+    programSlotId,
   }: {
     projectId: string;
     adminId: string;
@@ -2209,6 +2241,9 @@ export class WhatsappService extends BaseLoggerService {
     apiCampaignId?: string;
     messageType: WabaMessageType;
     messageFormat: 'text' | 'template' | 'media';
+    programId?: string;
+    programAssignmentId?: string;
+    programSlotId?: string;
   }) {
     try {
       const wabaMessageId = uuidv4();
@@ -2233,6 +2268,9 @@ export class WhatsappService extends BaseLoggerService {
         attendeeId,
         meetingId,
         occurrenceId,
+        programId,
+        programAssignmentId,
+        programSlotId,
       });
     } catch (error) {
       this.logger.error('Failed to create error message:', error);
@@ -3436,6 +3474,8 @@ export class WhatsappService extends BaseLoggerService {
     };
   }
 
+ 
+
   /**
    * Core logic to send a single template message via Meta Graph API.
    * This method is typically called by the Queue Worker, but can be called directly.
@@ -3636,7 +3676,7 @@ export class WhatsappService extends BaseLoggerService {
           messageType: payload.messageType,
         });
         try {
-          await this.wabaMessageService.create({
+          const wabaMessage = await this.wabaMessageService.create({
             projectId,
             adminId,
             phoneNumber: normalizedRecipientPhoneNumber,
@@ -3649,6 +3689,9 @@ export class WhatsappService extends BaseLoggerService {
             attendeeId: payload.attendeeId,
             meetingId: payload.meetingId,
             occurrenceId: payload.occurrenceId,
+            programId: payload.programId,
+            programAssignmentId: payload.programAssignmentId,
+            programSlotId: payload.programSlotId,
             templateLanguage: language || templateStructure.language || 'en_US',
             messageFormat: 'template',
             templateComponents: templateStructure.components || [],
@@ -3684,6 +3727,9 @@ export class WhatsappService extends BaseLoggerService {
             meetingId: payload.meetingId,
             occurrenceId: payload.occurrenceId,
             apiCampaignId: payload.apiCampaignId,
+            programId: payload.programId,
+            programAssignmentId: payload.programAssignmentId,
+            programSlotId: payload.programSlotId,
           });
           // Don't throw error here as the message was sent successfully
           // This is a non-critical operation
@@ -3718,6 +3764,9 @@ export class WhatsappService extends BaseLoggerService {
         meetingId: payload.meetingId,
         occurrenceId: payload.occurrenceId,
         apiCampaignId: payload.apiCampaignId,
+        programId: payload.programId,
+        programAssignmentId: payload.programAssignmentId,
+        programSlotId: payload.programSlotId,
       });
 
       try {
@@ -3743,6 +3792,9 @@ export class WhatsappService extends BaseLoggerService {
           apiCampaignId: payload.apiCampaignId,
           messageType: payload.messageType,
           messageFormat: 'template',
+          programId: payload.programId,
+          programAssignmentId: payload.programAssignmentId,
+          programSlotId: payload.programSlotId,
         });
         this.logger.log('Error message record created successfully', {
           phoneNumber: normalizedRecipientPhoneNumber,
@@ -3883,9 +3935,9 @@ export class WhatsappService extends BaseLoggerService {
     campaignId?: string;
     attendeeId?: string;
     apiCampaignId?: string;
-
-
-
+    programId?: string;
+    programAssignmentId?: string;
+    programSlotId?: string;
   }): Promise<any> {
     const {
       adminId,
@@ -3897,6 +3949,9 @@ export class WhatsappService extends BaseLoggerService {
       campaignId,
       attendeeId,
       apiCampaignId,
+      programId,
+      programAssignmentId, 
+      programSlotId,
     } = payload;
 
     const { projectId, recipients, templateName, headerMediaAssetId } =
@@ -4094,6 +4149,9 @@ export class WhatsappService extends BaseLoggerService {
               campaignId,
               attendeeId,
               apiCampaignId,
+              programId,
+              programAssignmentId,
+              programSlotId,
             });
             results.enqueued++;
           } catch (error) {

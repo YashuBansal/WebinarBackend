@@ -4,6 +4,7 @@ import { AlarmService } from 'src/alarm/alarm.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { UsersService } from 'src/users/users.service';
 import { CampaignService } from 'src/whatsapp-embed/campaign/campaign.service';
+import { ProgramService } from 'src/whatsapp-program/program.service';
 
 @Injectable()
 export class CronService implements OnModuleInit {
@@ -14,6 +15,7 @@ export class CronService implements OnModuleInit {
     private readonly alarmService: AlarmService,
     private readonly subscriptionService: SubscriptionService,
     private readonly campaignService: CampaignService,
+    private readonly programService: ProgramService,
   ) {}
 
   async onModuleInit() {
@@ -31,6 +33,16 @@ export class CronService implements OnModuleInit {
     await this.everyWeekJobs();
   }
 
+  @Cron(CronExpression.EVERY_MINUTE) // Every 10 minutes
+  async handleAutoAssignments() {
+    this.logger.log('Running auto-assignments evaluation...');
+    try {
+      await this.programService.evaluateAllAutoAssignments();
+    } catch (error) {
+      this.logger.error('Error during auto-assignments evaluation', error);
+    }
+  }
+
   @Cron(CronExpression.EVERY_MINUTE)
   async handleScheduledTasks() {
     this.logger.log('Running scheduled tasks check...');
@@ -41,6 +53,7 @@ export class CronService implements OnModuleInit {
         this.alarmService.processDueReminders(),
         this.alarmService.processDueAlarms(),
         this.campaignService.processScheduledCampaigns(),
+        this.programService.processDueProgramSlots(),
       ]);
     } catch (error) {
       // This is a top-level catch for unexpected errors in the Promise.all

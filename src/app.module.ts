@@ -68,6 +68,7 @@ import { ConfiguredTemplatesModule } from './configured-templates/configured-tem
 import { MeetingEventConfigModule } from './meeting-event-config/meeting-event-config.module';
 import { WinstonModule } from 'nest-winston';
 import { WebinarWebhookModule } from './webinar-webhook/webinar-webhook.module';
+import { ProgramModule } from './whatsapp-program/program.module';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
 import { HealthModule } from './health/health.module';
@@ -213,6 +214,7 @@ import { OtelWinstonTransport } from './logger/otel-winston-transport';
     ConfiguredTemplatesModule,
     MeetingEventConfigModule,
     WebinarWebhookModule,
+    ProgramModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService, FileStorageService],

@@ -6,6 +6,7 @@ import { User } from 'src/schemas/User.schema';
 import { Attendee } from 'src/schemas/Attendee.schema';
 import { Campaign } from 'src/whatsapp-embed/campaign/campaign.schema';
 import { ApiCampaign } from '../api-campaign/api-campaign.schema';
+import { ProgramSlot } from 'src/whatsapp-program/schemas/program-slot.schema';
 
 export type WabaMessageDocument = WabaMessage & Document;
 
@@ -16,6 +17,7 @@ export enum WabaMessageType {
   AUTO_MESSAGE = 'auto-message',
   ZOOM_EVENT = 'zoom-event',
   API_CAMPAIGN = 'api-campaign',
+  PROGRAM = 'program',
 }
 
 export enum WabaMessageDirection {
@@ -100,6 +102,19 @@ export class WabaMessage extends Document {
     required: false,
   })
   occurrenceId?: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Program', required: false })
+  programId?: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'ProgramAssignment', required: false })
+  programAssignmentId?: Types.ObjectId;
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: ProgramSlot.name,
+    required: false,
+  })
+  programSlotId?: Types.ObjectId;
 
   @Prop({
     type: String,
@@ -264,5 +279,7 @@ WabaMessageSchema.index({ sentAt: -1 });
 WabaMessageSchema.index({ deliveredAt: -1 });
 WabaMessageSchema.index({ readAt: -1 });
 WabaMessageSchema.index({ projectId: 1, phoneNumber: 1, createdAt: -1 });
+WabaMessageSchema.index({ programAssignmentId: 1 });
+WabaMessageSchema.index({ programSlotId: 1 });
 
 export { WabaMessageSchema };

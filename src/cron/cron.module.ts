@@ -5,6 +5,7 @@ import { UsersModule } from 'src/users/users.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { AlarmModule } from 'src/alarm/alarm.module';
 import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
+import { ProgramModule } from 'src/whatsapp-program/program.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
     SubscriptionModule,
     AlarmModule,
     CampaignModule,
+    ProgramModule,
   ],
   providers: [CronService],
 })
