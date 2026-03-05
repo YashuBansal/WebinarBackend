@@ -103,7 +103,8 @@ export class ChatbotTriggerService {
   }
 
   /**
-   * Returns the first enabled trigger whose keyword matches the user message (trimmed, case-insensitive).
+   * Returns the first enabled trigger whose keyword is contained in the user message (substring match, case-insensitive).
+   * E.g. keyword "join" matches "i like to join", "mujhe join kr na hai", or "join".
    */
   async findMatchingTrigger(
     projectId: Types.ObjectId,
@@ -115,11 +116,15 @@ export class ChatbotTriggerService {
     const normalized = userMessageText.trim().toLowerCase();
     if (!normalized) return null;
 
-    const trigger = await this.chatbotTriggerModel
-      .findOne({ projectId, keyword: normalized, enabled: true })
+    const triggers = await this.chatbotTriggerModel
+      .find({ projectId, enabled: true })
       .sort({ createdAt: 1 })
       .lean()
       .exec();
-    return trigger as ChatbotTriggerDocument | null;
+
+    const match = (triggers as ChatbotTriggerDocument[]).find((t) =>
+      normalized.includes(t.keyword),
+    );
+    return match ?? null;
   }
 }
