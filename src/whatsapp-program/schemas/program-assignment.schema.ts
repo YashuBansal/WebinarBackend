@@ -60,8 +60,11 @@ export class ProgramAssignment extends Document {
   @Prop({ type: Object, default: {} }) // e.g. { name: 'John', email: 'j@x.com' }
   dynamicVariables: Record<string, string>;
 
-  @Prop({ type: Number, default: 0 }) // last completed occurrence index (0-based)
+  @Prop({ type: Number, default: 0, min: 0 }) // last completed occurrence index (0-based)
   currentOccurrence: number;
+
+  @Prop({ type: Number, default: -1, min: -1 }) // last completed slot index (0-based)
+  currentSlotIndex: number;
 
   @Prop({ type: Date })
   lastProcessedAt: Date;
