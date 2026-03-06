@@ -601,17 +601,13 @@ export class ProgramService {
     program: ProgramDocument,
     assignment: ProgramAssignmentDocument,
     fromOccurrence: number,
-    totalOccurrencesOverride?: number,
     now: Date = new Date(),
   ): Partial<ProgramSlotDocument>[] {
-    const totalOccurrences =
-      typeof totalOccurrencesOverride === 'number'
-        ? totalOccurrencesOverride
-        : this.getTotalOccurrenceCount({
-            occurrenceCount: program.occurrenceCount,
-            intervalUnit: program.intervalUnit,
-            weekdays: program.weekdays,
-          });
+    const totalOccurrences = this.getTotalOccurrenceCount({
+      occurrenceCount: program.occurrenceCount,
+      intervalUnit: program.intervalUnit,
+      weekdays: program.weekdays,
+    });
 
     let occurrenceTimeSlots: OccurrenceSlotInput[][] =
       (program.occurrenceTimeSlots as unknown as OccurrenceSlotInput[][]) ?? [];
@@ -753,31 +749,39 @@ export class ProgramService {
     const now = new Date();
 
     for (const assignment of assignments) {
-      const cutoffOcc =
-        typeof assignment.currentOccurrence === 'number' &&
-        assignment.currentOccurrence > 0
-          ? assignment.currentOccurrence
-          : 0;
-      const fromOccurrence = cutoffOcc <= 0 ? 1 : cutoffOcc + 1;
+      const currentOccurrence = assignment.currentOccurrence;
+      const currentSlotIndex = assignment.currentSlotIndex;
 
-      if (fromOccurrence > totalOccurrences) {
+      this.logger.log(
+        `Current occurrence: ${currentOccurrence}, current slot index: ${currentSlotIndex}, total occurrences: ${totalOccurrences}`,
+      );
+
+      if (currentOccurrence > totalOccurrences) {
         continue;
       }
 
-      await this.programSlotModel
+      const deletedSlots = await this.programSlotModel
         .deleteMany({
           programAssignmentId: assignment._id,
-          occurrenceIndex: { $gte: fromOccurrence },
+          occurrenceIndex: { $gt: currentOccurrence },
+          status: {
+            $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.PAUSED],
+          },
         })
         .session(session)
         .exec();
+      this.logger.log(
+        `Deleted ${deletedSlots.deletedCount} program slots for assignment ${assignment._id}`,
+      );
 
       const slotsToInsert = this.buildProgramSlotsForAssignment(
         program,
         assignment,
-        fromOccurrence,
-        totalOccurrences,
+        currentOccurrence,
         now,
+      );
+      this.logger.log(
+        `Inserting ${slotsToInsert.length} program slots for assignment ${assignment._id}`,
       );
 
       if (slotsToInsert.length > 0) {
