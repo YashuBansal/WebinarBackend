@@ -1,18 +1,29 @@
-import { forwardRef, MiddlewareConsumer, Module } from '@nestjs/common';
+import {
+  forwardRef,
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+} from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { WabaMessageService } from './waba-message.service';
 import {
   WabaMessage,
   WabaMessageSchema,
 } from './waba-message.schema';
+import {
+  ChatReadStatus,
+  ChatReadStatusSchema,
+} from './chat-read-status.schema';
 import { WabaMessageController } from './waba-message.controller';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
+import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: WabaMessage.name, schema: WabaMessageSchema },
+      { name: ChatReadStatus.name, schema: ChatReadStatusSchema },
     ]),
     forwardRef(() => UsersModule),
   ],
@@ -22,6 +33,18 @@ import { UsersModule } from 'src/users/users.module';
 })
 export class WabaMessageModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(AuthAdminTokenMiddleware).forRoutes(WabaMessageController);
+    consumer
+      .apply(AuthAdminTokenMiddleware)
+      .exclude({
+        path: 'waba-message/counts',
+        method: RequestMethod.GET,
+      })
+      .forRoutes(WabaMessageController);
+    consumer
+      .apply(AuthSuperAdminMiddleware)
+      .forRoutes({
+        path: 'waba-message/counts',
+        method: RequestMethod.GET,
+      });
   }
 }

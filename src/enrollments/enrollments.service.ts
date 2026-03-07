@@ -11,6 +11,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { ClientSession, Model, PipelineStage, Types } from 'mongoose';
 import { AssignType, Enrollment } from 'src/schemas/Enrollments.schema';
 import {
+  BulkWebinarEnrollmentDto,
   CreateEnrollmentDto,
   EnrollmentsByLevelOrProductDTO,
   UpdateEnrollmentDto,
@@ -20,6 +21,7 @@ import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { WebinarService } from 'src/webinar/webinar.service';
 import { ValidationUtil } from 'src/common/utils/validation.util';
+import { AttendeesService } from 'src/attendees/attendees.service';
 
 @Injectable()
 export class EnrollmentsService {
@@ -33,6 +35,8 @@ export class EnrollmentsService {
     private readonly attendeeLogService: AttendeeLogService,
     @Inject(forwardRef(() => WebinarService))
     private readonly webinarService: WebinarService,
+    @Inject(forwardRef(() => AttendeesService))
+    private readonly attendeesService: AttendeesService,
   ) {}
 
   async createEnrollments(
@@ -378,6 +382,143 @@ export class EnrollmentsService {
       });
     }
     return result;
+  }
+
+  async bulkCreateEnrollmentsForWebinar(
+    body: BulkWebinarEnrollmentDto,
+    adminId: string,
+  ): Promise<{
+    createdCount: number;
+    skippedExisting: number;
+    totalCandidates: number;
+  }> {
+    const webinarId = new Types.ObjectId(body.webinarId);
+    const productId = new Types.ObjectId(body.productId);
+    const adminObjectId = new Types.ObjectId(adminId);
+
+    const product = await this.productsService.getProduct(productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+    const price =
+      typeof product.price === 'number' && product.price >= 0
+        ? product.price
+        : 0;
+
+    let emails: string[] = [];
+    if (body.scope === 'selected' && body.attendeeIds?.length) {
+      emails = await this.attendeesService.getAttendeeEmailsByIds(
+        body.attendeeIds,
+        body.webinarId,
+        adminId,
+        body.isAttended,
+      );
+    } else if (body.scope === 'filtered') {
+      const result = await this.attendeesService.getAttendees(
+        body.webinarId,
+        adminId,
+        body.isAttended,
+        1,
+        1000000,
+        {
+          filters: body.filters || {},
+          validCall: body.validCall,
+          assignmentType: body.assignmentType,
+        },
+        false,
+      );
+      const raw = (Array.isArray(result) ? result : [])
+        .map((a: any) => a?.email)
+        .filter(
+          (email: any): email is string =>
+            typeof email === 'string' && email.trim().length > 0,
+        );
+      emails = Array.from(
+        new Set(raw.map((e: string) => e.toLowerCase().trim())),
+      );
+    }
+
+    if (emails.length === 0) {
+      return {
+        createdCount: 0,
+        skippedExisting: 0,
+        totalCandidates: 0,
+      };
+    }
+
+    const potentialEnrollments = emails.map((attendee) => ({
+      attendee,
+      webinar: webinarId,
+      product: productId,
+      price,
+      adminId: adminObjectId,
+      assignType: AssignType.MANUAL,
+    }));
+
+    const EXISTING_CHECK_BATCH = 1000;
+    const INSERT_BATCH = 5000;
+
+    const session = await this.enrollmentModel.startSession();
+    let createdCount = 0;
+    let skippedExisting = 0;
+
+    try {
+      await session.withTransaction(async (currentSession) => {
+        const existingKeys = new Set<string>();
+
+        // Batch existing-enrollment check by attendee chunks
+        for (let i = 0; i < emails.length; i += EXISTING_CHECK_BATCH) {
+          const chunk = emails.slice(i, i + EXISTING_CHECK_BATCH);
+          const existing = await this.enrollmentModel
+            .find({
+              webinar: webinarId,
+              product: productId,
+              attendee: { $in: chunk },
+            })
+            .select('attendee product')
+            .session(currentSession)
+            .lean()
+            .exec();
+
+          for (const e of existing || []) {
+            const key = `${String(e.attendee || '').toLowerCase()}_${String(
+              e.product || '',
+            )}`;
+            existingKeys.add(key);
+          }
+        }
+
+        const toInsert = potentialEnrollments.filter((e) => {
+          const key = `${e.attendee.toLowerCase()}_${e.product.toString()}`;
+          return !existingKeys.has(key);
+        });
+
+        if (toInsert.length === 0) {
+          createdCount = 0;
+          skippedExisting = potentialEnrollments.length;
+          return;
+        }
+
+        skippedExisting = potentialEnrollments.length - toInsert.length;
+
+        // Insert new enrollments in batches within the same transaction
+        for (let i = 0; i < toInsert.length; i += INSERT_BATCH) {
+          const chunk = toInsert.slice(i, i + INSERT_BATCH);
+          const inserted = await this.enrollmentModel.insertMany(chunk, {
+            session: currentSession,
+          });
+          createdCount += inserted.length;
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    return {
+      createdCount,
+      skippedExisting,
+      totalCandidates: emails.length,
+    };
   }
 
   async getEnrollment(

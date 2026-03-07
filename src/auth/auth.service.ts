@@ -219,6 +219,13 @@ export class AuthService {
     createClientDto: CreateClientDto,
     creatorDetailsDto: CreatorDetailsDto,
   ): Promise<any> {
+    if (!createClientDto.email) {
+      throw new BadRequestException('E-Mail is required');
+    }
+
+    // Normalize email to avoid duplicates due to casing/spacing
+    createClientDto.email = createClientDto.email.trim().toLowerCase();
+
     const roleId = await this.configService.get('appRoles')['ADMIN'];
     if (roleId) {
       createClientDto.role = roleId;

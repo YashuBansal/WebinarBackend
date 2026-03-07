@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, Post, Query, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Patch, Post, Query, UsePipes, ValidationPipe } from '@nestjs/common';
 import { WebinarAutoMessageService } from './webinar-auto-message.service';
-import { UpsertAutoMessageDto, GetConfigQueryDto, TestSendDto, DeleteAutoMessageDto } from './dto';
+import { UpsertAutoMessageDto, GetConfigQueryDto, TestSendDto, DeleteAutoMessageDto, ToggleAutoMessageDto } from './dto';
 import { Id } from '../decorators/custom.decorator';
 import mongoose from 'mongoose';
 
@@ -41,8 +41,15 @@ export class WebinarAutoMessageController {
   @Delete()
   @UsePipes(new ValidationPipe({ transform: true }))
   async delete(@Query() q: DeleteAutoMessageDto, @Id() adminId: string) {
-    const data = await this.svc.delete(adminId, q.webinarId, q.projectId);
+    const data = await this.svc.delete(adminId, q._id);
     return { statusCode: 200, message: 'deleted', data };
+  }
+
+  @Patch('toggle')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async toggle(@Body() dto: ToggleAutoMessageDto, @Id() adminId: string) {
+    const data = await this.svc.toggle(adminId, dto._id, dto.enabled);
+    return { statusCode: 200, message: 'toggled', data };
   }
 }
 

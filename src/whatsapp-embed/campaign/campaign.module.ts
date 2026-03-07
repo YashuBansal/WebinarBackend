@@ -6,7 +6,7 @@ import { CampaignService } from './campaign.service';
 import {
   Campaign,
   CampaignSchema,
-} from '../../schemas/whatsapp-embed/campaign.schema';
+} from './campaign.schema';
 import { WabaMessageModule } from '../waba-message/waba-message.module';
 import { ProjectsModule } from '../../projects/projects.module';
 import { AuthAdminTokenMiddleware } from '../../middlewares/authAdmin.Middleware';

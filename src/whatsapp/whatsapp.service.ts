@@ -16,6 +16,7 @@ import * as http from 'http';
 import axiosRetry from 'axios-retry';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { Queue } from 'bullmq';
 import { ProjectsService } from 'src/projects/projects.service';
 import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
 import * as fs from 'fs';
@@ -33,22 +34,29 @@ import {
 import {
   SendTemplateMessageDto,
   SendBulkTemplateMessageDto,
+  ISendSingleTemplateMessagePayload,
+  IFormattedPhoneData,
 } from './dto/msg.dto';
-import { v2 as cloudinary } from 'cloudinary';
 import { MediaAsset, MediaAssetDocument } from './schemas/media-asset.schema';
-import { CloudinaryService } from 'src/cloudinary/cloudinary.service';
 import { ContactsService } from 'src/contacts/contacts.service';
 import { FileStorageService } from 'src/file-storage/file-storage.service';
 import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-template.schema';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
-import { CampaignStatus } from 'src/schemas/whatsapp-embed/campaign.schema';
+import { CampaignStatus } from 'src/whatsapp-embed/campaign/campaign.schema';
+import { ChatbotTriggerService } from 'src/chatbot-trigger/chatbot-trigger.service';
+import {
+  WHATSAPP_TEMPLATE_QUEUE,
+  WHATSAPP_WEBHOOK_QUEUE,
+  getWhatsappTemplateQueueName,
+} from './whatsapp.queue.module';
+import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-template.service';
+import { WabaTemplateDocument } from 'src/whatsapp-embed/waba-template/waba-template.schema';
+import { BaseLoggerService } from 'src/logger/base-logger.service';
 
 @Injectable()
-export class WhatsappService {
-  private readonly logger = new Logger(WhatsappService.name);
+export class WhatsappService extends BaseLoggerService {
   private readonly webhookVerifyToken: string;
-  private readonly ENCRYPTION_KEY: string;
   private readonly axiosInstance: AxiosInstance;
 
   constructor(
@@ -59,30 +67,21 @@ export class WhatsappService {
     @InjectModel(MediaAsset.name)
     private readonly mediaAssetModel: Model<MediaAssetDocument>,
     private readonly contactsService: ContactsService,
-    private readonly cloudinaryService: CloudinaryService,
     private readonly wabaMessageService: WabaMessageService,
     private readonly fileStorageService: FileStorageService,
     private readonly whatsAppGateway: WhatsAppGateway,
+    @Inject(WHATSAPP_TEMPLATE_QUEUE)
+    private readonly whatsappTemplateQueue: Queue,
+    @Inject(WHATSAPP_WEBHOOK_QUEUE)
+    private readonly whatsappWebhookQueue: Queue,
+    @Inject(forwardRef(() => WabaTemplateService))
+    private readonly wabaTemplateService: WabaTemplateService,
+    private readonly chatbotTriggerService: ChatbotTriggerService,
   ) {
+    super();
     this.webhookVerifyToken = this.configService.get<string>(
       'META_WEBHOOK_VERIFY_TOKEN',
     );
-    const key = this.configService.get<string>('ENCRYPTION_KEY');
-    // Check if the encryption key is configured.
-    if (!key || key.length !== 32) {
-      throw new Error(
-        'ENCRYPTION_KEY is not defined or is not 32 characters long in .env file',
-      );
-    }
-
-    this.ENCRYPTION_KEY = key;
-
-    // Configure Cloudinary
-    cloudinary.config({
-      cloud_name: this.configService.get<string>('CLOUDINARY_CLOUD_NAME'),
-      api_key: this.configService.get<string>('CLOUDINARY_API_KEY'),
-      api_secret: this.configService.get<string>('CLOUDINARY_API_SECRET'),
-    });
 
     // Initialize robust axios instance with IPv4 agent and retry logic
     const httpAgent = new http.Agent({ family: 4 });
@@ -140,88 +139,481 @@ export class WhatsappService {
   }
 
   /**
+   * Enqueues the webhook payload for background processing.
+   * This ensures the controller can respond with 200 OK immediately.
+   */
+  async enqueueWebhookProcessing(payload: any) {
+    // Add to webhook queue
+    await this.whatsappWebhookQueue.add('process-webhook', payload, {
+      removeOnComplete: { age: 24 * 3600 },
+      removeOnFail: { count: 1000 },
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 1000,
+      },
+    });
+  }
+
+  /**
    * Processes the incoming data payload from Meta.
-   * This method will be expanded to handle message statuses, new messages, etc.
+   * Executed by the worker.
    * @param payload The body of the POST request from Meta's webhook.
    */
   async processWebhookPayload(payload: any): Promise<void> {
-    this.logger.log('Processing webhook payload for WhatsApp messages');
-
-    // axios.post('http://localhost:3002/api/v1/whatsapp/webhook', payload).then((response) => {
-    //   // console.log('response', response);
-    // }).catch((error) => {
-    //   console.log('error', error);
-    // });
-
+    // Wrap entire processing in try-catch to ensure no unhandled errors
+    // This method is called asynchronously from the controller, so errors must be caught
     try {
-      // Process status updates
-      if (payload.entry?.[0]?.changes?.[0]?.value?.statuses) {
-        const statuses = payload.entry[0].changes[0].value.statuses;
+      this.logger.log(`Processing webhook payload for WhatsApp messages - ${JSON.stringify(payload)}`);
 
-        for (const status of statuses) {
-          // Process status updates asynchronously to avoid blocking the webhook response
-          this.updateMessageStatus(
-            status.id,
-            status.status,
-            status.timestamp,
-            status.errors?.[0]?.message,
-          ).catch((error) => {
-            this.logger.error(
-              `Failed to process status update for ${status.id}:`,
-              error,
-            );
-          });
-        }
+      // axios.post('http://localhost:3002/api/v1/whatsapp/webhook', payload)
+      //   .then((response) => {
+      //     // this.logger.log('Webhook payload processed successfully', response.data);
+      //   })
+      //   .catch((error) => {
+      //     this.logger.error('Error processing webhook payload', error);
+      //   });
+
+      // Validate payload exists and is an object
+      if (!payload) {
+        this.logger.warn('Received null or undefined payload, skipping processing');
+        return;
       }
 
-      // Process incoming messages
-      if (payload.entry?.[0]?.changes?.[0]?.value?.messages) {
-        const value = payload.entry[0].changes[0].value;
-        const messages = value.messages;
-        const contacts = value.contacts || [];
-        const metadata = value.metadata || {};
-        const fromPhoneNumberId = metadata?.phone_number_id;
-        this.logger.log(`Received ${messages.length} incoming messages`);
+      if (typeof payload !== 'object' || Array.isArray(payload)) {
+        this.logger.warn(
+          `Invalid payload type: ${typeof payload}, expected object. Skipping processing.`,
+        );
+        return;
+      }
 
-        for (const msg of messages) {
-          try {
-            const from = msg.from; // sender's wa id (phone)
-            const textBody = msg.text?.body;
-            const msgId = msg.id;
+      // Validate payload structure
+      if (!payload.entry) {
+        this.logger.warn('Payload missing entry array, skipping processing');
+        return;
+      }
 
-            if (!from || !msgId) continue;
-            console.log('from ------------------------- > ', from);
-            console.log(
-              'fromPhoneNumberId ------------------------- > ',
-              fromPhoneNumberId,
-            );
-            console.log('textBody ------------------------- > ', textBody);
-            console.log('wabaMessageId ------------------------- > ', msgId);
-            await this.handleInboundTextMessage({
-              from,
-              fromPhoneNumberId,
-              textBody,
-              wabaMessageId: msgId,
-            });
-          } catch (e) {
-            this.logger.error('Failed processing inbound message', e);
+      if (!Array.isArray(payload.entry) || payload.entry.length === 0) {
+        this.logger.warn(
+          `Payload entry is not a valid array or is empty. Length: ${payload.entry?.length || 0}`,
+        );
+        return;
+      }
+
+      // Process status updates
+      const firstEntry = payload.entry[0];
+      if (!firstEntry || typeof firstEntry !== 'object') {
+        this.logger.warn('First entry in payload is invalid, skipping status processing');
+      } else {
+        const changes = firstEntry.changes;
+        if (
+          changes &&
+          Array.isArray(changes) &&
+          changes.length > 0 &&
+          changes[0] &&
+          typeof changes[0] === 'object'
+        ) {
+          const changeValue = changes[0].value;
+          if (changeValue && typeof changeValue === 'object') {
+            // Process status updates and messages in parallel for better performance
+            const processingPromises: Promise<void>[] = [];
+
+            if (changeValue.statuses) {
+              this.logger.log('Processing status updates from webhook payload');
+              processingPromises.push(
+                this.processStatusUpdates(changeValue.statuses).catch((error) => {
+                  this.logger.error(
+                    'Error processing status updates',
+                    error instanceof Error ? error.stack : error,
+                  );
+                }),
+              );
+            }
+
+            // Process incoming messages
+            if (changeValue.messages) {
+              this.logger.log('Processing incoming messages from webhook payload');
+              processingPromises.push(
+                this.processIncomingMessages(changeValue).catch((error) => {
+                  this.logger.error(
+                    'Error processing incoming messages',
+                    error instanceof Error ? error.stack : error,
+                  );
+                }),
+              );
+            }
+
+            // Wait for all processing to complete (errors already caught above)
+            await Promise.allSettled(processingPromises);
+          } else {
+            this.logger.warn('Change value is missing or invalid, skipping processing');
           }
+        } else {
+          this.logger.warn('Changes array is missing, empty, or invalid');
         }
       }
     } catch (error) {
-      this.logger.error('Error processing webhook payload', error);
+      // Catch any unexpected errors that might occur
+      this.logger.error(
+        'Unexpected error processing webhook payload',
+        error instanceof Error ? error.stack : error,
+      );
+      // Don't rethrow - this is async processing, errors should be logged only
+    }
+  }
+
+  /**
+   * Processes status updates from webhook payload
+   * @param statuses Array of status update objects
+   */
+  private async processStatusUpdates(statuses: any[]): Promise<void> {
+    if (!Array.isArray(statuses)) {
+      this.logger.warn('Statuses is not an array, skipping status processing');
+      return;
+    }
+
+    if (statuses.length === 0) {
+      this.logger.log('No status updates to process');
+      return;
+    }
+
+    this.logger.log(`Processing ${statuses.length} status update(s)`);
+
+    for (let i = 0; i < statuses.length; i++) {
+      const status = statuses[i];
+      if (!status || typeof status !== 'object') {
+        this.logger.warn(`Status at index ${i} is invalid, skipping`);
+        continue;
+      }
+
+      // Validate required fields
+      const statusId = status.id;
+      const statusValue = status.status;
+      const timestamp = status.timestamp;
+
+      if (!statusId || typeof statusId !== 'string' || statusId.trim() === '') {
+        this.logger.warn(
+          `Status at index ${i} has invalid or missing ID, skipping`,
+        );
+        continue;
+      }
+
+      if (
+        !statusValue ||
+        typeof statusValue !== 'string' ||
+        statusValue.trim() === ''
+      ) {
+        this.logger.warn(
+          `Status at index ${i} (ID: ${statusId}) has invalid or missing status value, skipping`,
+        );
+        continue;
+      }
+
+      if (!timestamp || (typeof timestamp !== 'string' && typeof timestamp !== 'number')) {
+        this.logger.warn(
+          `Status at index ${i} (ID: ${statusId}) has invalid or missing timestamp, skipping`,
+        );
+        continue;
+      }
+
+      const failureReason =
+        status.errors && Array.isArray(status.errors) && status.errors.length > 0
+          ? status.errors[0]?.message
+          : undefined;
+
+      // Process status updates asynchronously to avoid blocking the webhook response
+      this.updateMessageStatus(
+        statusId,
+        statusValue,
+        String(timestamp),
+        failureReason,
+      ).catch((error) => {
+        this.logger.error(
+          `Failed to process status update for message ID: ${statusId}, status: ${statusValue}`,
+          error instanceof Error ? error.stack : error,
+        );
+      });
+    }
+  }
+
+  /**
+   * Processes incoming messages from webhook payload
+   * @param changeValue The value object from the webhook change
+   */
+  private async processIncomingMessages(changeValue: any): Promise<void> {
+    if (!changeValue || typeof changeValue !== 'object') {
+      this.logger.warn('Change value is invalid, skipping message processing');
+      return;
+    }
+
+    const messages = changeValue.messages;
+    if (!Array.isArray(messages)) {
+      this.logger.warn('Messages is not an array, skipping message processing');
+      return;
+    }
+
+    if (messages.length === 0) {
+      this.logger.log('No incoming messages to process');
+      return;
+    }
+
+    const contacts = Array.isArray(changeValue.contacts)
+      ? changeValue.contacts
+      : [];
+    const metadata =
+      changeValue.metadata && typeof changeValue.metadata === 'object'
+        ? changeValue.metadata
+        : {};
+    const fromPhoneNumberId =
+      metadata && typeof metadata.phone_number_id === 'string'
+        ? metadata.phone_number_id
+        : undefined;
+
+    this.logger.log(
+      `Received ${messages.length} incoming message(s) from phone number ID: ${fromPhoneNumberId || 'unknown'}`,
+    );
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (!msg || typeof msg !== 'object') {
+        this.logger.warn(`Message at index ${i} is invalid, skipping`);
+        continue;
+      }
+
+      try {
+        const from = msg.from; // sender's wa id (phone)
+        const msgId = msg.id;
+
+        // Determine message type and normalize payload
+        const messageType = msg.type;
+        let textBody: string | undefined;
+        let messageFormat: 'text' | 'template' | 'media' | undefined;
+        let mimeType: string | undefined;
+        let mediaId: string | undefined;
+        let webhookMediaUrl: string | undefined;
+
+        if (messageType === 'text') {
+          textBody = msg.text?.body;
+          messageFormat = 'text';
+        } else if (messageType === 'image' || messageType === 'video') {
+          const media = messageType === 'image' ? msg.image : msg.video;
+          const caption = media?.caption;
+          mimeType = media?.mime_type;
+          mediaId = media?.id;
+          const webhookMediaUrl = media?.url;
+
+          if (messageType === 'image') {
+            textBody = caption || '[Image]';
+          } else {
+            textBody = caption || '[Video]';
+          }
+
+          messageFormat = 'media';
+        } else {
+          // Fallback for unsupported/other types - log and skip for now
+          this.logger.warn(
+            `Unsupported inbound message type: ${messageType} for message ID: ${msgId}, from: ${from}`,
+          );
+        }
+
+        // Validate required fields
+        if (!from || typeof from !== 'string' || from.trim() === '') {
+          this.logger.warn(
+            `Message at index ${i} has invalid or missing 'from' field, skipping`,
+          );
+          continue;
+        }
+
+        if (!msgId || typeof msgId !== 'string' || msgId.trim() === '') {
+          this.logger.warn(
+            `Message at index ${i} from ${from} has invalid or missing message ID, skipping`,
+          );
+          continue;
+        }
+
+        this.logger.log(
+          `Processing inbound message - From: ${from}, Message ID: ${msgId}, Phone Number ID: ${fromPhoneNumberId || 'unknown'}, Has Text: ${!!textBody}`,
+        );
+
+        await this.handleInboundTextMessage({
+          from,
+          fromPhoneNumberId,
+          textBody,
+          wabaMessageId: msgId,
+          messageFormat,
+          mimeType,
+          mediaId,
+          mediaUrl: webhookMediaUrl,
+        });
+      } catch (e) {
+        this.logger.error(
+          `Failed processing inbound message at index ${i}`,
+          e instanceof Error ? e.stack : e,
+        );
+      }
     }
   }
 
   private async resolveProjectByPhoneNumberId(phoneNumberId?: string) {
-    if (!phoneNumberId) return null;
-    try {
-      const model = (this.projectService as any)['projectModel'];
-      if (!model) return null;
-      const project = await model.findOne({ phoneNumberId }).exec();
-      return project || null;
-    } catch {
+    // Validate phoneNumberId
+    if (!phoneNumberId) {
+      this.logger.debug('resolveProjectByPhoneNumberId called without phoneNumberId');
       return null;
+    }
+
+    if (typeof phoneNumberId !== 'string' || phoneNumberId.trim() === '') {
+      this.logger.warn(
+        `resolveProjectByPhoneNumberId called with invalid phoneNumberId: ${phoneNumberId}`,
+      );
+      return null;
+    }
+
+    // Validate service exists
+    if (!this.projectService) {
+      this.logger.error(
+        `projectService is not available. Cannot resolve project for phone number ID: ${phoneNumberId}`,
+      );
+      return null;
+    }
+
+    try {
+      this.logger.debug(`Resolving project for phone number ID: ${phoneNumberId}`);
+
+      const model = (this.projectService as any)['projectModel'];
+      if (!model) {
+        this.logger.warn(
+          `projectModel is not available in projectService. Cannot resolve project for phone number ID: ${phoneNumberId}`,
+        );
+        return null;
+      }
+
+      if (typeof model.findOne !== 'function') {
+        this.logger.error(
+          `projectModel.findOne is not a function. Cannot resolve project for phone number ID: ${phoneNumberId}`,
+        );
+        return null;
+      }
+
+      const project = await model.findOne({ phoneNumberId }).exec();
+
+      if (!project) {
+        this.logger.debug(
+          `No project found for phone number ID: ${phoneNumberId}`,
+        );
+        return null;
+      }
+
+      this.logger.log(
+        `Successfully resolved project for phone number ID: ${phoneNumberId}, Project ID: ${project._id || 'unknown'}`,
+      );
+
+      return project;
+    } catch (error) {
+      this.logger.error(
+        `Error resolving project for phone number ID: ${phoneNumberId}`,
+        error instanceof Error ? error.stack : error,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Fetches the media URL from Meta Graph API using the media ID
+   * @param mediaId The media ID from the webhook
+   * @param accessToken The permanent access token for the project
+   * @returns The media URL or null if fetching fails
+   */
+  private async fetchMediaUrl(
+    mediaId: string,
+    accessToken: string,
+  ): Promise<string | null> {
+    if (!mediaId || typeof mediaId !== 'string' || mediaId.trim() === '') {
+      this.logger.warn(`fetchMediaUrl called with invalid mediaId: ${mediaId}`);
+      return null;
+    }
+
+    if (!accessToken || typeof accessToken !== 'string' || accessToken.trim() === '') {
+      this.logger.warn('fetchMediaUrl called with invalid accessToken');
+      return null;
+    }
+
+    try {
+      const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+      const url = `https://graph.facebook.com/${apiVersion}/${mediaId}`;
+      
+      this.logger.log(`Fetching media URL for media ID: ${mediaId}`);
+      
+      const response = await this.axiosInstance.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        params: {
+          access_token: accessToken,
+        },
+        timeout: 15000,
+      });
+
+      const mediaUrl = response.data?.url;
+      if (mediaUrl && typeof mediaUrl === 'string') {
+        this.logger.log(`Successfully fetched media URL for media ID: ${mediaId}`);
+        return mediaUrl;
+      } else {
+        this.logger.warn(
+          `Media URL not found in response for media ID: ${mediaId}`,
+          response.data,
+        );
+        return null;
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to fetch media URL for media ID: ${mediaId}`,
+        error instanceof Error ? error.stack : error,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Proxies WhatsApp media with authentication
+   * @param url The WhatsApp media URL
+   * @param accessToken The permanent access token for the project
+   * @returns The media data and content type
+   */
+  async proxyMedia(
+    url: string,
+    accessToken: string,
+  ): Promise<{ data: Buffer; contentType: string }> {
+    if (!url || typeof url !== 'string' || url.trim() === '') {
+      throw new BadRequestException('Invalid media URL');
+    }
+
+    if (!accessToken || typeof accessToken !== 'string' || accessToken.trim() === '') {
+      throw new BadRequestException('Invalid access token');
+    }
+
+    try {
+      this.logger.log(`Proxying media from URL: ${url}`);
+      
+      const response = await this.axiosInstance.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        responseType: 'arraybuffer',
+        timeout: 30000, // 30 seconds for media
+      });
+
+      const contentType = response.headers['content-type'] || 'application/octet-stream';
+      const data = Buffer.from(response.data);
+
+      this.logger.log(`Successfully proxied media, size: ${data.length} bytes, type: ${contentType}`);
+      
+      return { data, contentType };
+    } catch (error) {
+      this.logger.error(
+        `Failed to proxy media from URL: ${url}`,
+        error instanceof Error ? error.stack : error,
+      );
+      throw new InternalServerErrorException('Failed to fetch media');
     }
   }
 
@@ -230,23 +622,210 @@ export class WhatsappService {
     fromPhoneNumberId?: string;
     textBody?: string;
     wabaMessageId: string;
+    messageFormat?: 'text' | 'template' | 'media';
+    mimeType?: string;
+    mediaId?: string;
+    mediaUrl?: string;
   }) {
-    const { from, fromPhoneNumberId, textBody, wabaMessageId } = args;
+    // Validate args object exists
+    if (!args || typeof args !== 'object') {
+      this.logger.error('handleInboundTextMessage called with invalid args object', {
+        args,
+      });
+      return;
+    }
+
+    const {
+      from,
+      fromPhoneNumberId,
+      textBody,
+      wabaMessageId,
+      messageFormat,
+      mimeType,
+      mediaId,
+      mediaUrl: providedMediaUrl,
+    } = args;
+
+    // Validate required fields
+    if (!from || typeof from !== 'string' || from.trim() === '') {
+      this.logger.error(
+        'handleInboundTextMessage called with invalid or missing "from" field',
+        { from, wabaMessageId, fromPhoneNumberId },
+      );
+      return;
+    }
+
+    if (!wabaMessageId || typeof wabaMessageId !== 'string' || wabaMessageId.trim() === '') {
+      this.logger.error(
+        `handleInboundTextMessage called with invalid or missing "wabaMessageId" field for from: ${from}`,
+        { from, wabaMessageId, fromPhoneNumberId },
+      );
+      return;
+    }
+
+    this.logger.log(
+      `Handling inbound text message - From: ${from}, Message ID: ${wabaMessageId}, Phone Number ID: ${fromPhoneNumberId || 'not provided'}`,
+    );
+
+    // Validate optional fields
+    if (fromPhoneNumberId !== undefined && (typeof fromPhoneNumberId !== 'string' || fromPhoneNumberId.trim() === '')) {
+      this.logger.warn(
+        `Invalid fromPhoneNumberId provided for message from ${from}, message ID: ${wabaMessageId}. Continuing without phone number ID.`,
+      );
+    }
 
     // Try to resolve project via phoneNumberId; fallback skip if unknown
     const project = await this.resolveProjectByPhoneNumberId(fromPhoneNumberId);
-    if (!project) return;
+    if (!project) {
+      this.logger.warn(
+        `Could not resolve project for phone number ID: ${fromPhoneNumberId || 'not provided'}, message from: ${from}, message ID: ${wabaMessageId}. Skipping message processing.`,
+      );
+      return;
+    }
+
+    // Validate project has required properties
+    if (!project.adminId) {
+      this.logger.error(
+        `Project resolved but missing adminId for phone number ID: ${fromPhoneNumberId}, message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    if (!project._id) {
+      this.logger.error(
+        `Project resolved but missing _id for phone number ID: ${fromPhoneNumberId}, message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
 
     const adminId = project.adminId as any as Types.ObjectId;
     const projectId = project._id as any as Types.ObjectId;
 
-    // Emit websocket event to admin (WhatsApp chat-message) via gateway
-    this.whatsAppGateway.emitToUser(String(adminId), {
-      phoneNumber: from,
-      textBody,
-      direction: 'inbound',
-      createdAt: new Date().toISOString(),
-    });
+    // Use media URL from webhook if provided, otherwise fetch via Graph API
+    let mediaUrl: string | null = null;
+    if (providedMediaUrl && typeof providedMediaUrl === 'string' && providedMediaUrl.trim() !== '') {
+      // Use URL directly from webhook payload
+      mediaUrl = providedMediaUrl;
+      this.logger.log(
+        `Using media URL from webhook for message ID: ${wabaMessageId}`,
+      );
+    } else if (mediaId && project.permanentAccessToken) {
+      // Fallback: Fetch media URL via Graph API if not provided in webhook
+      mediaUrl = await this.fetchMediaUrl(mediaId, project.permanentAccessToken);
+      if (mediaUrl) {
+        this.logger.log(
+          `Fetched media URL via Graph API for media ID: ${mediaId}, message ID: ${wabaMessageId}`,
+        );
+      } else {
+        this.logger.warn(
+          `Failed to fetch media URL for media ID: ${mediaId}, message ID: ${wabaMessageId}. Continuing without media URL.`,
+        );
+      }
+    }
+
+    // Validate wabaMessageService exists and is usable
+    if (!this.wabaMessageService) {
+      this.logger.error(
+        `wabaMessageService is not available. Cannot persist inbound message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    if (typeof this.wabaMessageService.create !== 'function') {
+      this.logger.error(
+        `wabaMessageService.create is not a function. Cannot persist inbound message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    // Persist inbound message before emitting over websocket
+    try {
+      await this.wabaMessageService.create({
+        projectId: String(projectId),
+        adminId: String(adminId),
+        phoneNumber: from,
+        wabaMessageId,
+        messageType: 'individual',
+        templateName: '',
+        direction: 'inbound',
+        messageFormat: messageFormat || 'text',
+        textBody: textBody || '',
+        displayText: textBody || '',
+        mimeType,
+        mediaUrl: mediaUrl || undefined,
+      } as any);
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist inbound message for projectId: ${projectId}, adminId: ${adminId}, from: ${from}, message ID: ${wabaMessageId}`,
+        error instanceof Error ? error.stack : error,
+      );
+      // Do not emit websocket event if persistence fails
+      return;
+    }
+
+    // Validate gateway exists
+    if (!this.whatsAppGateway) {
+      this.logger.error(
+        `whatsAppGateway is not available. Cannot emit message event for message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    if (typeof this.whatsAppGateway.emitToUser !== 'function') {
+      this.logger.error(
+        `whatsAppGateway.emitToUser is not a function. Cannot emit message event for message from: ${from}, message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    try {
+      // Emit websocket event to admin (WhatsApp chat-message) via gateway
+      this.whatsAppGateway.emitToUser(String(adminId), {
+        phoneNumber: from,
+        textBody: textBody || '',
+        direction: 'inbound',
+        createdAt: new Date().toISOString(),
+        messageFormat: messageFormat || 'text',
+        mimeType,
+        mediaUrl: mediaUrl || undefined,
+      });
+
+      this.logger.log(
+        `Successfully processed inbound message - From: ${from}, Message ID: ${wabaMessageId}, Admin ID: ${adminId}, Project ID: ${projectId}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to emit websocket event for inbound message - From: ${from}, Message ID: ${wabaMessageId}, Admin ID: ${adminId}`,
+        error instanceof Error ? error.stack : error,
+      );
+    }
+
+    // Chatbot triggers: if user sent text, check for a matching trigger and send response
+    if (textBody && this.chatbotTriggerService) {
+      try {
+        const match = await this.chatbotTriggerService.findMatchingTrigger(
+          projectId,
+          textBody,
+        );
+        if (match && match.responseValue) {
+          this.logger.log(
+            `Chatbot trigger matched for keyword "${match.keyword}" - sending response to ${from}`,
+          );
+          await this.sendTextMessage(
+            adminId,
+            projectId,
+            from,
+            match.responseValue,
+            undefined,
+          );
+        }
+      } catch (triggerError) {
+        this.logger.error(
+          `Chatbot trigger evaluation or send failed for from: ${from}, message ID: ${wabaMessageId}`,
+          triggerError instanceof Error ? triggerError.stack : triggerError,
+        );
+      }
+    }
   }
 
   async getChatMessages(
@@ -415,17 +994,65 @@ export class WhatsappService {
     timestamp: string,
     failureReason?: string,
   ): Promise<void> {
+    // Validate required parameters
+    if (!wabaMessageId || typeof wabaMessageId !== 'string' || wabaMessageId.trim() === '') {
+      this.logger.error(
+        'updateMessageStatus called with invalid wabaMessageId',
+        { wabaMessageId, status, timestamp },
+      );
+      return;
+    }
+
+    if (!status || typeof status !== 'string' || status.trim() === '') {
+      this.logger.error(
+        `updateMessageStatus called with invalid status for message ID: ${wabaMessageId}`,
+        { wabaMessageId, status, timestamp },
+      );
+      return;
+    }
+
+    if (!timestamp || (typeof timestamp !== 'string' && typeof timestamp !== 'number')) {
+      this.logger.warn(
+        `updateMessageStatus called with invalid timestamp for message ID: ${wabaMessageId}, status: ${status}`,
+        { wabaMessageId, status, timestamp },
+      );
+      // Continue processing even if timestamp is invalid
+    }
+
+    // Validate service exists
+    if (!this.wabaMessageService) {
+      this.logger.error(
+        `wabaMessageService is not available. Cannot update status for message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
+    if (typeof this.wabaMessageService.updateStatus !== 'function') {
+      this.logger.error(
+        `wabaMessageService.updateStatus is not a function. Cannot update status for message ID: ${wabaMessageId}`,
+      );
+      return;
+    }
+
     try {
+      this.logger.log(
+        `Updating message status - Message ID: ${wabaMessageId}, Status: ${status}, Timestamp: ${timestamp}${failureReason ? `, Failure Reason: ${failureReason}` : ''}`,
+      );
+
       // Update WABA message status
       await this.wabaMessageService.updateStatus(
         wabaMessageId,
         status,
         failureReason,
       );
+
+      this.logger.log(
+        `Successfully updated message status for message ID: ${wabaMessageId}, status: ${status}`,
+      );
     } catch (error) {
       this.logger.error(
-        `Failed to update message status for ${wabaMessageId}`,
-        error,
+        `Failed to update message status for message ID: ${wabaMessageId}, status: ${status}, timestamp: ${timestamp}`,
+        error instanceof Error ? error.stack : error,
       );
     }
   }
@@ -723,12 +1350,6 @@ export class WhatsappService {
     }
   }
 
-  async getWabaUserById(adminId: Types.ObjectId) {
-    // return this.wabaAccountModel.find({
-    //   adminId,
-    // });
-  }
-
   async getTemplatesForWaba(
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
@@ -825,24 +1446,20 @@ export class WhatsappService {
     const account = await this.projectService.findOne(adminId, projectId);
 
     if (!account) {
-      throw new UnauthorizedException(
-        {
-          source: 'app',
-          message: 'You do not have permission to access this project.',
-        } as any,
-      );
+      throw new UnauthorizedException({
+        source: 'app',
+        message: 'You do not have permission to access this project.',
+      } as any);
     }
 
     // Check if WhatsApp credentials are configured
     if (!account.permanentAccessToken || !account.wabaId) {
-      throw new NotFoundException(
-        {
-          source: 'app',
-          message:
-            'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
-          code: 'WABA_NOT_CONFIGURED',
-        } as any,
-      );
+      throw new NotFoundException({
+        source: 'app',
+        message:
+          'WhatsApp Business Account is not configured for this project. Please configure WhatsApp credentials first.',
+        code: 'WABA_NOT_CONFIGURED',
+      } as any);
     }
 
     const { permanentAccessToken, wabaId } = account;
@@ -1248,11 +1865,11 @@ export class WhatsappService {
     projectId: string;
     recipientPhoneNumber: string;
     templateName: string;
+    messageType: WabaMessageType;
     bodyVariables?: string[];
     headerMediaAssetId?: string;
     language?: string;
     contactId?: string;
-    messageType: WabaMessageType;
     campaignId?: string;
     attendeeId?: Types.ObjectId;
     meetingId?: string;
@@ -1260,8 +1877,6 @@ export class WhatsappService {
     apiCampaignId?: string;
     occurrenceId?: string;
   }): Promise<any> {
-    this.logger.log('payload', payload);
-
     const {
       adminId,
       projectId,
@@ -1484,7 +2099,7 @@ export class WhatsappService {
     this.logger.log('metaPayload', metaPayload);
 
     try {
-      console.log(
+      this.logger.log(
         'formatted.digitsOnly ------------------------- > ',
         formatted.digitsOnly.length,
       );
@@ -1607,12 +2222,15 @@ export class WhatsappService {
     apiCampaignId,
     messageType,
     messageFormat,
+    programId,
+    programAssignmentId,
+    programSlotId,
   }: {
     projectId: string;
     adminId: string;
     campaignId?: string;
     normalizedRecipientPhoneNumber: string;
-    contactId: string;
+    contactId?: string;
     templateName: string;
     error: any;
     language: string;
@@ -1623,6 +2241,9 @@ export class WhatsappService {
     apiCampaignId?: string;
     messageType: WabaMessageType;
     messageFormat: 'text' | 'template' | 'media';
+    programId?: string;
+    programAssignmentId?: string;
+    programSlotId?: string;
   }) {
     try {
       const wabaMessageId = uuidv4();
@@ -1644,23 +2265,21 @@ export class WhatsappService {
         messageFormat,
         templateComponents: templateStructure.components || [],
         displayText: this.renderDisplayText(templateStructure.components || []),
-        attendeeId: attendeeId?.toString(),
+        attendeeId,
         meetingId,
-        occurrenceId
+        occurrenceId,
+        programId,
+        programAssignmentId,
+        programSlotId,
       });
     } catch (error) {
       this.logger.error('Failed to create error message:', error);
     }
   }
 
-  private formatIndianRecipient(input: string): {
-    phoneNumber: string;
-    digitsOnly: string;
-    isValid: boolean;
-  } {
+  private formatIndianRecipient(input: string): IFormattedPhoneData {
     const raw = `${input || ''}`.trim();
     const digitsOnly = raw.replace(/\D/g, '');
-    console.log('digitsOnly ------------------------- > ', digitsOnly);
     let candidate = '';
 
     if (/^0\d{10}$/.test(digitsOnly)) {
@@ -1677,105 +2296,155 @@ export class WhatsappService {
     return { phoneNumber: isValid ? candidate : input, digitsOnly, isValid };
   }
 
-  async sendTemplateMessage(
-    adminId: Types.ObjectId,
-    sendTemplateDto: SendTemplateMessageDto,
-    messageType: WabaMessageType = WabaMessageType.INDIVIDUAL,
-    campaignId?: string,
-  ): Promise<any> {
-    const {
-      projectId,
-      recipientPhoneNumber,
+  async checkVariableMappingLength({
+    adminId,
+    projectId,
+    templateName,
+    givenVariableLength,
+    headerMediaAssetId,
+  }: {
+    adminId: string;
+    projectId: string;
+    templateName: string;
+    givenVariableLength: number;
+    headerMediaAssetId?: string;
+  }): Promise<{
+    template: WabaTemplateDocument;
+  }> {
+    const template = await this.wabaTemplateService.getByTemplateName(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
       templateName,
-      bodyVariables,
-      headerMediaAssetId,
-      language,
-      contactId,
-    } = sendTemplateDto;
+    );
 
-    return this.sendSingleTemplateMessage({
-      adminId,
-      projectId,
-      recipientPhoneNumber,
-      templateName,
-      bodyVariables,
-      headerMediaAssetId,
-      language,
-      contactId,
-      messageType,
-      campaignId,
-    });
+    if (!template) {
+      throw new NotFoundException('Template not found');
+    }
+
+    // we need to check if the given variable length is equal to the template variable length
+    const bodyComponent = template.components?.find(
+      (component) => component.type === 'BODY' || component.type === 'body',
+    );
+    if (!bodyComponent) {
+      throw new BadRequestException('Template body components are required');
+    }
+
+    let variableLength = 0;
+
+    const exampleBodyText = bodyComponent?.example?.body_text?.[0];
+
+    if (Array.isArray(exampleBodyText)) {
+      variableLength = exampleBodyText.length;
+    }
+
+    if (variableLength !== givenVariableLength) {
+      throw new BadRequestException(
+        'Variable length is not equal to the template variable length',
+      );
+    }
+
+    const headerComponent = template.components?.find(
+      (c) => c.type === 'HEADER',
+    );
+
+    if (headerComponent) {
+      const headerFormat = headerComponent.format;
+      const mediaHeaderFormats = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+
+      if (!mediaHeaderFormats.includes(headerFormat)) {
+        this.logger.log('Header format does not require media', headerFormat);
+      } else {
+        if (headerMediaAssetId) {
+          const mediaAsset =
+            await this.mediaAssetModel.findById(headerMediaAssetId);
+          if (!mediaAsset) {
+            throw new NotFoundException('Media asset not found');
+          }
+        } else {
+          throw new BadRequestException(
+            `Template header (${headerFormat}) requires media, but none provided`,
+          );
+        }
+      }
+    }
+
+    return { template };
   }
 
   async sendBulkTemplateMessage(
-    adminId: Types.ObjectId,
+    adminId: string,
     sendBulkTemplateDto: SendBulkTemplateMessageDto,
   ): Promise<any> {
     const {
       projectId,
       contacts,
       templateName,
-      bodyVariables,
-      dynamicVariables,
+      variableMappings = [],
       headerMediaAssetId,
       language,
     } = sendBulkTemplateDto;
 
-    this.logger.log(
-      `Attempting to send bulk template '${templateName}' from WABA ${projectId} to ${contacts.length} contacts`,
+    let recipients: {
+      recipientPhoneNumber: string;
+      contactId: string;
+      bodyVariables: string[];
+    }[] = [];
+
+    await this.checkVariableMappingLength({
+      adminId,
+      projectId,
+      templateName,
+      givenVariableLength: variableMappings.length,
+      headerMediaAssetId,
+    });
+
+    const contactData = await this.contactsService.getContactByIds(
+      new Types.ObjectId(adminId),
+      contacts.map((contact) => new Types.ObjectId(contact.contactId)),
     );
 
-    const results = {
-      sent: 0,
-      failed: 0,
-      errors: [] as any[],
-      messageIds: [] as string[],
-    };
-
-    // Send messages to each contact using the unified helper
-    for (const contact of contacts) {
-      try {
-        const response = await this.sendSingleTemplateMessage({
-          adminId,
-          projectId,
-          recipientPhoneNumber: contact.phoneNumber,
-          templateName,
-          bodyVariables,
-          headerMediaAssetId,
-          language,
-          contactId: contact.contactId,
-          messageType: WabaMessageType.INDIVIDUAL,
-          campaignId: undefined,
-        });
-
-        results.sent++;
-        results.messageIds.push(response.messages[0].id);
-
-        // Add a small delay between messages to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } catch (error) {
-        results.failed++;
-        results.errors.push({
-          contactId: contact.contactId,
-          phoneNumber: contact.phoneNumber,
-          error: error.response?.data?.error || error.message,
-        });
-
-        this.logger.error(
-          `Failed to send template message to ${contact.phoneNumber} (Contact ID: ${contact.contactId})`,
-          error.response?.data?.error,
-        );
-      }
+    if (!Array.isArray(contactData)) {
+      throw new BadRequestException('Invalid contact IDs');
     }
 
-    this.logger.log(
-      `Bulk message sending completed. Sent: ${results.sent}, Failed: ${results.failed}`,
-    );
+    for (const contact of contactData) {
+      const bodyVariables: string[] = [];
+      variableMappings?.forEach((mapping) => {
+        if (mapping.isDynamic) {
+          if (!mapping.contactField) {
+            throw new BadRequestException('Contact field is required');
+          }
+          const key = mapping.contactField.replace(/^\$/, ''); // remove "$" from the start
+          const value = contact[key as keyof typeof contact];
+          bodyVariables.push(
+            value || mapping.fallbackValue || mapping.contactField,
+          );
+        } else {
+          if (!mapping.staticValue) {
+            throw new BadRequestException('Static value is required');
+          }
+          bodyVariables.push(mapping.staticValue);
+        }
+      });
 
-    return {
-      ...results,
-      totalContacts: contacts.length,
-    };
+      recipients.push({
+        recipientPhoneNumber: contact.phone,
+        contactId: contact._id.toString(),
+        bodyVariables,
+      });
+    }
+
+    return this.sendTemplateMessagev2({
+      adminId,
+      messageType: WabaMessageType.INDIVIDUAL,
+      sendTemplateDto: {
+        projectId,
+        recipients,
+        templateName,
+        headerMediaAssetId,
+        language,
+      },
+    });
   }
 
   async getWabaDetailsTest(): Promise<any> {
@@ -1812,33 +2481,6 @@ export class WhatsappService {
       );
       // Re-throw the original error to be handled by the calling function
       throw error;
-    }
-  }
-
-  async getTemplatesForWabaTest(): Promise<any> {
-    const wabaId = '1055988183368296';
-    const accessToken =
-      'EAASkZB5UKWQ8BPWggi8ZCItaJoCIriKZCYKSsRQnCY8CpvIs681sYmlh1gHU15t72uziCDuUzpxkcxXAoplFwil1C4E5WiiilaEiKDzZBS4XaDrsGl2F8h2yTzHie8hIuREx6xA2oJ58fOD5Ivy79Bkby1l2yqWnpGnqeW8OYsMj53NuMJLKZBpQLGtMBCB6VaJ3TjoOTdTVBusB38g3ZBFbiZCQUEQvNiN1EYlN1KWZCaMZD';
-    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
-    const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/message_templates`;
-
-    try {
-      const response = await this.axiosInstance.get(url, {
-        params: {
-          access_token: accessToken,
-          fields: 'name,status,category,language,components',
-        },
-        timeout: 15000,
-      });
-      return response.data.data; // The templates are in the 'data' array
-    } catch (error) {
-      this.logger.error(
-        `Failed to fetch templates for WABA ${wabaId}`,
-        error.response?.data,
-      );
-      throw new InternalServerErrorException(
-        'Could not fetch templates from Meta.',
-      );
     }
   }
 
@@ -2034,12 +2676,6 @@ export class WhatsappService {
     return this.subscribeAppToWaba(wabaId, permanentAccessToken);
   }
 
-  /**
-   * Checks if the app is subscribed to a WhatsApp Business Account for webhook notifications
-   * @param wabaId The WhatsApp Business Account ID
-   * @param accessToken The access token for authentication
-   * @returns Promise with subscription status and app list
-   */
   async checkAppSubscriptionToWaba(
     wabaId: string,
     accessToken: string,
@@ -2106,13 +2742,6 @@ export class WhatsappService {
     }
   }
 
-  /**
-   * Uploads a sample file to Meta using WhatsApp Media Upload API to get a media ID for templates
-   * @param fileBuffer The file buffer to upload
-   * @param mimeType The MIME type of the file
-   * @param originalName The original filename
-   * @returns The media ID from Meta for use in template header_handle field
-   */
   async getMetaHeaderHandle(
     fileBuffer: Buffer,
     mimeType: string,
@@ -2214,13 +2843,6 @@ export class WhatsappService {
     }
   }
 
-  /**
-   * Gets Meta header handle for generic media by uploading it from server
-   * @param adminId The admin ID
-   * @param projectId The project ID
-   * @param mediaType The type of media ('image', 'video', 'document')
-   * @returns The Meta header handle for the generic media
-   */
   private async getGenericMediaMetaHandle(
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
@@ -2300,13 +2922,6 @@ export class WhatsappService {
     }
   }
 
-  /**
-   * Uploads a media asset for sending in messages
-   * @param file The uploaded file
-   * @param userId The user ID
-   * @param projectId The project ID
-   * @returns The created MediaAsset document
-   */
   async uploadMediaAsset(
     file: Express.Multer.File,
     userId: Types.ObjectId,
@@ -2356,14 +2971,6 @@ export class WhatsappService {
     }
   }
 
-  /**
-   * Get media assets for a specific user and project
-   * @param userId The user ID
-   * @param projectId The project ID
-   * @param page The page number for pagination
-   * @param limit The number of items per page
-   * @returns Paginated media assets
-   */
   async getMediaAssets(
     userId: Types.ObjectId,
     projectId: Types.ObjectId,
@@ -2445,13 +3052,6 @@ export class WhatsappService {
       .lean<MediaAsset & { _id: Types.ObjectId }>();
   }
 
-  /**
-   * Delete a media asset by ID
-   * @param userId The user ID
-   * @param projectId The project ID
-   * @param mediaAssetId The media asset ID to delete
-   * @returns Deleted media asset
-   */
   async deleteMediaAsset(
     userId: Types.ObjectId,
     projectId: Types.ObjectId,
@@ -2565,9 +3165,9 @@ export class WhatsappService {
       );
 
       if (metaTemplates && metaTemplates.length > 0) {
-        const metaTemplate = metaTemplates.find(
-          (t) => t.name === template.templateName,
-        ) || metaTemplates[0];
+        const metaTemplate =
+          metaTemplates.find((t) => t.name === template.templateName) ||
+          metaTemplates[0];
         templateLanguage = metaTemplate.language || 'en_US';
         this.logger.log(
           `Retrieved template language from Meta: ${templateLanguage} for template: ${template.templateName}`,
@@ -2585,130 +3185,155 @@ export class WhatsappService {
     }
 
     const timer = MonitoringUtil.createTimer();
-    const results = {
-      total: fetchedContacts.length,
-      successful: 0,
-      failed: 0,
-      errors: [] as Array<{ contactId: string; phone: string; error: string }>,
-    };
+    const { variableMappings = [] } = template;
 
-    try {
-      for (const contact of fetchedContacts) {
-        // Validate phone number format
-        const validatedPhone = this.formatIndianRecipient(contact.phone);
+    // Process contacts to build recipients array with bodyVariables
+    const recipients: Array<{
+      recipientPhoneNumber: string;
+      contactId?: string;
+      bodyVariables?: string[];
+    }> = [];
+    const contactErrors: Array<{
+      contactId: string;
+      phone: string;
+      error: string;
+    }> = [];
 
-        try {
-          // Validate contact data
-          if (!contact) {
-            this.logger.warn('Skipping null/undefined contact');
-            results.failed++;
-            continue;
-          }
+    for (const contact of fetchedContacts) {
+      try {
+        // Validate contact data
+        if (!contact) {
+          this.logger.warn('Skipping null/undefined contact');
+          contactErrors.push({
+            contactId: 'unknown',
+            phone: 'N/A',
+            error: 'Null/undefined contact',
+          });
+          continue;
+        }
 
-          if (!contact.phone) {
-            this.logger.warn(
-              `Skipping contact without phone number: ${contact._id || 'unknown'}`,
-            );
-            results.failed++;
-            results.errors.push({
-              contactId: contact._id?.toString() || 'unknown',
-              phone: 'N/A',
-              error: 'Missing phone number',
-            });
-            continue;
-          }
+        if (!contact.phone) {
+          this.logger.warn(
+            `Skipping contact without phone number: ${contact._id || 'unknown'}`,
+          );
+          contactErrors.push({
+            contactId: contact._id?.toString() || 'unknown',
+            phone: 'N/A',
+            error: 'Missing phone number',
+          });
+          continue;
+        }
 
-          const { variableMappings = [] } = template;
+        // Process variables with enhanced validation and sanitization
+        const processedBodyVariables = variableMappings.map(
+          (variable, index) => {
+            try {
+              const isDynamic = variable.isDynamic;
+              const fallbackValue = variable.fallbackValue;
 
-          // Process variables with enhanced validation and sanitization
-          const processedBodyVariables = variableMappings.map(
-            (variable, index) => {
-              try {
-                const isDynamic = variable.isDynamic;
-                const fallbackValue = variable.fallbackValue;
-
-                if (isDynamic) {
-                  // Extract field name from variable (e.g., "$firstName" -> "firstName")
-                  const fieldName = variable.dynamicField?.replace('$', '');
-                  if (!fieldName) {
-                    this.logger.warn(
-                      `Invalid dynamic field for variable ${index}: ${variable.dynamicField}`,
-                    );
-                    return fallbackValue || '[Invalid Field]';
-                  }
-
-                  const contactValue = contact[fieldName];
-                  this.logger.debug(
-                    `Processing dynamic variable ${fieldName} for contact ${contact._id}: ${contactValue}`,
+              if (isDynamic) {
+                // Extract field name from variable (e.g., "$firstName" -> "firstName")
+                const fieldName = variable.dynamicField?.replace('$', '');
+                if (!fieldName) {
+                  this.logger.warn(
+                    `Invalid dynamic field for variable ${index}: ${variable.dynamicField}`,
                   );
+                  return fallbackValue || '[Invalid Field]';
+                }
 
-                  // Use contact value if available and not empty, otherwise use fallback
-                  if (contactValue && contactValue.toString().trim() !== '') {
-                    return ValidationUtil.sanitizeText(contactValue.toString());
-                  } else {
-                    return ValidationUtil.sanitizeText(
-                      fallbackValue ||
-                        variable.dynamicField ||
-                        '[Missing Value]',
-                    );
-                  }
+                const contactValue = contact[fieldName];
+                this.logger.debug(
+                  `Processing dynamic variable ${fieldName} for contact ${contact._id}: ${contactValue}`,
+                );
+
+                // Use contact value if available and not empty, otherwise use fallback
+                if (contactValue && contactValue.toString().trim() !== '') {
+                  return ValidationUtil.sanitizeText(contactValue.toString());
                 } else {
-                  // Static variable, sanitize the value
                   return ValidationUtil.sanitizeText(
-                    variable.staticValue || '[Missing Value]',
+                    fallbackValue || variable.dynamicField || '[Missing Value]',
                   );
                 }
-              } catch (variableError) {
-                this.logger.warn(
-                  `Error processing variable ${index}: ${variableError.message}`,
+              } else {
+                // Static variable, sanitize the value
+                return ValidationUtil.sanitizeText(
+                  variable.staticValue || '[Missing Value]',
                 );
-                return '[Processing Error]';
               }
-            },
-          );
+            } catch (variableError) {
+              this.logger.warn(
+                `Error processing variable ${index}: ${variableError.message}`,
+              );
+              return '[Processing Error]';
+            }
+          },
+        );
 
-          const messageResult = await this.sendSingleTemplateMessage({
-            adminId: template.adminId,
-            projectId: template.project.toString(),
-            recipientPhoneNumber: validatedPhone.phoneNumber,
-            templateName: template.templateName,
-            bodyVariables: processedBodyVariables,
-            headerMediaAssetId: template.headerMediaAssetId?.toString(),
-            language: templateLanguage,
-            messageType: WabaMessageType.ZOOM_EVENT,
-            meetingId,
-            occurrenceId,
-          });
-
-          this.logger.log(
-            `Message sent successfully to ${validatedPhone}. Message ID: ${messageResult.messages?.[0]?.id || 'unknown'}`,
-          );
-
-          results.successful++;
-
-          // Add a delay between messages to avoid rate limiting
-          await new Promise((resolve) => setTimeout(resolve, 200));
-        } catch (error) {
-          results.failed++;
-
-          const errorMessage =
-            error.response?.data?.error?.message ||
-            error.response?.data?.error ||
-            error.message ||
-            'Unknown error';
-
-          results.errors.push({
-            contactId: contact._id?.toString() || 'unknown',
-            phone: contact.phone || 'N/A',
-            error: errorMessage,
-          });
-
-          this.logger.error(
-            `Failed to send message to ${contact.phone || 'N/A'} (Contact ID: ${contact._id?.toString() || 'unknown'})`,
-            errorMessage,
-          );
-        }
+        // Build recipient object
+        recipients.push({
+          recipientPhoneNumber: contact.phone,
+          bodyVariables:
+            processedBodyVariables.length > 0
+              ? processedBodyVariables
+              : undefined,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : String(error || 'Unknown error');
+        contactErrors.push({
+          contactId: contact?._id?.toString() || 'unknown',
+          phone: contact?.phone || 'N/A',
+          error: errorMessage,
+        });
+        this.logger.error(
+          `Error processing contact ${contact?._id?.toString() || 'unknown'}: ${errorMessage}`,
+        );
       }
+    }
+
+    // Call sendTemplateMessagev2 with prepared recipients
+    try {
+      const v2Result = await this.sendTemplateMessagev2({
+        adminId: template.adminId.toString(),
+        messageType: WabaMessageType.ZOOM_EVENT,
+        sendTemplateDto: {
+          projectId: template.project.toString(),
+          recipients,
+          templateName: template.templateName,
+          headerMediaAssetId: template.headerMediaAssetId?.toString(),
+          language: templateLanguage,
+        },
+        meetingId,
+        occurrenceId,
+      });
+
+      // Map return structure to original format
+      const stats = v2Result.stats || {};
+      const results = {
+        total: fetchedContacts.length,
+        successful: stats.enqueued || 0,
+        failed:
+          (stats.failed || 0) +
+          (stats.duplicates || 0) +
+          (stats.invalid || 0) +
+          contactErrors.length,
+        errors: [
+          ...contactErrors,
+          // Transform v2 error strings to error objects where possible
+          ...(stats.errors || []).map((errorStr: string) => {
+            // Try to extract contact info from error string
+            const phoneMatch = errorStr.match(/^([^:]+):/);
+            const phone = phoneMatch ? phoneMatch[1] : 'N/A';
+            return {
+              contactId: 'unknown',
+              phone,
+              error: errorStr,
+            };
+          }),
+        ],
+      };
 
       this.logger.log(
         `Template message sending completed. Results: ${results.successful}/${results.total} successful, ${results.failed} failed`,
@@ -2729,9 +3354,825 @@ export class WhatsappService {
       return results;
     } catch (error) {
       this.logger.error('Critical error in sendTemplateMessages:', error);
+
+      // Return results with all contacts marked as failed
+      const results = {
+        total: fetchedContacts.length,
+        successful: 0,
+        failed: fetchedContacts.length,
+        errors: [
+          ...contactErrors,
+          ...recipients.map((recipient) => ({
+            contactId: recipient.contactId || 'unknown',
+            phone: recipient.recipientPhoneNumber || 'N/A',
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Failed to process batch',
+          })),
+        ],
+      };
+
+      // Log metrics even on failure
+      MonitoringUtil.logMessageEventMetrics({
+        eventType: 'template_message_batch',
+        templateName: template.templateName,
+        totalContacts: results.total,
+        successfulMessages: results.successful,
+        failedMessages: results.failed,
+        processingTimeMs: timer(),
+        timestamp: new Date(),
+        errors: results.errors,
+      });
+
       throw new InternalServerErrorException(
         'Failed to process template messages',
       );
     }
+  }
+
+  /**
+   * Constructs a unique job ID for template sending.
+   *
+   * Strategy:
+   * Uses UUID to ensure every job is unique, allowing multiple identical messages
+   * to be sent to the same user immediately if requested.
+   *
+   * @param payload - The message payload
+   * @returns A unique string ID
+   */
+  private buildTemplateJobId(payload: ISendSingleTemplateMessagePayload) {
+    return `waba_${payload.fromPhoneNumberId}_${payload.formattedPhoneData?.phoneNumber}_${payload.templateName}_${uuidv4()}`;
+  }
+
+  /**
+   * Enqueues a template send job into the Redis-backed BullMQ queue.
+   *
+   * Features:
+   * - Deduplication via custom Job ID (prevent duplicates in 5m window)
+   * - Configurable retries (default 3) and exponential backoff
+   * - Job retention settings (keep completed for 1h, keep failed for inspection)
+   * - Rate limiting is enforced by the worker consuming this queue
+   *
+   * @param payload - The full payload required to send the message
+   * @param options - Optional overrides for jobId or retention
+   * @returns Object containing success status, jobId, and queue name
+   */
+  /**
+   * Enqueue a template send job with deduplication and sensible defaults.
+   * This handles the "Producer" role in the queue architecture.
+   */
+  async enqueueTemplateSendJob(
+    payload: ISendSingleTemplateMessagePayload,
+    options?: {
+      jobId?: string;
+      removeOnCompleteAgeSeconds?: number;
+    },
+  ) {
+    // 1. Determine Job ID
+    // Use provided ID or generate a time-bucketed idempotent ID (default)
+    // This prevents duplicate sends within the bucket window (e.g., 5 mins)
+    const jobId = options?.jobId || this.buildTemplateJobId(payload);
+
+    // 2. Configure Retention
+    // How long to keep completed jobs in Redis (default 1 hour)
+    // Failed jobs are kept indefinitely (removeOnFail: false) for manual inspection
+    const removeOnCompleteAgeSeconds =
+      options?.removeOnCompleteAgeSeconds || 3600;
+
+    // 3. Configure Backoff Strategy
+    // If the job fails (e.g., Rate Limit, Network Error), wait before retrying.
+    // Exponential: 2s -> 4s -> 8s ...
+    const backoff = {
+      type: 'exponential',
+      delay:
+        this.configService.get<number>('WHATSAPP_QUEUE_BACKOFF_MS') || 2000,
+    } as const;
+
+    // 4. Configure Retry Attempts
+    // Maximum number of times to try processing this job before failing permanently
+    const attempts =
+      this.configService.get<number>('WHATSAPP_QUEUE_ATTEMPTS') || 1;
+
+    // 5. Add to BullMQ Queue
+    // Pushes the job to Redis. The 'send-template' is the job name.
+    const job = await this.whatsappTemplateQueue.add('send-template', payload, {
+      jobId, // Idempotency key
+      attempts, // Max retries
+      backoff, // Retry delay strategy
+      removeOnComplete: { age: removeOnCompleteAgeSeconds }, // Auto-cleanup success
+      removeOnFail: false, // Keep failures for debugging
+    });
+
+    // 6. Return Job Details
+    // Return success immediately (async). The status can be tracked via jobId.
+    return {
+      success: true,
+      jobId: job.id,
+      // Use the same namespaced queue name as the Queue/Worker
+      queue: getWhatsappTemplateQueueName(this.configService),
+    };
+  }
+
+ 
+
+  /**
+   * Core logic to send a single template message via Meta Graph API.
+   * This method is typically called by the Queue Worker, but can be called directly.
+   *
+   * Flow:
+   * 1. Validates all inputs (Project, Phone, Template Structure, Token)
+   * 2. Normalizes phone number to Indian format (+91...)
+   * 3. Constructs the Meta Graph API payload
+   * 4. Sends HTTP POST to Meta
+   * 5. Logs success/failure securely (scrubbing sensitive tokens)
+   * 6. Creates a WABA Message record in DB for tracking
+   * 7. Handles specific Axios errors (401, 403, 429, etc.) with structured responses
+   *
+   * @param payload - All data needed to send the message
+   * @returns Structured success/error response (never throws)
+   */
+  async optimizedSendSingleTemplateMessage(
+    payload: ISendSingleTemplateMessagePayload,
+  ): Promise<any> {
+    // Entry log to confirm method is being called
+    const entryLogData = {
+      phoneNumber: payload?.formattedPhoneData?.phoneNumber || 'unknown',
+      templateName: payload?.templateName || 'unknown',
+      projectId: payload?.projectId || 'unknown',
+      adminId: payload?.adminId || 'unknown',
+      messageType: payload?.messageType,
+      fromPhoneNumberId: payload?.fromPhoneNumberId,
+    };
+    this.logger.log('optimizedSendSingleTemplateMessage called', entryLogData);
+    // Console fallback for visibility
+    console.log(`[WHATSAPP] optimizedSendSingleTemplateMessage called`, entryLogData);
+
+    const {
+      projectId,
+      formattedPhoneData,
+      templateName,
+      templateStructure,
+      language,
+      fromPhoneNumberId,
+      permanentAccessToken,
+      adminId,
+    } = payload;
+
+    // Helper to build consistent error responses
+    const buildErrorResponse = (
+      code: string,
+      message: string,
+      details?: any,
+    ) => {
+      this.logger.warn(
+        `optimizedSendSingleTemplateMessage failed: ${message}`,
+        {
+          code,
+          details,
+        },
+      );
+      return { success: false, code, message, details };
+    };
+
+    // Input validation - return structured errors instead of throwing
+    if (!projectId) {
+      return buildErrorResponse('VALIDATION_ERROR', 'Project ID is required');
+    }
+    if (!formattedPhoneData) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Recipient phone number is required',
+      );
+    }
+    if (!templateName) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Template name is required',
+      );
+    }
+    if (!templateStructure) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Template structure is required',
+      );
+    }
+    if (!fromPhoneNumberId) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'From phone number ID is required',
+      );
+    }
+    if (!permanentAccessToken) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Permanent access token is required',
+      );
+    }
+    if (!adminId) {
+      return buildErrorResponse('VALIDATION_ERROR', 'Admin ID is required');
+    }
+
+    // Validate template structure consistency
+    if (!templateStructure.name) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Template structure must have a name property',
+      );
+    }
+    if (templateStructure.name !== templateName) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        `Template structure name '${templateStructure.name}' does not match template name '${templateName}'`,
+      );
+    }
+    if (!templateStructure.language && !language) {
+      return buildErrorResponse(
+        'VALIDATION_ERROR',
+        'Template language is required in template structure or language parameter',
+      );
+    }
+
+    // Normalize and validate recipient phone number per India format rules
+
+    const normalizedRecipientPhoneNumber = formattedPhoneData.phoneNumber;
+    this.logger.log(
+      `Attempting to send template '${templateName}' from WABA ${projectId} to ${normalizedRecipientPhoneNumber}`,
+    );
+
+    const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const url = `https://graph.facebook.com/${apiVersion}/${fromPhoneNumberId}/messages`;
+
+    const metaPayload = {
+      messaging_product: 'whatsapp',
+      to: normalizedRecipientPhoneNumber,
+      type: 'template',
+      template: templateStructure,
+    };
+
+    // Log payload without sensitive data
+    this.logger.log('Sending template message to Meta', {
+      to: normalizedRecipientPhoneNumber,
+      templateName: templateStructure.name,
+      templateLanguage: templateStructure.language || language,
+      url,
+      metaPayload,
+    });
+
+    try {
+      if (!formattedPhoneData.digitsOnly)
+        throw new BadRequestException('Invalid phone number');
+
+      const response = await this.axiosInstance.post(url, metaPayload, {
+        headers: {
+          Authorization: `Bearer ${permanentAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000, // 15 second timeout
+      });
+
+      // Validate response structure
+      if (!response?.data) {
+        return buildErrorResponse(
+          'META_RESPONSE_ERROR',
+          'Invalid response from Meta API: missing data',
+        );
+      }
+
+      if (!response.data.messages || !Array.isArray(response.data.messages)) {
+        return buildErrorResponse(
+          'META_RESPONSE_ERROR',
+          'Invalid response from Meta API: missing messages array',
+        );
+      }
+
+      if (response.data.messages.length === 0) {
+        return buildErrorResponse(
+          'META_RESPONSE_ERROR',
+          'Invalid response from Meta API: empty messages array',
+        );
+      }
+
+      const messageId = response.data.messages[0]?.id;
+      if (!messageId) {
+        return buildErrorResponse(
+          'META_RESPONSE_ERROR',
+          'Invalid response from Meta API: missing message ID',
+        );
+      }
+
+      this.logger.log(
+        `Message sent successfully to ${normalizedRecipientPhoneNumber}. Message ID: ${messageId}`,
+      );
+
+      // Create WABA message record with proper error handling
+      if (messageId) {
+        this.logger.log('Attempting to create WABA message record', {
+          messageId,
+          phoneNumber: normalizedRecipientPhoneNumber,
+          projectId,
+          adminId,
+          templateName,
+          messageType: payload.messageType,
+        });
+        try {
+          const wabaMessage = await this.wabaMessageService.create({
+            projectId,
+            adminId,
+            phoneNumber: normalizedRecipientPhoneNumber,
+            wabaMessageId: messageId,
+            messageType: payload.messageType,
+            templateName,
+            campaignId: payload.campaignId,
+            contactId: payload.contactId,
+            apiCampaignId: payload.apiCampaignId,
+            attendeeId: payload.attendeeId,
+            meetingId: payload.meetingId,
+            occurrenceId: payload.occurrenceId,
+            programId: payload.programId,
+            programAssignmentId: payload.programAssignmentId,
+            programSlotId: payload.programSlotId,
+            templateLanguage: language || templateStructure.language || 'en_US',
+            messageFormat: 'template',
+            templateComponents: templateStructure.components || [],
+            displayText: this.renderDisplayText(
+              templateStructure.components || [],
+            ),
+            direction: 'outbound',
+          });
+          this.logger.log('WABA message record created successfully', {
+            messageId,
+            phoneNumber: normalizedRecipientPhoneNumber,
+            projectId,
+            adminId,
+            templateName,
+            messageType: payload.messageType,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorStack = error instanceof Error ? error.stack : undefined;
+          this.logger.error('Failed to create WABA message record', {
+            error: errorMessage,
+            stack: errorStack,
+            errorType: error?.constructor?.name || typeof error,
+            messageId,
+            phoneNumber: normalizedRecipientPhoneNumber,
+            templateName,
+            projectId,
+            adminId,
+            messageType: payload.messageType,
+            campaignId: payload.campaignId,
+            contactId: payload.contactId,
+            attendeeId: payload.attendeeId,
+            meetingId: payload.meetingId,
+            occurrenceId: payload.occurrenceId,
+            apiCampaignId: payload.apiCampaignId,
+            programId: payload.programId,
+            programAssignmentId: payload.programAssignmentId,
+            programSlotId: payload.programSlotId,
+          });
+          // Don't throw error here as the message was sent successfully
+          // This is a non-critical operation
+        }
+      } else {
+        this.logger.warn('Skipping WABA message record creation: messageId is missing', {
+          phoneNumber: normalizedRecipientPhoneNumber,
+          projectId,
+          adminId,
+          templateName,
+        });
+      }
+
+      return { success: true, data: response.data, messageId };
+    } catch (error) {
+      // Handle error message creation with proper error handling
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      this.logger.error('Failed to send template message to Meta API', {
+        error: errorMessage,
+        stack: errorStack,
+        errorType: error?.constructor?.name || typeof error,
+        phoneNumber: normalizedRecipientPhoneNumber,
+        projectId,
+        adminId,
+        templateName,
+        messageType: payload.messageType,
+        campaignId: payload.campaignId,
+        contactId: payload.contactId,
+        attendeeId: payload.attendeeId,
+        meetingId: payload.meetingId,
+        occurrenceId: payload.occurrenceId,
+        apiCampaignId: payload.apiCampaignId,
+        programId: payload.programId,
+        programAssignmentId: payload.programAssignmentId,
+        programSlotId: payload.programSlotId,
+      });
+
+      try {
+        this.logger.log('Attempting to create error message record', {
+          phoneNumber: normalizedRecipientPhoneNumber,
+          projectId,
+          adminId,
+          templateName,
+        });
+        await this.createErrorMessage({
+          projectId,
+          adminId,
+          normalizedRecipientPhoneNumber,
+          contactId: payload.contactId,
+          templateName,
+          error,
+          language: language || 'en_US',
+          templateStructure: templateStructure.components || [],
+          campaignId: payload.campaignId,
+          attendeeId: payload.attendeeId,
+          meetingId: payload.meetingId,
+          occurrenceId: payload.occurrenceId,
+          apiCampaignId: payload.apiCampaignId,
+          messageType: payload.messageType,
+          messageFormat: 'template',
+          programId: payload.programId,
+          programAssignmentId: payload.programAssignmentId,
+          programSlotId: payload.programSlotId,
+        });
+        this.logger.log('Error message record created successfully', {
+          phoneNumber: normalizedRecipientPhoneNumber,
+          projectId,
+          adminId,
+          templateName,
+        });
+      } catch (errorLogError) {
+        const logError = errorLogError instanceof Error ? errorLogError.message : String(errorLogError);
+        const logErrorStack = errorLogError instanceof Error ? errorLogError.stack : undefined;
+        this.logger.error('Failed to create error message record', {
+          error: logError,
+          stack: logErrorStack,
+          errorType: errorLogError?.constructor?.name || typeof errorLogError,
+          phoneNumber: normalizedRecipientPhoneNumber,
+          templateName,
+          projectId,
+          adminId,
+          originalError: errorMessage,
+        });
+        // Continue with error handling even if logging fails
+      }
+
+      // Enhanced error handling for axios errors
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const errorData = error.response?.data;
+        const errorMessage =
+          errorData?.error?.message || error.message || 'Unknown error';
+
+        this.logger.error(`Axios request failed: ${error.message}`, {
+          status,
+          statusText: error.response?.statusText,
+          errorMessage,
+          url: error.config?.url,
+          method: error.config?.method,
+          // Don't log full error data to avoid sensitive info
+        });
+
+        // Provide more specific error messages based on status codes
+        if (status === 401) {
+          return buildErrorResponse(
+            'AUTH_ERROR',
+            'Invalid access token or expired credentials',
+          );
+        } else if (status === 400) {
+          return buildErrorResponse('BAD_REQUEST', errorMessage);
+        } else if (status === 403) {
+          return buildErrorResponse(
+            'FORBIDDEN',
+            errorMessage || 'Access forbidden. Check permissions.',
+          );
+        } else if (status === 404) {
+          return buildErrorResponse(
+            'NOT_FOUND',
+            errorMessage || 'Resource not found. Check phone number ID.',
+          );
+        } else if (status === 429) {
+          return buildErrorResponse(
+            'RATE_LIMIT',
+            'Rate limit exceeded. Please try again later',
+          );
+        } else if (status === 500 || status === 502 || status === 503) {
+          return buildErrorResponse(
+            'META_SERVER_ERROR',
+            `Meta API server error (${status}). Please try again later`,
+          );
+        } else if (
+          error.code === 'ETIMEDOUT' ||
+          error.code === 'ECONNABORTED'
+        ) {
+          return buildErrorResponse(
+            'TIMEOUT',
+            'Request timeout. Please try again',
+          );
+        } else if (
+          error.code === 'ECONNREFUSED' ||
+          error.code === 'ENOTFOUND'
+        ) {
+          return buildErrorResponse(
+            'NETWORK_ERROR',
+            'Network error. Unable to connect to Meta API',
+          );
+        } else if (error.code === 'ECONNRESET') {
+          return buildErrorResponse(
+            'NETWORK_ERROR',
+            'Connection reset. Please try again',
+          );
+        }
+        // If we don't have a specific handler, return generic axios error
+        return buildErrorResponse(
+          'META_ERROR',
+          `Failed to send message: ${errorMessage}`,
+        );
+      }
+
+      // Handle unexpected errors without throwing
+      this.logger.error('An unexpected error occurred while sending message', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      return buildErrorResponse(
+        'UNEXPECTED_ERROR',
+        'An unexpected error occurred while sending the message',
+      );
+    }
+  }
+
+  /**
+   * High-level method to prepare and enqueue a template message.
+   *
+   * Responsibilities:
+   * 1. Fetches Project/WABA details to get credentials (token, phone ID).
+   * 2. Resolves the Template from DB to validate structure and headers.
+   * 3. Constructs the final `templateStructure` with body params and media headers.
+   * 4. Delegates actual sending to the Queue via `enqueueTemplateSendJob`.
+   *
+   * @param payload - High level inputs: recipient, template name, variables, media
+   * @returns Queue job details { success, jobId, queue }
+   */
+  async sendTemplateMessagev2(payload: {
+    adminId: string;
+    messageType: WabaMessageType;
+    sendTemplateDto: {
+      projectId: string;
+      recipients: {
+        recipientPhoneNumber: string;
+        contactId?: string;
+        bodyVariables?: string[];
+      }[];
+      templateName: string;
+      headerMediaAssetId?: string;
+      language?: string;
+    };
+    media?: { url: string; filename: string };
+    meetingId?: string;
+    occurrenceId?: string;
+    campaignId?: string;
+    attendeeId?: string;
+    apiCampaignId?: string;
+    programId?: string;
+    programAssignmentId?: string;
+    programSlotId?: string;
+  }): Promise<any> {
+    const {
+      adminId,
+      sendTemplateDto,
+      messageType,
+      media,
+      meetingId,
+      occurrenceId,
+      campaignId,
+      attendeeId,
+      apiCampaignId,
+      programId,
+      programAssignmentId, 
+      programSlotId,
+    } = payload;
+
+    const { projectId, recipients, templateName, headerMediaAssetId } =
+      sendTemplateDto;
+
+    const account = await this.projectService.findOne(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+    );
+    if (!account) {
+      throw new UnauthorizedException(
+        'You do not have permission to access this WABA.',
+      );
+    }
+    const fromPhoneNumberId = account.phoneNumberId;
+    const permanentAccessToken = account.permanentAccessToken;
+
+    // Fetch template once to determine header requirements
+    const template = await this.wabaTemplateService.getByTemplateName(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+      templateName,
+    );
+    if (!template) {
+      throw new NotFoundException(`Template '${templateName}' not found`);
+    }
+    const headerComponent = template.components?.find(
+      (c) => c.type === 'HEADER',
+    );
+
+    // Build base template structure (shared across all recipients)
+    const baseTemplateStructure: any = {
+      name: templateName,
+      language: {
+        code: template.language,
+      },
+      components: [],
+    };
+
+    // Add header component if template requires media header (shared for all recipients)
+    if (headerComponent) {
+      const headerFormat = headerComponent.format;
+      const mediaHeaderFormats = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+
+      if (!mediaHeaderFormats.includes(headerFormat)) {
+        this.logger.log('Header format does not require media', headerFormat);
+      } else {
+        // Resolve media source based on priority: assetId -> direct media -> error
+        let mediaSource: { link: string; filename?: string } | undefined;
+
+        if (headerMediaAssetId) {
+          const mediaAsset =
+            await this.mediaAssetModel.findById(headerMediaAssetId);
+          this.logger.log('mediaAsset', mediaAsset);
+          if (!mediaAsset) {
+            throw new NotFoundException('Media asset not found');
+          }
+          mediaSource = {
+            link: mediaAsset.filePath,
+            filename: mediaAsset.fileName,
+          };
+        } else if (media) {
+          this.logger.log('mediaAsset', media);
+          mediaSource = {
+            link: media.url,
+            filename: media.filename,
+          };
+        } else {
+          throw new BadRequestException(
+            `Template header (${headerFormat}) requires media, but none provided`,
+          );
+        }
+
+        let headerParameter: any;
+        switch (headerFormat) {
+          case 'IMAGE':
+            headerParameter = {
+              type: 'image',
+              image: {
+                link: mediaSource.link,
+              },
+            };
+            break;
+          case 'VIDEO':
+            headerParameter = {
+              type: 'video',
+              video: {
+                link: mediaSource.link,
+              },
+            };
+            break;
+          case 'DOCUMENT':
+            headerParameter = {
+              type: 'document',
+              document: {
+                link: mediaSource.link,
+                filename: mediaSource.filename,
+              },
+            };
+            break;
+          default:
+            this.logger.log('Unsupported header format', headerFormat);
+            throw new BadRequestException(
+              `Unsupported header format: ${headerFormat}`,
+            );
+        }
+
+        baseTemplateStructure.components.push({
+          type: 'header',
+          parameters: [headerParameter],
+        });
+      }
+    }
+
+    // Helper function to build template structure per recipient with their body variables
+    const buildTemplateStructureForRecipient = (
+      bodyVariables?: string[],
+    ): any => {
+      const templateStructure = JSON.parse(
+        JSON.stringify(baseTemplateStructure),
+      );
+
+      // Add body component with recipient-specific variables
+      if (bodyVariables && bodyVariables.length > 0) {
+        templateStructure.components.push({
+          type: 'body',
+          parameters: bodyVariables.map((variable) => ({
+            type: 'text',
+            text: variable,
+          })),
+        });
+      }
+
+      // Remove components if empty
+      if (templateStructure.components.length === 0) {
+        delete templateStructure.components;
+      }
+
+      return templateStructure;
+    };
+
+    const uniquePhoneNumbers = new Set<string>();
+    const results = {
+      total: recipients.length,
+      enqueued: 0,
+      failed: 0,
+      duplicates: 0,
+      invalid: 0,
+      errors: [] as string[],
+    };
+
+    // Process recipients in chunks to optimize enqueueing speed while managing memory/load
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
+      const chunk = recipients.slice(i, i + CHUNK_SIZE);
+
+      await Promise.all(
+        chunk.map(async (recipient) => {
+          try {
+            const { recipientPhoneNumber, contactId, bodyVariables } =
+              recipient;
+            const formatted = this.formatIndianRecipient(recipientPhoneNumber);
+
+            if (!formatted.isValid) {
+              results.invalid++;
+              results.errors.push(
+                `${recipientPhoneNumber}: Invalid phone format`,
+              );
+              return;
+            }
+
+            if (uniquePhoneNumbers.has(formatted.phoneNumber)) {
+              results.duplicates++;
+              return;
+            }
+            uniquePhoneNumbers.add(formatted.phoneNumber);
+
+            // Build template structure with recipient-specific body variables
+            const templateStructure =
+              buildTemplateStructureForRecipient(bodyVariables);
+
+            await this.enqueueTemplateSendJob({
+              adminId,
+              projectId,
+              formattedPhoneData: formatted,
+              templateName,
+              language: template.language,
+              fromPhoneNumberId,
+              permanentAccessToken,
+              messageType,
+              templateStructure,
+              contactId,
+              meetingId,
+              occurrenceId,
+              campaignId,
+              attendeeId,
+              apiCampaignId,
+              programId,
+              programAssignmentId,
+              programSlotId,
+            });
+            results.enqueued++;
+          } catch (error) {
+            results.failed++;
+            const msg =
+              error instanceof Error ? error.message : String(error || '');
+            results.errors.push(
+              `${recipient.recipientPhoneNumber}: Enqueue failed - ${msg}`,
+            );
+            this.logger.error(`Failed to enqueue message for recipient`, error);
+          }
+        }),
+      );
+    }
+
+    this.logger.log(' Send Template Message Stats: ', results);
+
+    return {
+      success: true,
+      message: `Processing completed. Enqueued: ${results.enqueued}, Duplicates: ${results.duplicates}, Invalid: ${results.invalid}, Failed: ${results.failed}`,
+      stats: results,
+    };
   }
 }

@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-20T23:59:31.854Z",
+    "scriptVersion": "1.0.0",
+    "totalProjects": 1,
+    "totalProcessed": 1,
+    "totalTemplatesFetched": 11,
+    "totalTemplatesInserted": 11,
+    "totalTemplatesDeleted": 11,
+    "totalErrors": 0
+  },
+  "results": [
+    {
+      "projectId": "6969fe566613d81ea38d4de7",
+      "projectName": "new pp",
+      "fetched": 11,
+      "inserted": 11,
+      "deleted": 11
+    }
+  ],
+  "errors": []
+}

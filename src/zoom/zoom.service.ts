@@ -3,7 +3,6 @@ import {
   forwardRef,
   Inject,
   Injectable,
-  Logger,
   NotAcceptableException,
   BadRequestException,
   OnModuleInit,
@@ -33,10 +32,10 @@ import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { ZoomMeetingService } from './zoom-meeting/zoom-meeting.service';
 import { ZoomMeetingOccurrence } from './zoom-meeting/zoom-meeting.schema';
 import axios from 'axios';
+import { BaseLoggerService } from 'src/logger/base-logger.service';
 
 @Injectable()
-export class ZoomService implements OnModuleInit {
-  private readonly logger = new Logger(ZoomService.name);
+export class ZoomService extends BaseLoggerService implements OnModuleInit {
 
   // Simple in-memory rate limiter (consider using Redis for production)
   private readonly rateLimitMap = new Map<
@@ -64,7 +63,9 @@ export class ZoomService implements OnModuleInit {
     private readonly whatsAppGateway: WhatsAppGateway,
     @Inject(forwardRef(() => ZoomMeetingService))
     private readonly zoomMeetingService: ZoomMeetingService,
-  ) {}
+  ) {
+    super();
+  }
 
   onModuleInit() {
     // Set the processing worker for the queue
@@ -1240,20 +1241,28 @@ export class ZoomService implements OnModuleInit {
     }
   }
 
-  async handleMeetingCreated(projectId: string) {
-    await this.notifyZoomRealtimeUpdate(projectId, 'meetings', 'created');
+  async handleMeetingCreated(projectId: string, adminId: string) {
+    await this.notifyZoomRealtimeUpdate(adminId, projectId, 'meetings', 'created');
   }
 
-  async handleWebinarCreated(projectId: string) {
-    await this.notifyZoomRealtimeUpdate(projectId, 'webinars', 'created');
+  async handleWebinarCreated(projectId: string, adminId: string) {
+    await this.notifyZoomRealtimeUpdate(adminId, projectId, 'webinars', 'created');
   }
 
   private async notifyZoomRealtimeUpdate(
+    adminId: string,
     projectId: string,
     resource: 'meetings' | 'webinars',
     action: 'created' | 'updated' | 'deleted' | 'refetch',
   ) {
     try {
+      if (!adminId || !mongoose.isValidObjectId(adminId)) {
+        this.logger.warn(
+          `Skipping realtime update for ${resource}: invalid adminId ${adminId}`,
+        );
+        return;
+      }
+
       if (!projectId || !mongoose.isValidObjectId(projectId)) {
         this.logger.warn(
           `Skipping realtime update for ${resource}: invalid projectId ${projectId}`,
@@ -1261,26 +1270,13 @@ export class ZoomService implements OnModuleInit {
         return;
       }
 
-      const project = await this.zoomProjectModel
-        .findById(projectId)
-        .select('adminId')
-        .lean();
-
-      if (!project?.adminId) {
-        this.logger.warn(
-          `Unable to emit realtime update for ${resource}: project/admin missing`,
-        );
-        return;
-      }
-
-      const adminId = project.adminId.toString();
       this.logger.log(
         `Emitting realtime ${resource} update (${action}) to admin ${adminId}`,
       );
       this.whatsAppGateway.emitZoomRealtimeEvent(adminId, {
         resource,
         action,
-        projectId: projectId.toString(),
+        projectId,
       });
     } catch (error) {
       this.logger.error(
@@ -1376,7 +1372,7 @@ export class ZoomService implements OnModuleInit {
           'warn',
           'Rate limit exceeded for project',
           {
-            projectId: zoomProjectId.toString(),
+            projectId,
             event: payload?.event,
           },
         );
@@ -1397,7 +1393,7 @@ export class ZoomService implements OnModuleInit {
 
       if (!project) {
         this.logWebhookProcessing(correlationId, 'error', 'Project not found', {
-          projectId: zoomProjectId.toString(),
+          projectId
         });
         return;
       }
@@ -1407,7 +1403,7 @@ export class ZoomService implements OnModuleInit {
           correlationId,
           'warn',
           'Project is not configured, skipping webhook',
-          { projectId: zoomProjectId.toString() },
+          { projectId },
         );
         return;
       }
@@ -1434,7 +1430,7 @@ export class ZoomService implements OnModuleInit {
           correlationId,
           'warn',
           'Unhandled webhook event type',
-          { event, projectId: zoomProjectId.toString() },
+          { event, projectId },
         );
         // Continue processing but log as unhandled
       }
@@ -1446,7 +1442,7 @@ export class ZoomService implements OnModuleInit {
         {
           event,
           isWebinar,
-          projectId: zoomProjectId.toString(),
+          projectId
         },
       );
 
@@ -1468,7 +1464,7 @@ export class ZoomService implements OnModuleInit {
           correlationId,
           'warn',
           'Invalid or missing meeting ID in webhook payload',
-          { event, projectId: zoomProjectId.toString() },
+          { event, projectId },
         );
         return;
       }
@@ -1565,6 +1561,7 @@ export class ZoomService implements OnModuleInit {
         }
       }
 
+      const adminId = project.adminId.toString();
       let eventType: ZoomMeetingEventType | undefined;
       let isWebinarLiveEvent = false;
 
@@ -1572,22 +1569,22 @@ export class ZoomService implements OnModuleInit {
       // Standardized to use early returns for events that don't create event records
       switch (event) {
         case ZoomWebhookEvent.MeetingCreated:
-          await this.handleMeetingCreated(projectId);
+          await this.handleMeetingCreated(projectId, adminId);
           this.logWebhookProcessing(
             correlationId,
             'log',
             'Meeting created event processed',
-            { meetingId, projectId: zoomProjectId.toString() },
+            { meetingId, projectId },
           );
           return;
 
         case ZoomWebhookEvent.WebinarCreated:
-          await this.handleWebinarCreated(projectId);
+          await this.handleWebinarCreated(projectId, adminId);
           this.logWebhookProcessing(
             correlationId,
             'log',
             'Webinar created event processed',
-            { meetingId, projectId: zoomProjectId.toString() },
+            { meetingId, projectId },
           );
           return;
 

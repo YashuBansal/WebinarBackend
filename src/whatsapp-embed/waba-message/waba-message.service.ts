@@ -10,7 +10,12 @@ import {
   WabaMessage,
   WabaMessageDocument,
   WabaMessageType,
+  WabaMessageDirection,
 } from './waba-message.schema';
+import {
+  ChatReadStatus,
+  ChatReadStatusDocument,
+} from './chat-read-status.schema';
 
 @Injectable()
 export class WabaMessageService {
@@ -18,6 +23,8 @@ export class WabaMessageService {
   constructor(
     @InjectModel(WabaMessage.name)
     private wabaMessageModel: Model<WabaMessageDocument>,
+    @InjectModel(ChatReadStatus.name)
+    private chatReadStatusModel: Model<ChatReadStatusDocument>,
   ) {}
 
   async create(wabaMessageData: {
@@ -29,7 +36,7 @@ export class WabaMessageService {
     apiCampaignId?: string;
     attendeeId?: string;
     wabaMessageId: string;
-    messageType?: string;
+    messageType: string;
     templateName: string;
     failureReason?: any;
     status?: string;
@@ -41,6 +48,9 @@ export class WabaMessageService {
     textBody?: string;
     displayText?: string;
     occurrenceId?: string;
+    programId?: string;
+    programAssignmentId?: string;
+    programSlotId?: string;
   }): Promise<WabaMessage> {
     this.logger.log(
       'wabaMessageData ------------------------- > ',
@@ -62,6 +72,15 @@ export class WabaMessageService {
         : undefined,
       attendeeId: mongoose.isValidObjectId(wabaMessageData.attendeeId)
         ? new Types.ObjectId(wabaMessageData.attendeeId)
+        : undefined,
+      programId: mongoose.isValidObjectId(wabaMessageData.programId)
+        ? new Types.ObjectId(wabaMessageData.programId)
+        : undefined,
+      programAssignmentId: mongoose.isValidObjectId(wabaMessageData.programAssignmentId)
+        ? new Types.ObjectId(wabaMessageData.programAssignmentId)
+        : undefined,
+      programSlotId: mongoose.isValidObjectId(wabaMessageData.programSlotId)
+        ? new Types.ObjectId(wabaMessageData.programSlotId)
         : undefined,
       messageType: wabaMessageData.messageType || 'individual',
       meetingId: wabaMessageData.meetingId || undefined,
@@ -120,7 +139,6 @@ export class WabaMessageService {
   }
 
   async findAllRange(query: any) {
-    console.log(query);
     return this.wabaMessageModel.find(query).sort({ createdAt: -1 }).exec();
   }
 
@@ -196,7 +214,6 @@ export class WabaMessageService {
     failureReason?: string,
   ): Promise<WabaMessage> {
     const updateData: any = { status };
-    console.log(wabaMessageId, status, failureReason);
 
     // Set timestamp fields based on status
     const now = new Date();
@@ -266,7 +283,7 @@ export class WabaMessageService {
     }
     const result = await this.wabaMessageModel.aggregate([
       {
-        $match: filter
+        $match: filter,
       },
       {
         $group: {
@@ -347,12 +364,156 @@ export class WabaMessageService {
   async getUniquePhoneNumbers(
     adminId: string,
     projectId: string,
-  ): Promise<string[]> {
-    return this.wabaMessageModel.distinct('phoneNumber', {
-      adminId: new Types.ObjectId(adminId),
-      projectId: new Types.ObjectId(projectId),
+  ): Promise<
+    Array<{
+      phoneNumber: string;
+      lastMessagePreview?: string;
+      lastMessageAt?: string;
+      unreadCount: number;
+      lastMessageDirection?: 'inbound' | 'outbound';
+    }>
+  > {
+    const adminObjectId = new Types.ObjectId(adminId);
+    const projectObjectId = new Types.ObjectId(projectId);
+
+    // Get all unique phone numbers
+    const phoneNumbers = await this.wabaMessageModel.distinct('phoneNumber', {
+      adminId: adminObjectId,
+      projectId: projectObjectId,
       isDeleted: false,
     });
+
+    // Get last read timestamps for all contacts
+    const readStatuses = await this.chatReadStatusModel.find({
+      adminId: adminObjectId,
+      projectId: projectObjectId,
+      phoneNumber: { $in: phoneNumbers },
+    });
+
+    const readStatusMap = new Map<string, Date>();
+    readStatuses.forEach((status) => {
+      readStatusMap.set(status.phoneNumber, status.lastReadAt);
+    });
+
+    // Get last message for each phone number with aggregation
+    const lastMessages = await this.wabaMessageModel.aggregate([
+      {
+        $match: {
+          adminId: adminObjectId,
+          projectId: projectObjectId,
+          isDeleted: false,
+        },
+      },
+      {
+        $sort: { createdAt: -1 },
+      },
+      {
+        $group: {
+          _id: '$phoneNumber',
+          lastMessage: { $first: '$$ROOT' },
+        },
+      },
+    ]);
+
+    // Create a map for quick lookup
+    const lastMessageMap = new Map();
+    lastMessages.forEach((item) => {
+      lastMessageMap.set(item._id, item.lastMessage);
+    });
+
+    // Calculate unread counts for all contacts in one aggregation
+    const unreadCountsPipeline: any[] = [
+      {
+        $match: {
+          adminId: adminObjectId,
+          projectId: projectObjectId,
+          direction: 'inbound',
+          isDeleted: false,
+        },
+      },
+      {
+        $group: {
+          _id: '$phoneNumber',
+          messages: { $push: { createdAt: '$createdAt' } },
+        },
+      },
+    ];
+
+    const unreadCountsResult = await this.wabaMessageModel.aggregate(
+      unreadCountsPipeline,
+    );
+
+    const unreadCountMap = new Map<string, number>();
+    unreadCountsResult.forEach((item) => {
+      const phoneNumber = item._id;
+      const lastReadAt = readStatusMap.get(phoneNumber);
+      if (lastReadAt) {
+        // Count messages after lastReadAt
+        const count = item.messages.filter(
+          (msg: { createdAt: Date }) => msg.createdAt > lastReadAt,
+        ).length;
+        unreadCountMap.set(phoneNumber, count);
+      } else {
+        // If no read status, count all inbound messages
+        unreadCountMap.set(phoneNumber, item.messages.length);
+      }
+    });
+
+    // Build result array
+    const result = phoneNumbers.map((phoneNumber) => {
+      const lastMessage = lastMessageMap.get(phoneNumber);
+      const lastReadAt = readStatusMap.get(phoneNumber);
+
+      // Get unread count
+      const unreadCount = unreadCountMap.get(phoneNumber) || 0;
+
+      // Get last message preview
+      let lastMessagePreview: string | undefined;
+      let lastMessageAt: string | undefined;
+      let lastMessageDirection: 'inbound' | 'outbound' | undefined;
+
+      if (lastMessage) {
+        lastMessageAt = lastMessage.createdAt.toISOString();
+        lastMessageDirection = lastMessage.direction;
+
+        if (lastMessage.messageFormat === 'media') {
+          if (lastMessage.mimeType?.startsWith('image/')) {
+            lastMessagePreview = 'Image';
+          } else if (lastMessage.mimeType?.startsWith('video/')) {
+            lastMessagePreview = 'Video';
+          } else {
+            lastMessagePreview = 'Media';
+          }
+        } else if (lastMessage.messageFormat === 'template') {
+          lastMessagePreview = lastMessage.displayText || lastMessage.textBody || '[Template]';
+        } else {
+          lastMessagePreview = lastMessage.textBody || lastMessage.displayText;
+        }
+
+        // Truncate preview to 50 characters
+        if (lastMessagePreview && lastMessagePreview.length > 50) {
+          lastMessagePreview = lastMessagePreview.substring(0, 50) + '...';
+        }
+      }
+
+      return {
+        phoneNumber,
+        lastMessagePreview,
+        lastMessageAt,
+        unreadCount,
+        lastMessageDirection,
+      };
+    });
+
+    // Sort by lastMessageAt descending (newest first)
+    result.sort((a, b) => {
+      if (!a.lastMessageAt && !b.lastMessageAt) return 0;
+      if (!a.lastMessageAt) return 1;
+      if (!b.lastMessageAt) return -1;
+      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    });
+
+    return result;
   }
 
   async getEligibleSessionMessageContacts(
@@ -365,16 +526,23 @@ export class WabaMessageService {
       lastInboundMessageAt: string;
       windowExpiresAt: string;
       timeRemaining: number;
+      lastMessagePreview?: string;
+      lastMessageAt?: string;
+      unreadCount: number;
+      lastMessageDirection?: 'inbound' | 'outbound';
     }>
   > {
+    const adminObjectId = new Types.ObjectId(adminId);
+    const projectObjectId = new Types.ObjectId(projectId);
+
     // Calculate timestamp for 23 hours ago
     const twentyFourHoursAgo = new Date(Date.now() - 23 * 60 * 60 * 1000);
 
     const result = await this.wabaMessageModel.aggregate([
       {
         $match: {
-          adminId: new Types.ObjectId(adminId),
-          projectId: new Types.ObjectId(projectId),
+          adminId: adminObjectId,
+          projectId: projectObjectId,
           direction: 'inbound',
           isDeleted: false,
           createdAt: { $gte: twentyFourHoursAgo },
@@ -401,23 +569,477 @@ export class WabaMessageService {
       },
     ]);
 
+    // Get phone numbers for eligible contacts
+    const eligiblePhoneNumbers = result.map((r) => r.phoneNumber);
+
+    // Get last read timestamps
+    const readStatuses = await this.chatReadStatusModel.find({
+      adminId: adminObjectId,
+      projectId: projectObjectId,
+      phoneNumber: { $in: eligiblePhoneNumbers },
+    });
+
+    const readStatusMap = new Map<string, Date>();
+    readStatuses.forEach((status) => {
+      readStatusMap.set(status.phoneNumber, status.lastReadAt);
+    });
+
+    // Get last message (any direction) for each eligible contact
+    const lastMessages = await this.wabaMessageModel.aggregate([
+      {
+        $match: {
+          adminId: adminObjectId,
+          projectId: projectObjectId,
+          phoneNumber: { $in: eligiblePhoneNumbers },
+          isDeleted: false,
+        },
+      },
+      {
+        $sort: { createdAt: -1 },
+      },
+      {
+        $group: {
+          _id: '$phoneNumber',
+          lastMessage: { $first: '$$ROOT' },
+        },
+      },
+    ]);
+
+    const lastMessageMap = new Map();
+    lastMessages.forEach((item) => {
+      lastMessageMap.set(item._id, item.lastMessage);
+    });
+
+    // Calculate unread counts
+    const unreadCountsResult = await this.wabaMessageModel.aggregate([
+      {
+        $match: {
+          adminId: adminObjectId,
+          projectId: projectObjectId,
+          phoneNumber: { $in: eligiblePhoneNumbers },
+          direction: 'inbound',
+          isDeleted: false,
+        },
+      },
+      {
+        $group: {
+          _id: '$phoneNumber',
+          messages: { $push: { createdAt: '$createdAt' } },
+        },
+      },
+    ]);
+
+    const unreadCountMap = new Map<string, number>();
+    unreadCountsResult.forEach((item) => {
+      const phoneNumber = item._id;
+      const lastReadAt = readStatusMap.get(phoneNumber);
+      if (lastReadAt) {
+        const count = item.messages.filter(
+          (msg: { createdAt: Date }) => msg.createdAt > lastReadAt,
+        ).length;
+        unreadCountMap.set(phoneNumber, count);
+      } else {
+        unreadCountMap.set(phoneNumber, item.messages.length);
+      }
+    });
+
     // Calculate window expiry and time remaining for each contact
     const now = new Date();
-    return result.map((contact) => {
+    const enrichedResult = result.map((contact) => {
       const lastMessageDate = new Date(contact.lastInboundMessageAt);
       const windowExpiresAt = new Date(
         lastMessageDate.getTime() + 24 * 60 * 60 * 1000,
       );
       const timeRemaining = windowExpiresAt.getTime() - now.getTime();
 
+      const lastMessage = lastMessageMap.get(contact.phoneNumber);
+      const lastReadAt = readStatusMap.get(contact.phoneNumber);
+      const unreadCount = unreadCountMap.get(contact.phoneNumber) || 0;
+
+      // Get last message preview
+      let lastMessagePreview: string | undefined;
+      let lastMessageAt: string | undefined;
+      let lastMessageDirection: 'inbound' | 'outbound' | undefined;
+
+      if (lastMessage) {
+        lastMessageAt = lastMessage.createdAt.toISOString();
+        lastMessageDirection = lastMessage.direction;
+
+        if (lastMessage.messageFormat === 'media') {
+          if (lastMessage.mimeType?.startsWith('image/')) {
+            lastMessagePreview = 'Image';
+          } else if (lastMessage.mimeType?.startsWith('video/')) {
+            lastMessagePreview = 'Video';
+          } else {
+            lastMessagePreview = 'Media';
+          }
+        } else if (lastMessage.messageFormat === 'template') {
+          lastMessagePreview = lastMessage.displayText || lastMessage.textBody || '[Template]';
+        } else {
+          lastMessagePreview = lastMessage.textBody || lastMessage.displayText;
+        }
+
+        // Truncate preview to 50 characters
+        if (lastMessagePreview && lastMessagePreview.length > 50) {
+          lastMessagePreview = lastMessagePreview.substring(0, 50) + '...';
+        }
+      }
+
       return {
         phoneNumber: contact.phoneNumber,
         contactId: contact.contactId?.toString(),
         lastInboundMessageAt: contact.lastInboundMessageAt.toISOString(),
         windowExpiresAt: windowExpiresAt.toISOString(),
-        timeRemaining: Math.max(0, timeRemaining), // Ensure non-negative
+        timeRemaining: Math.max(0, timeRemaining),
+        lastMessagePreview,
+        lastMessageAt,
+        unreadCount,
+        lastMessageDirection,
       };
     });
+
+    // Sort by lastMessageAt descending (newest first)
+    enrichedResult.sort((a, b) => {
+      if (!a.lastMessageAt && !b.lastMessageAt) return 0;
+      if (!a.lastMessageAt) return 1;
+      if (!b.lastMessageAt) return -1;
+      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    });
+
+    return enrichedResult;
+  }
+
+  async markMessagesAsRead(
+    adminId: string,
+    projectId: string,
+    phoneNumber: string,
+  ): Promise<void> {
+    const adminObjectId = new Types.ObjectId(adminId);
+    const projectObjectId = new Types.ObjectId(projectId);
+
+    // Upsert: update if exists, create if not
+    await this.chatReadStatusModel.findOneAndUpdate(
+      {
+        adminId: adminObjectId,
+        projectId: projectObjectId,
+        phoneNumber: phoneNumber.replace('+', ''),
+      },
+      {
+        adminId: adminObjectId,
+        projectId: projectObjectId,
+        phoneNumber: phoneNumber.replace('+', ''),
+        lastReadAt: new Date(),
+      },
+      {
+        upsert: true,
+        new: true,
+      },
+    );
+  }
+
+  async getMessageCountsByAdminAndProject(
+    adminId: string,
+    projectId?: string,
+  ): Promise<{ inbound: number; outbound: number }> {
+    const match: any = {
+      adminId: new Types.ObjectId(adminId),
+      isDeleted: false,
+    };
+    if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+      match.projectId = new Types.ObjectId(projectId);
+    }
+
+    const result = await this.wabaMessageModel.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: '$direction',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const inbound =
+      result.find((r) => r._id === WabaMessageDirection.INBOUND)?.count ?? 0;
+    const outbound =
+      result.find((r) => r._id === WabaMessageDirection.OUTBOUND)?.count ?? 0;
+
+    return { inbound, outbound };
+  }
+
+  async getAllMessageCountsPaginated(options: {
+    startDate?: string;
+    endDate?: string;
+    page: number;
+    limit: number;
+  }): Promise<{
+    data: Array<{
+      adminId: string;
+      projectId: string;
+      companyName?: string;
+      email?: string;
+      phone?: string;
+      projectName?: string;
+      inbound: number;
+      outbound: number;
+    }>;
+    total: number;
+    totalReceived: number;
+    totalSent: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    dateRange?: { start: string; end: string };
+  }> {
+    const { startDate, endDate, page, limit } = options;
+
+    const baseMatch: any = { isDeleted: false };
+
+    let rangeStart: Date;
+    let rangeEnd: Date;
+
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      rangeStart = new Date(start);
+      rangeStart.setHours(0, 0, 0, 0);
+      const endDay = new Date(end);
+      endDay.setHours(0, 0, 0, 0);
+      endDay.setDate(endDay.getDate() + 1);
+      rangeEnd = endDay;
+      baseMatch.createdAt = { $gte: rangeStart, $lt: rangeEnd };
+    } else if (startDate) {
+      rangeStart = new Date(startDate);
+      rangeStart.setHours(0, 0, 0, 0);
+      rangeEnd = new Date();
+      baseMatch.createdAt = { $gte: rangeStart };
+    } else if (endDate) {
+      rangeStart = new Date(0);
+      const endDay = new Date(endDate);
+      endDay.setHours(23, 59, 59, 999);
+      rangeEnd = endDay;
+      baseMatch.createdAt = { $lte: rangeEnd };
+    } else {
+      rangeStart = new Date(0);
+      rangeEnd = new Date();
+    }
+
+    const skip = (page - 1) * limit;
+
+    const countPipeline: any[] = [
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: { adminId: '$adminId', projectId: '$projectId' },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id.adminId',
+          foreignField: '_id',
+          as: 'adminDoc',
+        },
+      },
+      {
+        $lookup: {
+          from: 'projects',
+          localField: '_id.projectId',
+          foreignField: '_id',
+          as: 'projectDoc',
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $gt: [{ $size: '$adminDoc' }, 0] },
+              { $gt: [{ $size: '$projectDoc' }, 0] },
+            ],
+          },
+        },
+      },
+      { $count: 'total' },
+    ];
+
+    const dataPipeline: any[] = [
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: { adminId: '$adminId', projectId: '$projectId' },
+          inbound: {
+            $sum: {
+              $cond: [
+                { $eq: ['$direction', WabaMessageDirection.INBOUND] },
+                1,
+                0,
+              ],
+            },
+          },
+          outbound: {
+            $sum: {
+              $cond: [
+                { $eq: ['$direction', WabaMessageDirection.OUTBOUND] },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id.adminId',
+          foreignField: '_id',
+          as: 'adminDoc',
+        },
+      },
+      {
+        $lookup: {
+          from: 'projects',
+          localField: '_id.projectId',
+          foreignField: '_id',
+          as: 'projectDoc',
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $gt: [{ $size: '$adminDoc' }, 0] },
+              { $gt: [{ $size: '$projectDoc' }, 0] },
+            ],
+          },
+        },
+      },
+      { $sort: { '_id.adminId': 1, '_id.projectId': 1 } },
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $project: {
+          _id: 0,
+          adminId: { $toString: '$_id.adminId' },
+          projectId: { $toString: '$_id.projectId' },
+          companyName: { $arrayElemAt: ['$adminDoc.companyName', 0] },
+          email: { $arrayElemAt: ['$adminDoc.email', 0] },
+          phone: { $arrayElemAt: ['$projectDoc.phone', 0] },
+          projectName: { $arrayElemAt: ['$projectDoc.projectName', 0] },
+          inbound: 1,
+          outbound: 1,
+        },
+      },
+    ];
+
+    const totalsPipeline: any[] = [
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: { adminId: '$adminId', projectId: '$projectId' },
+          inbound: {
+            $sum: {
+              $cond: [
+                { $eq: ['$direction', WabaMessageDirection.INBOUND] },
+                1,
+                0,
+              ],
+            },
+          },
+          outbound: {
+            $sum: {
+              $cond: [
+                { $eq: ['$direction', WabaMessageDirection.OUTBOUND] },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id.adminId',
+          foreignField: '_id',
+          as: 'adminDoc',
+        },
+      },
+      {
+        $lookup: {
+          from: 'projects',
+          localField: '_id.projectId',
+          foreignField: '_id',
+          as: 'projectDoc',
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $gt: [{ $size: '$adminDoc' }, 0] },
+              { $gt: [{ $size: '$projectDoc' }, 0] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalReceived: { $sum: '$inbound' },
+          totalSent: { $sum: '$outbound' },
+        },
+      },
+    ];
+
+    const [countResult, dataResult, totalsResult] = await Promise.all([
+      this.wabaMessageModel.aggregate(countPipeline),
+      this.wabaMessageModel.aggregate(dataPipeline),
+      this.wabaMessageModel.aggregate(totalsPipeline),
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    const data = dataResult ?? [];
+    const totalReceived = totalsResult[0]?.totalReceived ?? 0;
+    const totalSent = totalsResult[0]?.totalSent ?? 0;
+
+    const totalPages = Math.ceil(total / limit);
+
+    const result: {
+      data: Array<{
+        adminId: string;
+        projectId: string;
+        companyName?: string;
+        email?: string;
+        phone?: string;
+        projectName?: string;
+        inbound: number;
+        outbound: number;
+      }>;
+      total: number;
+      totalReceived: number;
+      totalSent: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+      dateRange?: { start: string; end: string };
+    } = {
+      data,
+      total,
+      totalReceived,
+      totalSent,
+      page,
+      limit,
+      totalPages,
+    };
+
+    if (startDate || endDate) {
+      result.dateRange = {
+        start: rangeStart.toISOString(),
+        end: rangeEnd.toISOString(),
+      };
+    }
+
+    return result;
   }
 
   async getAnalyticsSummary(options: {

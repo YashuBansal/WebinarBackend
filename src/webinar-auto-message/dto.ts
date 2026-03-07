@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString, ValidateIf, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class VariableMappingDto {
@@ -9,16 +9,19 @@ export class VariableMappingDto {
   @IsBoolean()
   isDynamic: boolean;
 
-  @IsOptional()
+  @ValidateIf((o) => o.isDynamic === true)
   @IsString()
+  @IsNotEmpty()
   contactField?: string;
 
-  @IsOptional()
+  @ValidateIf((o) => o.isDynamic === false)
   @IsString()
+  @IsNotEmpty()
   staticValue?: string;
 
-  @IsOptional()
+  @ValidateIf((o) => o.isDynamic === true)
   @IsString()
+  @IsNotEmpty()
   fallbackValue?: string;
 }
 
@@ -43,8 +46,9 @@ export class UpsertAutoMessageDto {
   @IsString()
   headerMediaAssetId?: string;
 
+  @IsOptional()
   @IsBoolean()
-  enabled: boolean;
+  enabled?: boolean;
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -96,11 +100,17 @@ export class TestSendDto {
 export class DeleteAutoMessageDto {
   @IsMongoId()
   @IsNotEmpty()
-  webinarId: string;
+  _id: string;
+}
 
+export class ToggleAutoMessageDto {
   @IsMongoId()
   @IsNotEmpty()
-  projectId: string;
+  _id: string;
+
+  @IsBoolean()
+  @IsNotEmpty()
+  enabled: boolean;
 }
 
 

@@ -8,6 +8,7 @@ import {
   Length,
   Matches,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
 import { DateFormat } from 'src/schemas/User.schema';
 
@@ -25,6 +26,9 @@ export class CreateClientDto {
   @IsNotEmpty()
   password: string;
 
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsEmail()
   @IsNotEmpty()
   email: string;

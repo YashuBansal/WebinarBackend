@@ -1,4 +1,5 @@
 import { MiddlewareConsumer, Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
 import { ProfileService } from './profile.service';
 import { ProfileController } from './profile.controller';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
@@ -6,9 +7,16 @@ import { ProjectsModule } from 'src/projects/projects.module';
 import { HttpModule } from '@nestjs/axios';
 import { UsersModule } from 'src/users/users.module';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
+import { Profile, ProfileSchema } from './profile.schema';
 
 @Module({
-  imports: [HttpModule, ProjectsModule, UsersModule, WhatsappModule],
+  imports: [
+    HttpModule,
+    ProjectsModule,
+    UsersModule,
+    WhatsappModule,
+    MongooseModule.forFeature([{ name: Profile.name, schema: ProfileSchema }]),
+  ],
   providers: [ProfileService],
   controllers: [ProfileController],
   exports: [ProfileService],

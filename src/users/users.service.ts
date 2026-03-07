@@ -771,8 +771,17 @@ export class UsersService implements OnModuleInit {
   }
 
   async getUser(email: string): Promise<User> {
+    console.log(email);
     const user = await this.userModel.findOne({ email: email });
     return user;
+  }
+
+  async getAdminIdByEmail(email: string): Promise<string | null> {
+    const normalized = email.trim().toLowerCase();
+    const user = await this.userModel
+      .findOne({ email: normalized })
+      .select('_id');
+    return user ? String(user._id) : null;
   }
 
   async getUserById(id: string) {
@@ -1069,6 +1078,14 @@ export class UsersService implements OnModuleInit {
     createClientDto: CreateClientDto,
     creatorDetailsDto: CreatorDetailsDto,
   ): Promise<any> {
+    if (!createClientDto.email) {
+      throw new BadRequestException('E-Mail is required');
+    }
+
+    // Normalize email to avoid duplicates due to casing/spacing
+    const normalizedEmail = createClientDto.email.trim().toLowerCase();
+    createClientDto.email = normalizedEmail;
+
     const plan = await this.plansModel.findOne({
       _id: new Types.ObjectId(`${createClientDto.plan}`),
     });
@@ -1080,10 +1097,16 @@ export class UsersService implements OnModuleInit {
     if (!isDurationConfig) {
       throw new NotFoundException('Duration type not found');
     }
+    
 
     const durationConfig = plan.planDurationConfig.get(
       createClientDto.durationType,
     );
+    if(!durationConfig.isEnabled){
+      throw new NotAcceptableException('Duration type is not enabled');
+    }
+
+
     const date = new Date();
     const currentPlanExpiry = date.setDate(
       date.getDate() + durationConfig.duration,
@@ -1095,82 +1118,109 @@ export class UsersService implements OnModuleInit {
      * let date = new Date('2024-12-02T06:14:48.287Z')
      */
 
-    // Check if a user already exists
-    const existingUser = await this.userModel.findOne({
-      email: createClientDto.email,
-    });
-    if (existingUser) {
-      throw new BadRequestException('User with this E-Mail already exists.');
-    }
+    try {
+      // Check if a user already exists
+      const existingUser = await this.userModel.findOne({
+        email: normalizedEmail,
+      });
 
-    const userData = await this.userModel.create({
-      email: createClientDto.email,
-      userName: createClientDto.userName,
-      password: createClientDto.password,
-      phone: createClientDto.phone,
-      role: createClientDto.role,
-      companyName: createClientDto.companyName,
-      adminId: creatorDetailsDto.id,
-      dateFormat: createClientDto.dateFormat,
-    });
+      if (existingUser) {
+        // Existing client: update its subscription plan instead of creating a new user
+        const { subscription, billing } =
+          await this.subscriptionService.updateClientPlan(
+            String(existingUser._id),
+            String(plan._id),
+            createClientDto.durationType,
+          );
 
-    const payload = {
-      id: userData?._id,
-      role: userData?.role,
-      adminId: userData?.adminId,
-    };
+        const user = await this.userModel
+          .findById(existingUser._id)
+          .select('-password');
 
-    const token = await this.jwtService.signAsync(payload, {
-      secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
-    });
+        return { user, subscription, billingHistory: billing };
+      }
 
-    const user = await this.userModel
-      .findByIdAndUpdate(
-        String(userData?._id),
-        { pabblyToken: token },
-        { new: true },
-      )
-      .select('-password');
+      const userData = await this.userModel.create({
+        email: createClientDto.email,
+        userName: createClientDto.userName,
+        password: createClientDto.password,
+        phone: createClientDto.phone,
+        role: createClientDto.role,
+        companyName: createClientDto.companyName,
+        adminId: creatorDetailsDto.id,
+        dateFormat: createClientDto.dateFormat,
+      });
 
-    const subscriptionPayload: SubscriptionDto = {
-      admin: String(user._id),
-      plan: String(plan._id),
-      contactLimit: plan.contactLimit,
-      employeeLimit: plan.employeeCount,
-      toggleLimit: plan.toggleLimit,
-      expiryDate: currentPlanExpiry,
-    };
+      const payload = {
+        id: userData?._id,
+        role: userData?.role,
+        adminId: userData?.adminId,
+      };
 
-    const subscription =
-      await this.subscriptionService.addSubscription(subscriptionPayload);
+      const token = await this.jwtService.signAsync(payload, {
+        secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
+      });
 
-    const { totalWithGST, itemAmount, discountAmount, gst } =
-      this.subscriptionService.generatePriceForPlan(
-        durationConfig,
-      );
+      const user = await this.userModel
+        .findByIdAndUpdate(
+          String(userData?._id),
+          { pabblyToken: token },
+          { new: true },
+        )
+        .select('-password');
 
-    const billingHistory = await this.billingHistoryService.addBillingHistory(
-      {
+      const subscriptionPayload: SubscriptionDto = {
         admin: String(user._id),
         plan: String(plan._id),
-        amount: totalWithGST,
-        itemAmount: itemAmount,
-        discountAmount: discountAmount,
-        taxPercent: this.subscriptionService.GST_VALUE,
-        taxAmount: gst,
-        durationType: createClientDto.durationType,
-        startDate: new Date(),
-        expiryDate: new Date(currentPlanExpiry),
-      },
-      BillingType.NEW_PLAN,
-    );
+        contactLimit: plan.contactLimit,
+        employeeLimit: plan.employeeCount,
+        toggleLimit: plan.toggleLimit,
+        expiryDate: currentPlanExpiry,
+      };
 
-    await this.customLeadTypeService.createDefaultLeadTypes(`${user._id}`);
-    await this.productsService.createDefaultProductLevels(
-      user._id as Types.ObjectId,
-    );
+      const subscription =
+        await this.subscriptionService.addSubscription(subscriptionPayload);
 
-    return { user, subscription, billingHistory };
+      const { totalWithGST, itemAmount, discountAmount, gst } =
+        this.subscriptionService.generatePriceForPlan(
+          durationConfig,
+        );
+
+      const billingHistory =
+        await this.billingHistoryService.addBillingHistory(
+          {
+            admin: String(user._id),
+            plan: String(plan._id),
+            amount: totalWithGST,
+            itemAmount: itemAmount,
+            discountAmount: discountAmount,
+            taxPercent: this.subscriptionService.GST_VALUE,
+            taxAmount: gst,
+            durationType: createClientDto.durationType,
+            startDate: new Date(),
+            expiryDate: new Date(currentPlanExpiry),
+          },
+          BillingType.NEW_PLAN,
+        );
+
+      await this.customLeadTypeService.createDefaultLeadTypes(`${user._id}`);
+      await this.productsService.createDefaultProductLevels(
+        user._id as Types.ObjectId,
+      );
+
+      return { user, subscription, billingHistory };
+    } catch (error) {
+      // Handle race condition / duplicate key on email
+      if (
+        error &&
+        (error as any).code === 11000 &&
+        ((error as any).keyPattern?.email || (error as any).keyValue?.email)
+      ) {
+        throw new BadRequestException('User with this E-Mail already exists.');
+      }
+
+      throw error;
+    }
   }
 
   // Method to check expired plans and deactivate users

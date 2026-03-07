@@ -352,6 +352,16 @@ export class ContactsService {
     };
   }
 
+  async getContactByIds(adminId: Types.ObjectId, contactIds: Types.ObjectId[]) {
+    const contacts = await this.contactModel.find({
+      _id: { $in: contactIds },
+      adminId,
+      isDeleted: false,
+    }).lean().exec();
+
+    return contacts;
+  }
+
   async findOne(
     adminId: Types.ObjectId,
     contactId: Types.ObjectId,

@@ -15,8 +15,6 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ProfileService } from './profile.service';
 import {
   UpdateBusinessProfileDto,
-  BusinessProfileResponseDto,
-  DisplayNameStatusDto,
 } from './dto/profile.dto';
 import { Id } from 'src/decorators/custom.decorator';
 import { Types } from 'mongoose';
@@ -24,6 +22,30 @@ import { Types } from 'mongoose';
 @Controller('profile')
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
+
+  /**
+   * Sync business profile information from Meta into local cache
+   */
+  @Get(':projectId/sync')
+  async syncBusinessProfile(
+    @Param('projectId') projectId: string,
+    @Id() adminId: string,
+  ) {
+    if (!Types.ObjectId.isValid(projectId)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+
+    const result = await this.profileService.syncBusinessProfile(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+    );
+
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Business profile synced successfully',
+      data: result.data,
+    };
+  }
 
   /**
    * Get business profile information

@@ -125,13 +125,6 @@ export class CampaignController {
     };
   }
 
-  @Post('webhook')
-  @HttpCode(HttpStatus.OK)
-  async handleWebhookEvents(@Body() body: any) {
-    await this.campaignService.processWebhookPayload(body);
-    return { status: 'success' };
-  }
-
   @Patch(':id/cancel')
   async cancelScheduledCampaign(@Param('id') id: string, @Id() adminId: string) {
     const campaign = await this.campaignService.cancelScheduledCampaign(id, adminId);

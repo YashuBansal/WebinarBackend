@@ -25,7 +25,8 @@
     "delete:assignments-for-deleted-attendees": "ts-node -r tsconfig-paths/register scripts/delete-assignments-for-deleted-attendees.ts",
     "delete:duplicate-attendee-associations": "ts-node -r tsconfig-paths/register scripts/delete-duplicate-attendee-associations.ts",
     "remove:undefined-from-fullnames": "ts-node -r tsconfig-paths/register scripts/remove-undefined-from-fullnames.ts",
-    "sync:zoom-meetings": "ts-node -r tsconfig-paths/register scripts/sync-zoom-meetings.ts"
+    "sync:zoom-meetings": "ts-node -r tsconfig-paths/register scripts/sync-zoom-meetings.ts",
+    "sync:waba-templates": "ts-node -r tsconfig-paths/register scripts/sync-waba-templates.ts"
   },
   "dependencies": {
     "@nest-middlewares/compression": "^10.0.0",
@@ -54,12 +55,14 @@
     "axios": "^1.7.9",
     "axios-retry": "^4.5.0",
     "bcrypt": "^5.1.1",
+    "bullmq": "^5.65.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "cloudinary": "^2.5.1",
     "cookie-parser": "^1.4.7",
     "exceljs": "^4.4.0",
     "ics": "^3.8.1",
+    "ioredis": "^5.8.2",
     "mongoose": "^8.8.1",
     "nest-winston": "^1.10.2",
     "nestjs": "^0.0.1",

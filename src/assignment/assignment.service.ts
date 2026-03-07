@@ -1219,10 +1219,12 @@ export class AssignmentService {
   ) {
     const recordType = 'preWebinar';
 
-    const postWebinarExists = await this.attendeeService.getPostWebinarAttendee(
-      webinarId,
-      adminId,
-    );
+    // Parallelize initial validation queries
+    const [postWebinarExists, webinar, subscription] = await Promise.all([
+      this.attendeeService.getPostWebinarAttendee(webinarId, adminId),
+      this.webinarService.getWebinar(webinarId, adminId),
+      this.subscriptionService.getSubscription(adminId),
+    ]);
 
     if (postWebinarExists) {
       throw new NotAcceptableException(
@@ -1230,16 +1232,9 @@ export class AssignmentService {
       );
     }
 
-    // Fetch the webinar details for the given webinar ID and admin ID
-    const webinar = await this.webinarService.getWebinar(webinarId, adminId);
-
     if (!webinar) {
       throw new NotFoundException('Webinar not found.');
     }
-
-    // Fetch the subscription details for the admin
-    const subscription =
-      await this.subscriptionService.getSubscription(adminId);
 
     if (!subscription) {
       throw new ForbiddenException('Subscription not found.');
@@ -1282,7 +1277,7 @@ export class AssignmentService {
         tags: Array.isArray(attendee.tags) ? attendee.tags : [],
       });
 
-    if (existingAttendee) {
+    if (existingAttendee && updatedAssociation) {
       if (
         Array.isArray(updatedAssociation.tags) &&
         Array.isArray(attendee.tags)

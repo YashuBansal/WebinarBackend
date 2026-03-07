@@ -17,6 +17,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
@@ -33,11 +34,12 @@ import {
   SendTemplateMessageDto,
   SendBulkTemplateMessageDto,
 } from './dto/msg.dto';
+import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
 @Controller('whatsapp')
 export class WhatsappController {
   constructor(private readonly whatsappService: WhatsappService) {}
- 
+
   @Post('exchange-code')
   async exchangeCode(
     @Body('code') code: string,
@@ -77,16 +79,6 @@ export class WhatsappController {
     };
   }
 
-  @Post('templates')
-  async fetchwabaTemplates() {
-    const response = await this.whatsappService.getTemplatesForWabaTest();
-    return {
-      statusCode: HttpStatus.CREATED,
-      message: 'WhatsApp Business Account connected successfully!',
-      data: response,
-    };
-  }
-
   @Get('webhook')
   verifyWebhook(
     @Query('hub.mode') mode: string,
@@ -109,26 +101,14 @@ export class WhatsappController {
       throw error;
     }
   }
- 
+
   @Post('webhook')
   @HttpCode(HttpStatus.OK) // Always respond with 200 OK immediately
   handleWebhookEvents(@Body() body: any) {
-    // We will build the logic for this in the service
-    this.whatsappService.processWebhookPayload(body);
-    // Meta doesn't care what's in the body, only that it gets a 200 OK
-    // to acknowledge receipt. The actual processing should be done asynchronously.
+    // Enqueue webhook processing to background queue
+    // This allows responding with 200 OK immediately to Meta
+    this.whatsappService.enqueueWebhookProcessing(body);
     return;
-  }
-
-  @Get('data')
-  async getWABAUsers(@Id() adminId: string) {
-    if (!mongoose.isValidObjectId(adminId)) {
-      throw new NotAcceptableException('Invalid Admin ID');
-    }
-
-    return await this.whatsappService.getWabaUserById(
-      new Types.ObjectId(`${adminId}`),
-    );
   }
 
   @Post('templates/:projectId/upload-sample-media')
@@ -207,51 +187,6 @@ export class WhatsappController {
     }
   }
 
-  @Get('templates/:projectId')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async getTemplates(
-    @Param('projectId') projectId: string,
-    @Id() adminId: string,
-    @Query() query: GetTemplatesQueryDto,
-  ) {
-    if (!mongoose.isValidObjectId(projectId)) {
-      throw new NotAcceptableException('Invalid Project ID');
-    }
-
-    const templates = await this.whatsappService.getTemplatesForWaba(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      query,
-    );
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'Templates fetched successfully',
-      data: templates,
-    };
-  }
-
-  @Post('templates/:projectId')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async createTemplate(
-    @Param('projectId') projectId: string,
-    @Body() createTemplateDto: CreateTemplateDto,
-    @Id() adminId: string,
-  ) {
-    if (!mongoose.isValidObjectId(projectId)) {
-      throw new NotAcceptableException('Invalid Project ID');
-    }
-
-    await this.whatsappService.createTemplateForWaba(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      createTemplateDto,
-    );
-    return {
-      statusCode: HttpStatus.CREATED,
-      message: 'Template submitted for review successfully!',
-    };
-  }
-
   @Patch('templates/:projectId/:templateId')
   @UsePipes(new ValidationPipe({ transform: true }))
   async updateTemplate(
@@ -273,29 +208,6 @@ export class WhatsappController {
     return {
       statusCode: HttpStatus.OK,
       message: 'Template updated successfully!',
-      data: result,
-    };
-  }
-
-  @Delete('templates/:projectId')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async deleteTemplate(
-    @Param('projectId') projectId: string,
-    @Query() deleteTemplateDto: DeleteTemplateDto,
-    @Id() adminId: string,
-  ) {
-    if (!mongoose.isValidObjectId(projectId)) {
-      throw new NotAcceptableException('Invalid Project ID');
-    }
-
-    const result = await this.whatsappService.deleteTemplateForWaba(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      deleteTemplateDto,
-    );
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'Template deleted successfully!',
       data: result,
     };
   }
@@ -328,10 +240,33 @@ export class WhatsappController {
     @Body() sendTemplateDto: SendTemplateMessageDto,
     @Id() adminId: string,
   ) {
-    const result = await this.whatsappService.sendTemplateMessage(
-      new Types.ObjectId(`${adminId}`),
-      sendTemplateDto,
-    );
+    await this.whatsappService.checkVariableMappingLength({
+      adminId,
+      projectId: sendTemplateDto.projectId,
+      templateName: sendTemplateDto.templateName,
+      givenVariableLength: Array.isArray(sendTemplateDto.bodyVariables)
+        ? sendTemplateDto.bodyVariables.filter((a) => Boolean(a)).length
+        : 0,
+      headerMediaAssetId: sendTemplateDto.headerMediaAssetId,
+    });
+
+    const result = await this.whatsappService.sendTemplateMessagev2({
+      adminId,
+      sendTemplateDto: {
+        projectId: sendTemplateDto.projectId,
+        recipients: [
+          {
+            recipientPhoneNumber: sendTemplateDto.recipientPhoneNumber,
+            contactId: sendTemplateDto.contactId,
+            bodyVariables: sendTemplateDto.bodyVariables,
+          },
+        ],
+        templateName: sendTemplateDto.templateName,
+        headerMediaAssetId: sendTemplateDto.headerMediaAssetId,
+        language: sendTemplateDto.language,
+      },
+      messageType: WabaMessageType.INDIVIDUAL,
+    });
     return {
       statusCode: HttpStatus.OK,
       message: 'Template message sent successfully!',
@@ -346,7 +281,7 @@ export class WhatsappController {
     @Id() adminId: string,
   ) {
     const result = await this.whatsappService.sendBulkTemplateMessage(
-      new Types.ObjectId(`${adminId}`),
+      adminId,
       sendBulkTemplateDto,
     );
     return {
@@ -456,9 +391,7 @@ export class WhatsappController {
 
     try {
       // Normalize type filter if provided
-      const normalizedType = type
-        ? String(type).toLowerCase()
-        : undefined;
+      const normalizedType = type ? String(type).toLowerCase() : undefined;
 
       const result = await this.whatsappService.getMediaAssets(
         new Types.ObjectId(adminId),
@@ -603,5 +536,56 @@ export class WhatsappController {
       message: 'Direct message permission checked',
       data: result,
     };
+  }
+
+  @Get('media-proxy')
+  async proxyMedia(
+    @Id() adminId: string,
+    @Query('url') url: string,
+    @Query('projectId') projectId: string,
+    @Res() res: Response,
+  ) {
+    if (!url) {
+      throw new BadRequestException('Media URL is required');
+    }
+    if (!mongoose.isValidObjectId(projectId)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+    if (!mongoose.isValidObjectId(adminId)) {
+      throw new BadRequestException('Invalid admin ID');
+    }
+
+    try {
+      // Get project to retrieve access token
+      const project = await this.whatsappService['projectService'].findOne(
+        new Types.ObjectId(adminId),
+        new Types.ObjectId(projectId),
+      );
+
+      if (!project) {
+        throw new ForbiddenException('Project not found or access denied');
+      }
+
+      if (!project.permanentAccessToken) {
+        throw new BadRequestException('Project access token not configured');
+      }
+
+      // Proxy the media with authentication
+      const { data, contentType } = await this.whatsappService.proxyMedia(
+        url,
+        project.permanentAccessToken,
+      );
+
+      // Set appropriate headers and send the media
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', data.length);
+      res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+      res.send(data);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof ForbiddenException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException('Failed to proxy media', error);
+    }
   }
 }

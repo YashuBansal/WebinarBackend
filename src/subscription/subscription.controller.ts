@@ -46,7 +46,7 @@ export class SubscriptionController {
   @Patch('update')
   async updateSubscription(@Body() body: UpdatePlanDTO) {
     return await this.subscriptionService.updateClientPlan(
-      body.adminId,
+      body.email,
       body.planId,
       body.durationType,
     );
