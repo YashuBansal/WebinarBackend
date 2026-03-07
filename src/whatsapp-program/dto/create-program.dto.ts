@@ -14,6 +14,7 @@ import {
   IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IntervalUnit } from '../schemas/program.schema';
 
 export class ProgramTimeSlotDto {
   @IsString()
@@ -101,8 +102,8 @@ export class CreateProgramDto {
   @Min(1)
   intervalValue: number;
 
-  @IsEnum(['day', 'week'])
-  intervalUnit: 'day' | 'week';
+  @IsEnum(IntervalUnit)
+  intervalUnit: IntervalUnit;
 
   /** When intervalUnit is 'week', optional weekdays 1-7 (1=Mon .. 7=Sun). If present, total = occurrenceCount * weekdays.length */
   @IsOptional()
