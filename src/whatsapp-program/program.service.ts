@@ -763,7 +763,6 @@ export class ProgramService {
       const deletedSlots = await this.programSlotModel
         .deleteMany({
           programAssignmentId: assignment._id,
-          occurrenceIndex: { $gt: currentOccurrence },
           status: {
             $in: [ProgramSlotStatus.PENDING, ProgramSlotStatus.PAUSED],
           },
