@@ -73,6 +73,14 @@ export class Attendee extends Document {
   location: string;
 
   @Prop({
+    type: String,
+    maxlength: 100,
+    trim: true,
+    default: null,
+  })
+  profession: string | null;
+
+  @Prop({
     type: Types.ObjectId,
     ref: User.name,
     required: [true, 'adminId is required'],

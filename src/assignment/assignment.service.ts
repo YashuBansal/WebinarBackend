@@ -342,6 +342,7 @@ export class AssignmentService {
           gender: '$attendee.gender',
           location: '$attendee.location',
           phone: '$attendee.phone',
+          profession: '$attendee.profession',
           status: '$attendee.status',
           timeInSession: '$attendee.timeInSession',
           webinar: '$attendee.webinar',
@@ -368,6 +369,9 @@ export class AssignmentService {
           }),
           ...(filters.location && {
             location: { $regex: filters.location, $options: 'i' },
+          }),
+          ...(filters.profession && {
+            profession: { $regex: filters.profession, $options: 'i' },
           }),
           ...(filters.timeInSession && {
             timeInSession: filters.timeInSession,

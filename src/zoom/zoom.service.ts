@@ -2163,12 +2163,24 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         count: registrations?.registrants?.length || 0,
       });
       if (Array.isArray(registrations?.registrants))
-        return registrations.registrants.map((registrant) => ({
-          email: registrant.email,
-          phone: registrant.phone,
-          firstName: registrant.first_name,
-          lastName: registrant.last_name,
-        }));
+        return registrations.registrants.map((registrant) => {
+          const profession =
+            Array.isArray(registrant.custom_questions) &&
+            registrant.custom_questions.find(
+              (q: any) =>
+                q?.title &&
+                String(q.title).toLowerCase() === 'profession',
+            )?.value;
+          return {
+            email: registrant.email,
+            phone: registrant.phone,
+            firstName: registrant.first_name,
+            lastName: registrant.last_name,
+            ...(profession != null && String(profession).trim() !== ''
+              ? { profession: String(profession).trim() }
+              : {}),
+          };
+        });
     }
 
     return [];

@@ -42,6 +42,7 @@ export class WebinarWebhook {
     phone?: string;
     location?: string;
     gender?: string;
+    profession?: string;
     tags?: string;
     source?: string;
   };
@@ -53,6 +54,7 @@ export class WebinarWebhook {
     phone?: string;
     location?: string;
     gender?: string;
+    profession?: string;
     tags?: string;
     source?: string;
   };

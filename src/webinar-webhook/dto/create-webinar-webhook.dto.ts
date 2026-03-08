@@ -48,6 +48,7 @@ export class UpdateWebinarWebhookDto {
     phone?: string;
     location?: string;
     gender?: string;
+    profession?: string;
     tags?: string;
     source?: string;
   };
@@ -60,6 +61,7 @@ export class UpdateWebinarWebhookDto {
     phone?: string;
     location?: string;
     gender?: string;
+    profession?: string;
     tags?: string;
     source?: string;
   };

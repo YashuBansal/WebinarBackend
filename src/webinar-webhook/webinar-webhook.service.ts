@@ -381,6 +381,7 @@ export class WebinarWebhookService {
       phone?: string;
       location?: string;
       gender?: string;
+      profession?: string;
       tags?: string;
       source?: string;
     },
@@ -390,6 +391,7 @@ export class WebinarWebhookService {
       phone?: string;
       location?: string;
       gender?: string;
+      profession?: string;
       tags?: string;
       source?: string;
     },
@@ -405,6 +407,7 @@ export class WebinarWebhookService {
       phone: null,
       location: null,
       gender: null,
+      profession: null,
       tags: [],
       timeInSession: 0,
       isAttended: false,
@@ -486,6 +489,19 @@ export class WebinarWebhookService {
         if (['male', 'female', 'others'].includes(lowerGender)) {
           attendee.gender = lowerGender;
         }
+      }
+    }
+
+    // profession
+    if (staticValues?.profession) {
+      attendee.profession = staticValues.profession.trim() || null;
+    } else if (fieldMapping.profession) {
+      const profession = this.getNestedValue(
+        webhookData,
+        fieldMapping.profession,
+      );
+      if (profession && typeof profession === 'string') {
+        attendee.profession = profession.trim() || null;
       }
     }
 

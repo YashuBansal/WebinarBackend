@@ -303,11 +303,12 @@ export class ContactsService {
     // Apply filters
     if (filters) {
       if (filters.search) {
+        const escapedSearch = filters.search.replace(/[\\.*+?^${}()|[\]\\]/g, '\\$&');
         filter.$or = [
-          { firstName: { $regex: filters.search, $options: 'i' } },
-          { lastName: { $regex: filters.search, $options: 'i' } },
-          { email: { $regex: filters.search, $options: 'i' } },
-          { phone: { $regex: filters.search, $options: 'i' } },
+          { firstName: { $regex: escapedSearch, $options: 'i' } },
+          { lastName: { $regex: escapedSearch, $options: 'i' } },
+          { email: { $regex: escapedSearch, $options: 'i' } },
+          { phone: { $regex: escapedSearch, $options: 'i' } },
         ];
       }
 

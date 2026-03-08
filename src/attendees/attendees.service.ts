@@ -248,6 +248,7 @@ export class AttendeesService {
         let location = attendee.location || null;
         let source = attendee.source || null;
         let gender = attendee.gender || null;
+        let profession = attendee.profession ?? null;
         if (similarPreWebinarAttendeesMap.has(attendee.email)) {
           const preWebinarAttendee = similarPreWebinarAttendeesMap.get(
             attendee.email,
@@ -255,6 +256,7 @@ export class AttendeesService {
           location = location || preWebinarAttendee.location || null;
           source = source || preWebinarAttendee.source || null;
           gender = gender || preWebinarAttendee.gender || null;
+          profession = profession || preWebinarAttendee.profession || null;
         }
 
         return {
@@ -262,6 +264,7 @@ export class AttendeesService {
           location,
           source,
           gender,
+          profession,
         };
       });
     }
@@ -354,6 +357,7 @@ export class AttendeesService {
                   timeInSession: attendee.timeInSession || undefined,
                   location: attendee.location || undefined,
                   source: attendee.source || undefined,
+                  profession: attendee.profession || undefined,
                 },
               },
             },
@@ -960,6 +964,7 @@ export class AttendeesService {
             updatedAt: '$updatedAt', // Include updatedAt for reference
             tags: '$tags',
             location: '$location',
+            profession: '$profession',
             assignedToUserName: {
               $ifNull: [
                 {
@@ -1030,6 +1035,7 @@ export class AttendeesService {
       lastName: 1,
       leadType: 1,
       location: 1,
+      profession: 1,
       phone: 1,
       status: 1,
       timeInSession: 1,
@@ -1067,6 +1073,8 @@ export class AttendeesService {
           projectStage.$project['attendedCount'] = 1;
         } else if (field === 'registeredcount') {
           projectStage.$project['registeredCount'] = 1;
+        } else if (field === 'profession') {
+          projectStage.$project['profession'] = 1;
         } else {
           projectStage.$project[field] = 1;
         }
@@ -1282,6 +1290,9 @@ export class AttendeesService {
                 }),
                 ...(filters.location && {
                   location: { $regex: filters.location, $options: 'i' },
+                }),
+                ...(filters.profession && {
+                  profession: { $regex: filters.profession, $options: 'i' },
                 }),
                 //// Assume 'filters' is an object containing your filter criteria
                 // Assume 'queryObject' is what you'll pass to Model.find()
@@ -2429,6 +2440,9 @@ export class AttendeesService {
           sources: {
             $addToSet: '$source',
           },
+          professions: {
+            $addToSet: '$profession',
+          },
           phones: {
             $addToSet: {
               $cond: [
@@ -2472,6 +2486,12 @@ export class AttendeesService {
             filters.sources.length > 0 && {
               sources: {
                 $in: filters.sources.map((a) => a.toLowerCase()),
+              },
+            }),
+          ...(Array.isArray(filters.professions) &&
+            filters.professions.length > 0 && {
+              professions: {
+                $in: filters.professions.map((a) => a.toLowerCase()),
               },
             }),
         },
@@ -2812,6 +2832,7 @@ export class AttendeesService {
           registeredWebinarCount: 1,
           locations: 1,
           sources: 1,
+          professions: 1,
           phones: 1,
           fullNames: {
             $filter: {
@@ -3372,6 +3393,7 @@ export class AttendeesService {
           registeredWebinarCount: 1,
           locations: 1,
           sources: 1,
+          professions: 1,
           fullNames: {
             $filter: {
               input: '$fullNames',
@@ -3858,6 +3880,13 @@ export class AttendeesService {
           break;
 
         case 'location':
+          initialUnits.push({
+            ...unit,
+            fieldType: AdvanceFilterFieldType.STRING,
+          });
+          break;
+
+        case 'profession':
           initialUnits.push({
             ...unit,
             fieldType: AdvanceFilterFieldType.STRING,
@@ -4358,6 +4387,9 @@ export class AttendeesService {
             sources: {
               $addToSet: '$source',
             },
+            professions: {
+              $addToSet: '$profession',
+            },
             phones: {
               $addToSet: {
                 $cond: [
@@ -4473,6 +4505,7 @@ export class AttendeesService {
             registeredWebinarCount: 1,
             locations: 1,
             sources: 1,
+            professions: 1,
             phones: 1,
             fullNames: {
               $filter: {

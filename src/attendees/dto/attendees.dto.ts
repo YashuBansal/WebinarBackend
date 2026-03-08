@@ -67,6 +67,11 @@ export class CreateAttendeeDto {
   location?: string;
 
   @IsOptional()
+  @IsString({ message: 'Profession must be a string' })
+  @MaxLength(100, { message: 'Profession can be up to 100 characters long' })
+  profession?: string | null;
+
+  @IsOptional()
   @IsMongoId({ message: 'Admin ID must be a valid MongoId' })
   @IsNotEmpty({ message: 'Admin ID is required' })
   adminId: Types.ObjectId;
@@ -129,6 +134,11 @@ export class PreWebinarPostAttendeeDTO {
   @IsString({ message: 'Location must be a string' })
   @MaxLength(100, { message: 'Location can be up to 100 characters long' })
   location?: string;
+
+  @IsOptional()
+  @IsString({ message: 'Profession must be a string' })
+  @MaxLength(100, { message: 'Profession can be up to 100 characters long' })
+  profession?: string | null;
 
   @IsOptional()
   @IsMongoId({ message: 'Admin ID must be a valid MongoId' })
@@ -217,6 +227,11 @@ export class UpdateAttendeeDto {
   location?: string;
 
   @IsOptional()
+  @IsString({ message: 'Profession must be a string' })
+  @MaxLength(100, { message: 'Profession can be up to 100 characters long' })
+  profession?: string | null;
+
+  @IsOptional()
   @IsMongoId({ message: 'assignedTo must be a valid MongoId' })
   assignedTo?: Types.ObjectId;
 
@@ -278,6 +293,10 @@ export class AttendeesFilterDto {
   @IsOptional()
   @IsString()
   location?: string;
+
+  @IsOptional()
+  @IsString()
+  profession?: string;
 
   @IsOptional()
   @IsString()
@@ -379,6 +398,11 @@ export class GroupedAttendeesFilterDto {
   @IsArray()
   @IsString({ each: true })
   sources?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  professions?: string[];
 
   @IsOptional()
   @IsObject()
