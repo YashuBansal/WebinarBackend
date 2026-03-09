@@ -1875,6 +1875,19 @@ export class AttendeesService {
       );
     }
 
+    // Normalize profession so stored data is always trimmed + lowercase
+    if (Object.prototype.hasOwnProperty.call(updateAttendeeDto, 'profession')) {
+      const rawProfession = updateAttendeeDto.profession as unknown;
+      if (rawProfession === null || rawProfession === undefined) {
+        updateAttendeeDto.profession = null;
+      } else if (typeof rawProfession === 'string') {
+        const normalized = rawProfession.trim().toLowerCase();
+        updateAttendeeDto.profession = normalized.length ? normalized : null;
+      } else {
+        updateAttendeeDto.profession = null;
+      }
+    }
+
     // Example with adminId filter:
     const resultWithAdminFilter = await this.attendeeModel.findOneAndUpdate(
       {
@@ -2441,7 +2454,22 @@ export class AttendeesService {
             $addToSet: '$source',
           },
           professions: {
-            $addToSet: '$profession',
+            $addToSet: {
+              $let: {
+                vars: {
+                  p: {
+                    $toLower: {
+                      $trim: {
+                        input: { $ifNull: ['$profession', ''] },
+                      },
+                    },
+                  },
+                },
+                in: {
+                  $cond: [{ $ne: ['$$p', ''] }, '$$p', '$$REMOVE'],
+                },
+              },
+            },
           },
           phones: {
             $addToSet: {
@@ -2491,7 +2519,9 @@ export class AttendeesService {
           ...(Array.isArray(filters.professions) &&
             filters.professions.length > 0 && {
               professions: {
-                $in: filters.professions.map((a) => a.toLowerCase()),
+                $in: filters.professions
+                  .map((a) => (a || '').trim().toLowerCase())
+                  .filter((a) => a),
               },
             }),
         },
@@ -2832,7 +2862,13 @@ export class AttendeesService {
           registeredWebinarCount: 1,
           locations: 1,
           sources: 1,
-          professions: 1,
+          professions: {
+            $filter: {
+              input: '$professions',
+              as: 'p',
+              cond: { $and: [{ $ne: ['$$p', null] }, { $ne: ['$$p', ''] }] },
+            },
+          },
           phones: 1,
           fullNames: {
             $filter: {
@@ -4388,7 +4424,22 @@ export class AttendeesService {
               $addToSet: '$source',
             },
             professions: {
-              $addToSet: '$profession',
+              $addToSet: {
+                $let: {
+                  vars: {
+                    p: {
+                      $toLower: {
+                        $trim: {
+                          input: { $ifNull: ['$profession', ''] },
+                        },
+                      },
+                    },
+                  },
+                  in: {
+                    $cond: [{ $ne: ['$$p', ''] }, '$$p', '$$REMOVE'],
+                  },
+                },
+              },
             },
             phones: {
               $addToSet: {
@@ -4505,7 +4556,13 @@ export class AttendeesService {
             registeredWebinarCount: 1,
             locations: 1,
             sources: 1,
-            professions: 1,
+            professions: {
+              $filter: {
+                input: '$professions',
+                as: 'p',
+                cond: { $and: [{ $ne: ['$$p', null] }, { $ne: ['$$p', ''] }] },
+              },
+            },
             phones: 1,
             fullNames: {
               $filter: {

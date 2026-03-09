@@ -76,7 +76,14 @@ export class Attendee extends Document {
     type: String,
     maxlength: 100,
     trim: true,
+    lowercase: true,
     default: null,
+    set: (val: unknown) => {
+      if (val === null || val === undefined) return null;
+      if (typeof val !== 'string') return null;
+      const normalized = val.trim().toLowerCase();
+      return normalized.length ? normalized : null;
+    },
   })
   profession: string | null;
 
