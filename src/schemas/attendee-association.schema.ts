@@ -80,3 +80,4 @@ AttendeeAssociationSchema.pre('save', function (next) {
 });
 
 AttendeeAssociationSchema.index({ adminId: 1, email: 1, leadType: 1 });
+

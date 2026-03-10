@@ -112,5 +112,10 @@ ProgramSchema.pre('save', function (next) {
 
 ProgramSchema.index({ adminId: 1, projectId: 1 });
 ProgramSchema.index({ isDeleted: 1, isActive: 1 });
+/** At most one non-deleted program per admin with a given name */
+ProgramSchema.index(
+  { adminId: 1, name: 1 },
+  { unique: true, partialFilterExpression: { isDeleted: false } },
+);
 
 export { ProgramSchema };

@@ -43,6 +43,8 @@ import {
 import { CreateProgramDto } from './dto/create-program.dto';
 import { UpdateProgramDto } from './dto/update-program.dto';
 import { CreateProgramAssignmentDto } from './dto/create-program-assignment.dto';
+import { CreateProgramAssignmentByNameDto } from './dto/create-program-assignment-by-name.dto';
+import { CancelProgramAssignmentByNameDto } from './dto/cancel-program-assignment-by-name.dto';
 import { ProjectsService } from 'src/projects/projects.service';
 import {
   getBaseDateForOccurrence,
@@ -103,6 +105,33 @@ export class ProgramService {
       throw new BadRequestException(`Invalid assignment ID: "${assignmentId}"`);
     }
     return new Types.ObjectId(assignmentId);
+  }
+
+  /**
+   * Ensures no other non-deleted program exists for this admin with the same name.
+   * @param excludeProgramId When updating, pass current program _id to allow keeping the same name.
+   */
+  private async assertUniqueProgramName(
+    adminId: Types.ObjectId,
+    name: string,
+    excludeProgramId?: Types.ObjectId,
+  ): Promise<void> {
+    const trimmed = (name ?? '').trim();
+    if (!trimmed) return;
+    const filter: any = {
+      adminId,
+      name: trimmed,
+      isDeleted: false,
+    };
+    if (excludeProgramId) {
+      filter._id = { $ne: excludeProgramId };
+    }
+    const existing = await this.programModel.findOne(filter).exec();
+    if (existing) {
+      throw new ConflictException(
+        'A program with this name already exists. Choose a different name.',
+      );
+    }
   }
 
   /**
@@ -192,6 +221,10 @@ export class ProgramService {
       totalRequired,
       'occurrenceTimeSlots',
     );
+    await this.assertUniqueProgramName(
+      new Types.ObjectId(adminId),
+      dto.name ?? '',
+    );
     const program = new this.programModel({
       ...dto,
       adminId: new Types.ObjectId(adminId),
@@ -263,6 +296,15 @@ export class ProgramService {
           ) {
             throw new BadRequestException(
               `Program name must not exceed ${ProgramService.OCCURRENCE_CONFIG_MAX_NAME_LENGTH} characters`,
+            );
+          }
+          if (trimmed !== (program.name ?? '').trim()) {
+            const excludeId =
+              program._id != null ? new Types.ObjectId(String(program._id)) : undefined;
+            await this.assertUniqueProgramName(
+              new Types.ObjectId(adminId),
+              trimmed,
+              excludeId,
             );
           }
         }
@@ -449,6 +491,9 @@ export class ProgramService {
 
       program.isDeleted = true;
       program.isActive = false;
+      // When a program is cancelled/removed, ensure auto-assign is turned off.
+      program.isAutoAssignable = false;
+      program.autoAssignCriteria = null;
       await program.save({ session });
 
       const assignmentsToCancel = await this.programAssignmentModel
@@ -517,28 +562,32 @@ export class ProgramService {
       throw new BadRequestException('Invalid startAt date.');
     }
 
+    this.logger.log(`Creating ${dto.source} assignment for program ${dto.programId} with phone ${dto.phone} at ${startAt}`);
+
     // Auto assignment logic for shifting start date if slots would be missed today
     if (dto.source === ProgramAssignmentSource.AUTO) {
       const prog: any = program;
       const firstDaySlots = prog.occurrenceTimeSlots?.[0] || [];
+      this.logger.log(
+        `Auto-assign: first day slots count=${firstDaySlots.length}, timezone=${dto.timezone || 'UTC'}`,
+      );
       if (firstDaySlots.length > 0) {
-        // get current time in attendee's timezone
-        const formatter = new Intl.DateTimeFormat('en-US', {
-          timeZone: dto.timezone || 'UTC',
-          hour12: false,
-          hourCycle: 'h23',
-          hour: '2-digit',
-          minute: '2-digit',
+        const now = new Date();
+        // Compare in UTC: slot time is in slot.timezone; compute UTC instant for first day and compare with now
+        const missedAny = firstDaySlots.some((slot) => {
+          if (!slot.time?.trim() || !(slot.timezone || dto.timezone)?.trim()) return false;
+          const tz = slot.timezone || dto.timezone || 'UTC';
+          const scheduledAtUTC = getScheduledAtUTC(startAt, slot.time, tz);
+          const missed = scheduledAtUTC < now;
+          this.logger.log(
+            `Slot time=${slot.time} tz=${tz} -> scheduledAtUTC=${scheduledAtUTC.toISOString()} now=${now.toISOString()} missed=${missed}`,
+          );
+          return missed;
         });
-        const nowInTimezone = formatter.format(new Date());
-
-        // if any slot is earlier than nowInTimezone, we shift startAt to tomorrow 00:00:00 natively
-        const missedAny = firstDaySlots.some(
-          (slot) => slot.time < nowInTimezone,
-        );
+        this.logger.log(`Auto-assign: missedAny=${missedAny} for phone=${dto.phone}`);
         if (missedAny) {
           this.logger.log(
-            `Shifting auto-assignment to next day for ${dto.phone} due to missed slots (now: ${nowInTimezone}).`,
+            `Shifting auto-assignment to next day for ${dto.phone} due to missed slots.`,
           );
 
           const tomorrowDate = new Date(
@@ -595,6 +644,45 @@ export class ProgramService {
     }
 
     return savedAssignment;
+  }
+
+  async createAssignmentByProgramName(
+    dto: CreateProgramAssignmentByNameDto,
+    adminId: string,
+  ): Promise<ProgramAssignment> {
+    const trimmedName = (dto.programName ?? '').trim();
+    if (!trimmedName) {
+      throw new BadRequestException('Program name is required');
+    }
+
+    const adminObjectId = new Types.ObjectId(adminId);
+
+    const program = await this.programModel.findOne({
+      adminId: adminObjectId,
+      name: trimmedName,
+      isDeleted: false,
+      isActive: true,
+    });
+
+    if (!program) {
+      throw new NotFoundException(
+        `Program with name "${trimmedName}" not found or inactive.`,
+      );
+    }
+
+    const now = new Date().toISOString();
+
+    const internalDto: CreateProgramAssignmentDto = {
+      programId: program._id.toString(),
+      projectId: program.projectId.toString(),
+      startAt: now,
+      timezone: 'UTC',
+      phone: dto.phone,
+      dynamicVariables: dto.variables ?? {},
+      source: ProgramAssignmentSource.AUTO,
+    };
+
+    return this.createAssignment(internalDto, adminId);
   }
 
   private buildProgramSlotsForAssignment(
@@ -1336,6 +1424,44 @@ export class ProgramService {
     );
 
     return assignment;
+  }
+
+  async cancelAssignmentByProgramName(
+    dto: CancelProgramAssignmentByNameDto,
+    adminId: string,
+  ): Promise<ProgramAssignment> {
+    const trimmedName = (dto.programName ?? '').trim();
+    if (!trimmedName) {
+      throw new BadRequestException('Program name is required');
+    }
+
+    const adminObjectId = new Types.ObjectId(adminId);
+
+    const program = await this.programModel.findOne({
+      adminId: adminObjectId,
+      name: trimmedName,
+      isDeleted: false,
+    });
+
+    if (!program) {
+      throw new NotFoundException(
+        `Program with name "${trimmedName}" not found.`,
+      );
+    }
+
+    const assignment = await this.programAssignmentModel.findOne({
+      programId: program._id,
+      adminId: adminObjectId,
+      phone: dto.phone,
+    });
+
+    if (!assignment) {
+      throw new NotFoundException(
+        `Assignment for phone "${dto.phone}" on program "${trimmedName}" not found.`,
+      );
+    }
+
+    return this.cancelAssignment(assignment._id.toString(), adminId);
   }
 
   async getAssignmentById(

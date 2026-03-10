@@ -14,6 +14,8 @@ import { ProgramService } from './program.service';
 import { CreateProgramDto } from './dto/create-program.dto';
 import { UpdateProgramDto } from './dto/update-program.dto';
 import { CreateProgramAssignmentDto } from './dto/create-program-assignment.dto';
+import { CreateProgramAssignmentByNameDto } from './dto/create-program-assignment-by-name.dto';
+import { CancelProgramAssignmentByNameDto } from './dto/cancel-program-assignment-by-name.dto';
 import { Id } from '../decorators/custom.decorator';
 
 @Controller('whatsapp-program')
@@ -65,6 +67,24 @@ export class ProgramController {
     @Id() adminId: string,
   ) {
     return this.programService.createAssignment(dto, adminId);
+  }
+
+  @Post('assignments/by-name')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  createAssignmentByName(
+    @Body() dto: CreateProgramAssignmentByNameDto,
+    @Id() adminId: string,
+  ) {
+    return this.programService.createAssignmentByProgramName(dto, adminId);
+  }
+
+  @Post('assignments/cancel-by-name')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  cancelAssignmentByName(
+    @Body() dto: CancelProgramAssignmentByNameDto,
+    @Id() adminId: string,
+  ) {
+    return this.programService.cancelAssignmentByProgramName(dto, adminId);
   }
 
   @Get('assignments/list')
