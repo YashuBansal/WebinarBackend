@@ -48,6 +48,10 @@ export class CreatePlansDto {
   @Min(0, { message: 'Minimum value is 0' })
   zoomProjectLimit: number;
 
+  @IsNumber()
+  @Min(0, { message: 'Minimum value is 0' })
+  webinarLimit: number;
+
   @IsEnum(PlanType)
   planType: PlanType;
 

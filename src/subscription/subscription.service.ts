@@ -80,6 +80,7 @@ export class SubscriptionService {
       toggleLimit: number;
       contactLimit: number;
       employeeLimit: number;
+      webinarLimit?: number;
     };
   }): Promise<any> {
     const result = await this.SubscriptionModel.updateMany(
@@ -109,6 +110,16 @@ export class SubscriptionService {
 
     if (!subscription) {
       throw new NotFoundException('Subscription not found for the given admin');
+    }
+
+    // Backfill webinarLimit for legacy subscriptions that predate the field
+    if (
+      (!subscription.webinarLimit && subscription.webinarLimit !== 0) &&
+      (subscription as any).plan &&
+      typeof (subscription as any).plan.webinarLimit === 'number'
+    ) {
+      subscription.webinarLimit = (subscription as any).plan.webinarLimit;
+      await subscription.save();
     }
 
     // If there is no expiry date or it's invalid / in the past, deactivate the user
@@ -146,6 +157,25 @@ export class SubscriptionService {
     }
 
     return updatedSubscription;
+  }
+
+  async updateWebinarLimitAddon(
+    adminId: string,
+    webinarLimitAddon: number,
+  ): Promise<Subscription> {
+    const adminObjectId = new Types.ObjectId(adminId);
+
+    const updated = await this.SubscriptionModel.findOneAndUpdate(
+      { admin: adminObjectId },
+      { $set: { webinarLimitAddon } },
+      { new: true },
+    );
+
+    if (!updated) {
+      throw new BadRequestException('Subscription not found');
+    }
+
+    return updated;
   }
 
   async getUpcomingExpiry(): Promise<Subscription[]> {
@@ -385,6 +415,7 @@ export class SubscriptionService {
     subscription.contactLimit = plan.contactLimit;
     subscription.employeeLimit = plan.employeeCount;
     subscription.toggleLimit = plan.toggleLimit;
+    subscription.webinarLimit = plan.webinarLimit;
 
     const { totalWithGST, itemAmount, discountAmount, gst } =
       this.generatePriceForPlan(durationConfig);

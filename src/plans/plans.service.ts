@@ -116,6 +116,7 @@ export class PlansService {
         toggleLimit: updatePlanDto.toggleLimit,
         contactLimit: updatePlanDto.contactLimit,
         employeeLimit: updatePlanDto.employeeCount,
+        webinarLimit: updatePlanDto.webinarLimit,
       },
     });
     return plan;

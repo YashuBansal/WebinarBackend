@@ -35,6 +35,10 @@ export class UpdateUserInfoDto {
 
   @IsOptional()
   @IsString()
+  webinarLimitAddon?: string;
+
+  @IsOptional()
+  @IsString()
   password?: string;
 
   @IsOptional()

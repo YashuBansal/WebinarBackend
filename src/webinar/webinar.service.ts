@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  NotAcceptableException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
@@ -54,6 +55,37 @@ export class WebinarService {
   ) {}
 
   async createWebiar(createWebinarDto: CreateWebinarDto): Promise<any> {
+    const adminId = createWebinarDto.adminId;
+    if (!adminId || !Types.ObjectId.isValid(adminId)) {
+      throw new BadRequestException('Invalid admin id');
+    }
+
+    const subscription: any = await this.subscriptionService.getSubscription(
+      adminId,
+    );
+
+    if (subscription?.isExpired?.()) {
+      throw new NotAcceptableException(
+        'Your subscription has expired. Please renew your subscription to continue.',
+      );
+    }
+
+    const baseWebinarLimit =
+      Number(subscription?.webinarLimit ?? subscription?.plan?.webinarLimit) ||
+      0;
+    const webinarLimitAddon = Number(subscription?.webinarLimitAddon ?? 0);
+    const effectiveWebinarLimit = baseWebinarLimit + webinarLimitAddon;
+
+    if (effectiveWebinarLimit > 0) {
+      const usedWebinars = await this.webinarModel.countDocuments({
+        adminId: new Types.ObjectId(adminId),
+      });
+
+      if (usedWebinars >= effectiveWebinarLimit) {
+        throw new NotAcceptableException('Webinar Limit Exceeded');
+      }
+    }
+
     // Trim and check if a webinar with the same name already exists (case-insensitive)
     const trimmedWebinarName = createWebinarDto.webinarName.trim();
     const escapedWebinarName = trimmedWebinarName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

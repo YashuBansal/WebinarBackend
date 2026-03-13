@@ -35,6 +35,11 @@ export class SubscriptionDto {
   @IsNotEmpty({ message: 'Toggle limit is required.' })
   toggleLimit: number;
 
+  @IsOptional()
+  @IsInt({ message: 'Webinar limit must be an integer value.' })
+  @Min(0, { message: 'Webinar limit cannot be less than 0.' })
+  webinarLimit?: number;
+
   @IsNumber()
   @IsOptional()
   expiryDate?: number;
@@ -55,6 +60,11 @@ export class UpdateSubscriptionDto {
   @Min(0, { message: 'Toggle limit cannot be less than 0.' })
   @IsNotEmpty({ message: 'Toggle limit is required.' })
   toggleLimit?: number;
+
+  @IsOptional()
+  @IsInt({ message: 'Webinar limit addon must be an integer value.' })
+  @Min(0, { message: 'Webinar limit addon cannot be less than 0.' })
+  webinarLimitAddon?: number;
 
   @IsOptional()
   @IsNumber()
@@ -95,6 +105,16 @@ export class AddAddOnDTO {
   @IsNotEmpty()
   @IsMongoId()
   addonId: string;
+}
+
+export class UpdateWebinarLimitDTO {
+  @IsNotEmpty()
+  @IsMongoId()
+  adminId: string;
+
+  @IsInt({ message: 'Webinar limit addon must be an integer value.' })
+  @Min(0, { message: 'Webinar limit addon cannot be less than 0.' })
+  webinarLimitAddon: number;
 }
 
 export class ValidateUserEligibilityDTO {

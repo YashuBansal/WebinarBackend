@@ -344,6 +344,8 @@ export class UsersService implements OnModuleInit {
                 startDate: 1,
                 expiryDate: 1,
                 toggleLimit: 1,
+                webinarLimit: 1,
+                webinarLimitAddon: 1,
                 contactLimitTotal: {
                   $add: ['$contactLimit', '$contactLimitAddon'],
                 },
@@ -377,6 +379,10 @@ export class UsersService implements OnModuleInit {
           planStartDate: '$subscription.startDate',
           planExpiry: '$subscription.expiryDate',
           toggleLimit: '$subscription.toggleLimit',
+          webinarLimitAddon: '$subscription.webinarLimitAddon',
+          webinarLimitTotal: {
+            $add: ['$subscription.webinarLimit', '$subscription.webinarLimitAddon'],
+          },
           totalEmployees: { $size: '$employees' },
           employeeSalesCount: {
             $size: {
@@ -470,6 +476,8 @@ export class UsersService implements OnModuleInit {
           employeeLimit: '$subscription.employeeLimitTotal',
           remainingDays: 1,
           dateFormat: 1,
+          webinarLimitTotal: 1,
+          webinarLimitAddon: 1,
         },
       },
     ];
@@ -666,6 +674,19 @@ export class UsersService implements OnModuleInit {
       await this.subscriptionService.updateSubscriptionExpiryDate(
         result._id as Types.ObjectId,
         planExpiryDate,
+      );
+    }
+
+    if (
+      result &&
+      typeof updateUserInfoDto.webinarLimitAddon !== 'undefined' &&
+      updateUserInfoDto.webinarLimitAddon !== null
+    ) {
+      const parsedAddon = Number(updateUserInfoDto.webinarLimitAddon);
+      const safeAddon = Number.isFinite(parsedAddon) && parsedAddon >= 0 ? parsedAddon : 0;
+      await this.subscriptionService.updateWebinarLimitAddon(
+        String(result._id),
+        safeAddon,
       );
     }
 
@@ -1175,6 +1196,7 @@ export class UsersService implements OnModuleInit {
         contactLimit: plan.contactLimit,
         employeeLimit: plan.employeeCount,
         toggleLimit: plan.toggleLimit,
+        webinarLimit: plan.webinarLimit,
         expiryDate: currentPlanExpiry,
       };
 

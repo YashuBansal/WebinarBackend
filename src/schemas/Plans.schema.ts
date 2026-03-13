@@ -78,6 +78,14 @@ export class Plans extends Document {
   })
   zoomProjectLimit: number;
 
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0,
+    required: [true, 'Webinar Limit is required'],
+  })
+  webinarLimit: number;
+
   @Prop({ type: Map, of: MongooseSchema.Types.Mixed, required: true })
   attendeeTableConfig: Map<string, any>;
 

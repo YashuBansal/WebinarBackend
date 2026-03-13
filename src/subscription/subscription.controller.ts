@@ -5,6 +5,7 @@ import {
   AddAddOnDTO,
   UpdateExpiryDateDTO,
   UpdatePlanDTO,
+  UpdateWebinarLimitDTO,
   ValidateUserEligibilityDTO,
 } from './dto/subscription.dto';
 import { Types } from 'mongoose';
@@ -60,6 +61,14 @@ export class SubscriptionController {
     return await this.subscriptionService.updateSubscriptionExpiryDate(
       adminId,
       expiryDate,
+    );
+  }
+
+  @Patch('webinar-limit')
+  async updateWebinarLimitAddon(@Body() body: UpdateWebinarLimitDTO) {
+    return await this.subscriptionService.updateWebinarLimitAddon(
+      body.adminId,
+      body.webinarLimitAddon,
     );
   }
 }

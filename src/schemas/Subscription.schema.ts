@@ -50,6 +50,22 @@ export class Subscription extends Document {
     default: 0,
     required: false,
   })
+  webinarLimit: number;
+
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0,
+    required: false,
+  })
+  webinarLimitAddon: number;
+
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0,
+    required: false,
+  })
   employeeLimitAddon: number; // Employee limit add-on
 
   @Prop({
