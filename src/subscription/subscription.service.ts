@@ -3,6 +3,7 @@ import {
   forwardRef,
   Inject,
   Injectable,
+  Logger,
   NotAcceptableException,
   NotFoundException,
 } from '@nestjs/common';
@@ -19,7 +20,6 @@ import { UsersService } from 'src/users/users.service';
 import {
   BillingType,
   DurationType,
-  monthMultiplier,
 } from 'src/schemas/BillingHistory.schema';
 import { PlanDurationConfig, Plans } from 'src/schemas/Plans.schema';
 import { ConfigService } from '@nestjs/config';
@@ -28,7 +28,7 @@ import { ConfigService } from '@nestjs/config';
 export class SubscriptionService {
   GST_VALUE: number = 0;
   HEADER_LABEL: string | undefined = undefined;
-
+  private readonly logger = new Logger(SubscriptionService.name);
   constructor(
     @InjectModel(Subscription.name)
     private SubscriptionModel: Model<Subscription>,
@@ -62,6 +62,33 @@ export class SubscriptionService {
   async addSubscription(subscriptionDto: SubscriptionDto): Promise<any> {
     const result = await this.SubscriptionModel.create(subscriptionDto);
     return result;
+  }
+
+  async updateSubscriptionContactCount(){
+    const data = await this.attendeesService.getRemainingContacts();
+
+
+    if (Array.isArray(data) && data.length > 0) {
+      data.forEach(async (entry) => {
+        this.logger.log(`Updating contact count${entry.counts} for admin ${entry._id}`);
+      });
+
+      const operations = data.map((entry) => ({
+        updateOne: {
+          filter: { admin: entry._id },
+          update: {
+            $set: {
+              contactCount: entry.counts ?? 0,
+            },
+          },
+        },
+      }));
+
+      if (operations.length > 0) {
+        const result = await this.SubscriptionModel.bulkWrite(operations, { ordered: false });
+        this.logger.log(`Updated ${result} contacts for admins`);
+      }
+    }
   }
 
   async getGSTValue() {
@@ -464,7 +491,7 @@ export class SubscriptionService {
   async updateContactCount(
     adminId: Types.ObjectId,
     count: number,
-    session: ClientSession,
+    session?: ClientSession,
   ) {
     return this.SubscriptionModel.updateOne(
       { admin: adminId },
@@ -784,60 +811,12 @@ export class SubscriptionService {
   }
 
   async revalidateUsedContactCountsOfAdmin(adminId: Types.ObjectId) {
-    const pipeline: PipelineStage[] = [
-      {
-        $lookup: {
-          from: 'attendees',
-          let: { adminId: adminId },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $eq: ['$adminId', '$$adminId'],
-                },
-              },
-            },
-            {
-              $group: {
-                _id: '$email',
-              },
-            },
-            {
-              $count: 'total',
-            },
-          ],
-          as: 'attendeeCount',
-        },
-      },
-      {
-        $unwind: {
-          path: '$attendeeCount',
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $set: {
-          contactCount: {
-            $ifNull: ['$attendeeCount.total', 0],
-          },
-        },
-      },
-      {
-        $project: {
-          attendeeCount: 0,
-        },
-      },
-      {
-        $merge: {
-          into: 'subscriptions',
-          on: '_id',
-          whenMatched: 'merge',
-          whenNotMatched: 'discard',
-        },
-      },
-    ];
+    const usedContacts = await this.attendeesService.getNonUniqueAttendeesCount(
+      [],
+      adminId,
+    );
 
-    return this.SubscriptionModel.aggregate(pipeline).exec();
+    return this.updateContactCount(adminId, usedContacts);
   }
 
   async validateUserEligibility(

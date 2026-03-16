@@ -28,7 +28,7 @@ export class CronService implements OnModuleInit {
     await this.everyDayJobs();
   }
 
-  @Cron(CronExpression.EVERY_WEEK)
+  @Cron(CronExpression.EVERY_QUARTER)
   async handleRevalidateUsedContactCounts(): Promise<void> {
     await this.everyWeekJobs();
   }
@@ -66,7 +66,7 @@ export class CronService implements OnModuleInit {
 
   async everyWeekJobs() {
     this.logger.log('Revalidating used contact counts...');
-    await this.subscriptionService.revalidateUsedContactCounts();
+    await this.subscriptionService.updateSubscriptionContactCount();
   }
 
   async everyDayJobs() {

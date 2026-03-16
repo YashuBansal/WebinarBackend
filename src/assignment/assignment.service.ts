@@ -1245,9 +1245,13 @@ export class AssignmentService {
     }
 
     // Check subscription validity and attendee limits
+    const effectiveContactLimit =
+      (subscription.contactLimit || 0) +
+      (subscription.contactLimitAddon || 0);
+
     if (
       subscription.expiryDate < new Date() || // Subscription expired
-      subscription.contactLimit <= subscription.contactCount // Contact limit reached
+      effectiveContactLimit <= (subscription.contactCount || 0) // Contact limit reached
     ) {
       throw new ForbiddenException(
         'Contact limit reached or subscription expired.',
@@ -1357,8 +1361,8 @@ export class AssignmentService {
     }
 
     if (attendeeCount === 0) {
-      await this.subscriptionService.incrementContactCount(
-        subscription._id.toString(),
+      await this.subscriptionService.revalidateUsedContactCountsOfAdmin(
+        new Types.ObjectId(`${adminId}`),
       );
     }
 

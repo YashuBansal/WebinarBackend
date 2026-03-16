@@ -700,6 +700,18 @@ export class WebinarService {
           `Upserted attendee ${normalizedEmail} for webinar: ${webinar.webinarName} (action: ${action})`,
         );
 
+        try {
+          await this.subscriptionService.revalidateUsedContactCountsOfAdmin(
+            webinar.adminId as Types.ObjectId,
+          );
+        } catch (e) {
+          this.logger.error(
+            `Failed to revalidate contactCount for admin ${webinar.adminId}: ${
+              (e as Error)?.message || e
+            }`,
+          );
+        }
+
         return { webinar, action, attendee };
       };
 

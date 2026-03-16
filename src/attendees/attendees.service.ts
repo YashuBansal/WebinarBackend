@@ -5,7 +5,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
-  NotFoundException, 
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -122,6 +122,24 @@ export class AttendeesService {
     return attendees;
   }
 
+  async getRemainingContacts(): Promise<{ _id: Types.ObjectId; counts: number }[]> {
+    const pipeline: PipelineStage[] = [
+      {
+        $group: {
+          _id: '$adminId',
+          emails: { $addToSet: '$email' },
+        },
+      },
+      {
+        $project: {
+          counts: { $size: '$emails' },
+        },
+      },
+    ];
+
+    return this.attendeeModel.aggregate(pipeline);
+  }
+
   async addAttendees(attendees: [PreWebinarPostAttendeeDTO]): Promise<any> {
     const result = await this.attendeeModel.create(attendees);
     return result;
@@ -152,10 +170,12 @@ export class AttendeesService {
     const subscription =
       await this.subscriptionService.getSubscription(adminId);
 
-    const contactCountDiff =
-      subscription.contactLimit - subscription.contactCount;
+    const effectiveContactLimit =
+      (subscription.contactLimit || 0) + (subscription.contactLimitAddon || 0);
+    const usedContacts = subscription.contactCount || 0;
+    const remainingContacts = effectiveContactLimit - usedContacts;
 
-    if (contactCountDiff <= 0) {
+    if (remainingContacts <= 0) {
       throw new BadRequestException('Contact Limit Exceeded');
     }
     // Sanitize incoming phone numbers: keep only numeric characters
@@ -308,7 +328,7 @@ export class AttendeesService {
     updateProgress(25);
     const uniqueEmailsCount = tempAttendees.length - nonUniqueEmailCount;
 
-    if (uniqueEmailsCount > contactCountDiff) {
+    if (uniqueEmailsCount > remainingContacts) {
       throw new BadRequestException('Contact Limit Exceeded');
     }
 
@@ -3607,8 +3627,10 @@ export class AttendeesService {
     });
 
     // Construct fullName, filtering out undefined/null values
-    const cleanFirstName = firstName && firstName !== 'undefined' ? firstName.trim() : '';
-    const cleanLastName = lastName && lastName !== 'undefined' ? lastName.trim() : '';
+    const cleanFirstName =
+      firstName && firstName !== 'undefined' ? firstName.trim() : '';
+    const cleanLastName =
+      lastName && lastName !== 'undefined' ? lastName.trim() : '';
     const fullName = [cleanFirstName, cleanLastName].filter(Boolean).join(' ');
 
     await this.attendeeAssociationService.addFullNamesAndPhonesToAssociation({
@@ -3620,12 +3642,16 @@ export class AttendeesService {
     });
 
     // Fetch attendee after upsert for logging
-    const attendee = await this.attendeeModel.findOne(query).populate('webinar');
+    const attendee = await this.attendeeModel
+      .findOne(query)
+      .populate('webinar');
 
     // Create attendee log (best-effort) when attendee exists
     if (attendee) {
       try {
-        this.logger.log(`Creating attendee log for Zoom registration upsert: ${attendee.email} for webinar ${(attendee.webinar as any)?.webinarName}`);
+        this.logger.log(
+          `Creating attendee log for Zoom registration upsert: ${attendee.email} for webinar ${(attendee.webinar as any)?.webinarName}`,
+        );
         await this.attendeeLogService.createSingleAttendeeLog({
           attendee: attendee.email,
           action: AttendeeAction.REGISTERED,
@@ -3958,21 +3984,21 @@ export class AttendeesService {
           });
           break;
 
-        case "tags":
+        case 'tags':
           initialUnits.push({
             ...unit,
             fieldType: AdvanceFilterFieldType.STRING,
           });
           break;
 
-        case "registeredCount":
+        case 'registeredCount':
           initialUnits.push({
             ...unit,
             fieldType: AdvanceFilterFieldType.NUMBER,
           });
           break;
-          
-        case "attendedCount":
+
+        case 'attendedCount':
           initialUnits.push({
             ...unit,
             fieldType: AdvanceFilterFieldType.NUMBER,
@@ -4024,9 +4050,7 @@ export class AttendeesService {
 
       // Convert webinarIds to ObjectId array for MongoDB $in query
       // Supports multiple webinars per campaign with a single global attendance segment
-      const webinarObjectIds = webinarIds.map(
-        (id) => new Types.ObjectId(id),
-      );
+      const webinarObjectIds = webinarIds.map((id) => new Types.ObjectId(id));
 
       // Get filter conditions from advance filters
       const { initialMatch } = await this.preParseFilterClasses(payload);
@@ -4040,7 +4064,6 @@ export class AttendeesService {
         webinar: { $in: webinarObjectIds },
         isAttended,
       };
-
 
       const basePipeline: PipelineStage[] = [
         {
@@ -4154,8 +4177,8 @@ export class AttendeesService {
           $project: {
             attendeeAssociations: 0,
             attendanceHistory: 0,
-          }
-        }
+          },
+        },
       ];
 
       // Build count pipeline (always needed for accurate count)
@@ -4205,9 +4228,7 @@ export class AttendeesService {
     adminId: string,
   ) {
     try {
-      const {
-        responseType = AdvanceFilterResponseType.DATA,
-      } = payload;
+      const { responseType = AdvanceFilterResponseType.DATA } = payload;
 
       // Validate adminId
       if (!mongoose.isValidObjectId(adminId)) {
@@ -4227,8 +4248,6 @@ export class AttendeesService {
         adminId: adminObjectId,
         isDeleted: { $ne: true },
       };
-
-     
 
       // First apply the same enrichment lookups as fetchAttendeesByAdvanceFilters,
       // then aggregate/group by email similar to fetchGroupedAttendees.
@@ -4445,10 +4464,7 @@ export class AttendeesService {
               $addToSet: {
                 $cond: [
                   {
-                    $and: [
-                      { $ne: ['$phone', null] },
-                      { $ne: ['$phone', ''] },
-                    ],
+                    $and: [{ $ne: ['$phone', null] }, { $ne: ['$phone', ''] }],
                   },
                   '$phone',
                   '$$REMOVE',
@@ -4471,8 +4487,6 @@ export class AttendeesService {
           },
         },
       ];
-
-    
 
       // Build count pipeline (count distinct grouped contacts)
       const countPipeline: PipelineStage[] = [
@@ -4587,10 +4601,7 @@ export class AttendeesService {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      console.error(
-        'Error in fetchGroupedAttendeesByAdvanceFilters:',
-        error,
-      );
+      console.error('Error in fetchGroupedAttendeesByAdvanceFilters:', error);
       throw new InternalServerErrorException(
         'Failed to fetch grouped attendees by advance filters',
       );
