@@ -8,14 +8,13 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { InterestPoolSettingsService } from './interest-pool-settings.service';
-import { AuthTokenGuard } from 'src/guards/authToken.guard';
+import { Id } from 'src/decorators/custom.decorator';
 
 class UpdateInterestPoolSettingsDto {
   accountId: string;
   accessToken: string;
 }
 
-@UseGuards(AuthTokenGuard)
 @Controller('interest-pool/settings')
 export class InterestPoolSettingsController {
   constructor(
@@ -23,13 +22,7 @@ export class InterestPoolSettingsController {
   ) {}
 
   @Get()
-  async getMySettings(@Req() req: Request) {
-    const user = (req as any).user;
-    const userId = user?._id || user?.id;
-    if (!userId) {
-      return null;
-    }
-
+  async getMySettings(@Id() userId: string) {
     const settings = await this.interestPoolSettingsService.getForUser(
       String(userId),
     );
@@ -46,11 +39,9 @@ export class InterestPoolSettingsController {
 
   @Put()
   async updateMySettings(
-    @Req() req: Request,
+    @Id() userId: string,
     @Body() body: UpdateInterestPoolSettingsDto,
   ) {
-    const user = (req as any).user;
-    const userId = user?._id || user?.id;
     if (!userId) {
       throw new Error('Unauthorized');
     }
