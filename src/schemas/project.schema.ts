@@ -43,6 +43,23 @@ export class Project {
     type: String,
   })
   permanentAccessToken: string;
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  isDeleted: boolean;
+
+  @Prop({
+    type: Date,
+  })
+  deletedAt?: Date;
+
+  @Prop({
+    type: String,
+  })
+  deletedReason?: string;
 }
 
 export const ProjectSchema = SchemaFactory.createForClass(Project);
+ProjectSchema.index({ adminId: 1, projectName: 1, isDeleted: 1 });

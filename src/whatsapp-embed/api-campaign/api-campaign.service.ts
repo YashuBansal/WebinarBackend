@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   Logger,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
@@ -18,6 +19,7 @@ import { ExecuteApiCampaignDto } from './dto/execute-api-campaign.dto';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { WabaMessageType } from '../waba-message/waba-message.schema';
 import { WabaMessageService } from '../waba-message/waba-message.service';
+import { ProjectsService } from 'src/projects/projects.service';
 
 @Injectable()
 export class ApiCampaignService {
@@ -28,6 +30,7 @@ export class ApiCampaignService {
     private apiCampaignModel: Model<ApiCampaignDocument>,
     private readonly whatsappService: WhatsappService,
     private readonly wabaMessageService: WabaMessageService,
+    private readonly projectsService: ProjectsService,
   ) {}
 
   async create(
@@ -48,7 +51,19 @@ export class ApiCampaignService {
     });
 
     if (existingCampaign) {
-      throw new BadRequestException('Campaign name already exists');
+      throw new ConflictException('Campaign name already exists');
+    }
+
+    // Ensure project exists and is not soft-deleted before creating an API campaign
+    const project = await this.projectsService.findOne(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+    );
+    if (!project || (project as any).isDeleted) {
+      this.logger.warn(
+        `Attempt to create API campaign for deleted or missing project ${projectId} by admin ${adminId}`,
+      );
+      throw new BadRequestException('Project is deleted or not accessible');
     }
 
     await this.whatsappService.checkVariableMappingLength({
@@ -98,6 +113,7 @@ export class ApiCampaignService {
   ): Promise<PaginatedApiCampaignsResponseDto> {
     const filter: any = {
       adminId: new Types.ObjectId(adminId),
+      isDeleted: false,
     };
 
     if (projectId) {
@@ -316,6 +332,18 @@ export class ApiCampaignService {
       throw new BadRequestException(
         'Campaign template is missing a valid template name',
       );
+    }
+
+    // Ensure project exists and is not soft-deleted before executing API campaign
+    const project = await this.projectsService.findOne(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(apiCampaign.project),
+    );
+    if (!project || (project as any).isDeleted) {
+      this.logger.warn(
+        `Skipping API campaign "${campaignName}" execution because project ${apiCampaign.project} is deleted or inaccessible`,
+      );
+      throw new BadRequestException('Project is deleted or not accessible');
     }
 
     // Fetch template data from Meta to get the language

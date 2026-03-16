@@ -54,6 +54,18 @@ export class CampaignService {
     createCampaignDto: CreateCampaignDto,
     adminId: string,
   ): Promise<Campaign> {
+    // Ensure project exists and is not soft-deleted before creating a campaign
+    const project = await this.projectService.findOne(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(createCampaignDto.projectId),
+    );
+    if (!project || (project as any).isDeleted) {
+      this.logger.warn(
+        `Attempt to create campaign for deleted or missing project ${createCampaignDto.projectId} by admin ${adminId}`,
+      );
+      throw new BadRequestException('Project is deleted or not accessible');
+    }
+
     const campaign = new this.campaignModel({
       ...createCampaignDto,
       adminId: new Types.ObjectId(adminId),
@@ -90,6 +102,18 @@ export class CampaignService {
       givenVariableLength: variableMappings.length,
       headerMediaAssetId: headerMediaAssetId,
     });
+
+    // Ensure project exists and is not soft-deleted before creating/scheduling a campaign
+    const project = await this.projectService.findOne(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(projectId),
+    );
+    if (!project || (project as any).isDeleted) {
+      this.logger.warn(
+        `Attempt to create campaign workflow for deleted or missing project ${projectId} by admin ${adminId}`,
+      );
+      throw new BadRequestException('Project is deleted or not accessible');
+    }
 
     // Create the campaign
     const campaign = new this.campaignModel({
@@ -319,7 +343,7 @@ export class CampaignService {
         scheduledAt: { $lte: now },
         isDeleted: false,
       })
-      .populate('project', 'name')
+      .populate('project', 'name isDeleted')
       .exec();
   }
 
@@ -357,7 +381,10 @@ export class CampaignService {
       campaign.project,
     );
 
-    if (!project) {
+    if (!project || (project as any).isDeleted) {
+      this.logger.warn(
+        `Skipping execution for campaign ${campaignId} because project is deleted or inaccessible`,
+      );
       throw new UnauthorizedException(
         'You do not have permission to access this project',
       );
@@ -859,6 +886,20 @@ export class CampaignService {
         this.logger.log(
           `Processing scheduled campaign: ${campaign._id} - ${campaign.name}`,
         );
+
+        const populated: any = campaign as any;
+        const project: any = populated.project;
+        if (!project || project.isDeleted) {
+          this.logger.warn(
+            `Skipping scheduled campaign ${campaign._id} because its project is deleted`,
+          );
+          await this.update(
+            campaign._id.toString(),
+            { status: CampaignStatus.FAILED },
+            campaign.adminId.toString(),
+          );
+          continue;
+        }
 
         // Execute the campaign
         await this.executeCampaign(

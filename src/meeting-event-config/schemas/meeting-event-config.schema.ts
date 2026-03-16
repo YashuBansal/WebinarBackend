@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { ConfiguredTemplate } from 'src/configured-templates/schema/configured-template.schema';
 import { Project } from 'src/schemas/project.schema';
 import { User } from 'src/schemas/User.schema';
 import { Webinar } from 'src/schemas/Webinar.schema';
@@ -25,7 +26,7 @@ export class MeetingEventConfig {
 
   @Prop({
     type: Types.ObjectId,
-    ref: 'ConfiguredTemplate',
+    ref: ConfiguredTemplate.name,
     required: false,
   })
   configuredTemplateId?: Types.ObjectId;

@@ -69,6 +69,7 @@ import { MeetingEventConfigModule } from './meeting-event-config/meeting-event-c
 import { WinstonModule } from 'nest-winston';
 import { WebinarWebhookModule } from './webinar-webhook/webinar-webhook.module';
 import { ProgramModule } from './whatsapp-program/program.module';
+import { InterestPoolSettingsModule } from './interest-pool-settings/interest-pool-settings.module';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
 import { HealthModule } from './health/health.module';
@@ -215,6 +216,7 @@ import { OtelWinstonTransport } from './logger/otel-winston-transport';
     MeetingEventConfigModule,
     WebinarWebhookModule,
     ProgramModule,
+    InterestPoolSettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService, FileStorageService],

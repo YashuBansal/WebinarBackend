@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ApiCampaignController } from './api-campaign.controller';
 import { ApiCampaignService } from './api-campaign.service';
@@ -10,6 +10,7 @@ import { AuthAdminTokenMiddleware } from '../../middlewares/authAdmin.Middleware
 import { UsersModule } from 'src/users/users.module';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 import { WabaMessageModule } from '../waba-message/waba-message.module';
+import { ProjectsModule } from 'src/projects/projects.module';
 
 @Module({
   imports: [
@@ -18,7 +19,8 @@ import { WabaMessageModule } from '../waba-message/waba-message.module';
     ]),
     WhatsappModule,
     UsersModule,
-    WabaMessageModule
+    WabaMessageModule,
+    forwardRef(() => ProjectsModule),
   ],
   controllers: [ApiCampaignController],
   providers: [ApiCampaignService],

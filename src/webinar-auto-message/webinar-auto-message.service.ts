@@ -176,7 +176,12 @@ export class WebinarAutoMessageService {
       new Types.ObjectId(adminId),
       new Types.ObjectId(dto.projectId),
     );
-    if (!project) throw new NotFoundException('Project not found');
+    if (!project || (project as any).isDeleted) {
+      this.logger.warn(
+        `Skipping auto-message test send because project ${dto.projectId} is deleted or not accessible for admin ${adminId}`,
+      );
+      throw new BadRequestException('Project is deleted or not accessible');
+    }
 
     const { values } = this.resolveVariables(
       dto.variableMappings || [],
@@ -220,6 +225,18 @@ export class WebinarAutoMessageService {
   ) {
     const cfg = await this.getConfig(adminId, webinarId);
     if (!cfg || !cfg.enabled) return;
+
+    // Ensure underlying project exists and is not soft-deleted
+    const project = await this.projectsService.findOne(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(cfg.projectId),
+    );
+    if (!project || (project as any).isDeleted) {
+      this.logger.warn(
+        `Skipping auto-message send for webinar ${webinarId} because project ${cfg.projectId} is deleted or not accessible`,
+      );
+      return;
+    }
 
     const { values } = this.resolveVariables(
       cfg.variableMappings as any,

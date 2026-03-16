@@ -110,7 +110,10 @@ export class ProjectsService {
     const { page, limit } = paginationOptions;
     const skip = (page - 1) * limit;
 
-    const filter = { adminId };
+    const filter = {
+      adminId,
+      isDeleted: { $ne: true },
+    };
 
     // Execute count and find queries in parallel for efficiency
     const [totalResults, results] = await Promise.all([
@@ -130,7 +133,12 @@ export class ProjectsService {
   }
 
   async findAll(): Promise<Project[]> {
-    return this.projectModel.find().populate('adminId', 'name').exec();
+    return this.projectModel
+      .find({
+        isDeleted: { $ne: true },
+      })
+      .populate('adminId', 'name')
+      .exec();
   }
 
   async findOne(
@@ -138,7 +146,11 @@ export class ProjectsService {
     projectId: Types.ObjectId,
   ): Promise<ProjectDocument> {
     const project = await this.projectModel
-      .findOne({ _id: projectId, adminId })
+      .findOne({
+        _id: projectId,
+        adminId,
+        isDeleted: { $ne: true },
+      })
       .exec();
 
     if (!project) {
@@ -149,7 +161,12 @@ export class ProjectsService {
   }
 
   async findOneByAdminId(adminId: Types.ObjectId): Promise<Project> {
-    const project = await this.projectModel.findOne({ adminId }).exec();
+    const project = await this.projectModel
+      .findOne({
+        adminId,
+        isDeleted: { $ne: true },
+      })
+      .exec();
 
     if (!project) {
       throw new NotFoundException(`Project with ID "${adminId}" not found.`);
@@ -161,11 +178,21 @@ export class ProjectsService {
   async findWhatsAppProjectsByUserId(
     adminId: Types.ObjectId,
   ): Promise<Project[]> {
-    return this.projectModel.find({ adminId }).exec();
+    return this.projectModel
+      .find({
+        adminId,
+        isDeleted: { $ne: true },
+      })
+      .exec();
   }
 
   async findByPhoneNumberId(phoneNumberId: string): Promise<Project | null> {
-    return this.projectModel.findOne({ phoneNumberId }).exec();
+    return this.projectModel
+      .findOne({
+        phoneNumberId,
+        isDeleted: { $ne: true },
+      })
+      .exec();
   }
 
   async update(
@@ -193,7 +220,18 @@ export class ProjectsService {
   }
 
   async remove(id: string): Promise<Project> {
-    const deletedProject = await this.projectModel.findByIdAndDelete(id).exec();
+    const deletedProject = await this.projectModel
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            isDeleted: true,
+            deletedAt: new Date(),
+          },
+        },
+        { new: true },
+      )
+      .exec();
 
     if (!deletedProject) {
       throw new NotFoundException(`Project with ID "${id}" not found.`);

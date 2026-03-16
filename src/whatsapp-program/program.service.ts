@@ -203,10 +203,16 @@ export class ProgramService {
     dto: CreateProgramDto,
     adminId: string,
   ): Promise<{ program: Program; eligibleCount?: number }> {
-    await this.projectService.findOne(
+    const project = await this.projectService.findOne(
       new Types.ObjectId(adminId),
       new Types.ObjectId(dto.projectId),
     );
+    if (!project || (project as any).isDeleted) {
+      this.logger.warn(
+        `Attempt to create program for deleted or missing project ${dto.projectId} by admin ${adminId}`,
+      );
+      throw new BadRequestException('Project is deleted or not accessible');
+    }
     if (!dto.occurrenceTimeSlots?.length) {
       throw new BadRequestException('occurrenceTimeSlots is required');
     }
@@ -543,10 +549,16 @@ export class ProgramService {
     dto: CreateProgramAssignmentDto,
     adminId: string,
   ): Promise<ProgramAssignment> {
-    await this.projectService.findOne(
+    const project = await this.projectService.findOne(
       new Types.ObjectId(adminId),
       new Types.ObjectId(dto.projectId),
     );
+    if (!project || (project as any).isDeleted) {
+      this.logger.warn(
+        `Skipping program assignment creation because project ${dto.projectId} is deleted or not accessible for admin ${adminId}`,
+      );
+      throw new BadRequestException('Project is deleted or not accessible');
+    }
     const program = await this.findOne(dto.programId, adminId);
     const existing = await this.programAssignmentModel.findOne({
       programId: new Types.ObjectId(dto.programId),
@@ -1704,7 +1716,10 @@ export class ProgramService {
         status: ProgramAssignmentStatus.RUNNING,
         failureCount: { $lt: 3 },
       })
-      .populate('programId')
+      .populate({
+        path: 'programId',
+        match: { isDeleted: false, isActive: true },
+      })
       .exec() as Promise<ProgramAssignmentDocument[]>;
   }
 }

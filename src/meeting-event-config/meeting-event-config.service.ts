@@ -249,13 +249,17 @@ export class MeetingEventConfigService implements OnModuleInit {
         .find()
         .populate({
           path: 'whatsappProjectId',
-          match: { adminId },
-          select: 'projectName',
+          match: {
+            adminId,
+            isDeleted: { $ne: true },
+          },
+          select: 'projectName isDeleted',
         })
         .populate('configuredTemplateId', 'configuredTemplateName templateName')
         .exec();
 
       // Filter out configs where the project doesn't belong to the admin
+      // or is soft-deleted (populate match above already excludes deleted ones)
       const filteredConfigs = configs.filter(
         (config) => config.whatsappProjectId,
       );

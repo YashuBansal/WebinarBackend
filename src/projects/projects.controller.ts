@@ -7,6 +7,7 @@ import {
   Post,
   Query,
   ValidationPipe,
+  Delete,
 } from '@nestjs/common';
 import {
   CampaignPaginationQueryDto,
@@ -169,6 +170,15 @@ export class ProjectsController {
       new Types.ObjectId(projectId),
       updateProjectDto,
     );
+  }
+
+  @Delete(':id')
+  async softDeleteProject(
+    @Id() adminId: string,
+    @Param('id') projectId: string,
+  ) {
+    // Use the service remove method, which performs a soft delete
+    return this.projectsService.remove(projectId);
   }
 
   @Post('waba-details')
