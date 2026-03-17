@@ -381,7 +381,10 @@ export class UsersService implements OnModuleInit {
           toggleLimit: '$subscription.toggleLimit',
           webinarLimitAddon: '$subscription.webinarLimitAddon',
           webinarLimitTotal: {
-            $add: ['$subscription.webinarLimit', '$subscription.webinarLimitAddon'],
+            $add: [
+              { $ifNull: ['$subscription.webinarLimit', 0] },
+              { $ifNull: ['$subscription.webinarLimitAddon', 0] },
+            ],
           },
           totalEmployees: { $size: '$employees' },
           employeeSalesCount: {
