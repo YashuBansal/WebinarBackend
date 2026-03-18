@@ -164,7 +164,9 @@ export class WhatsappService extends BaseLoggerService {
     // Wrap entire processing in try-catch to ensure no unhandled errors
     // This method is called asynchronously from the controller, so errors must be caught
     try {
-      this.logger.log(`Processing webhook payload for WhatsApp messages - ${JSON.stringify(payload)}`);
+      this.logger.log(
+        `Processing webhook payload for WhatsApp messages - ${JSON.stringify(payload)}`,
+      );
 
       // axios.post('http://localhost:3002/api/v1/whatsapp/webhook', payload)
       //   .then((response) => {
@@ -176,7 +178,9 @@ export class WhatsappService extends BaseLoggerService {
 
       // Validate payload exists and is an object
       if (!payload) {
-        this.logger.warn('Received null or undefined payload, skipping processing');
+        this.logger.warn(
+          'Received null or undefined payload, skipping processing',
+        );
         return;
       }
 
@@ -203,7 +207,9 @@ export class WhatsappService extends BaseLoggerService {
       // Process status updates
       const firstEntry = payload.entry[0];
       if (!firstEntry || typeof firstEntry !== 'object') {
-        this.logger.warn('First entry in payload is invalid, skipping status processing');
+        this.logger.warn(
+          'First entry in payload is invalid, skipping status processing',
+        );
       } else {
         const changes = firstEntry.changes;
         if (
@@ -221,18 +227,22 @@ export class WhatsappService extends BaseLoggerService {
             if (changeValue.statuses) {
               this.logger.log('Processing status updates from webhook payload');
               processingPromises.push(
-                this.processStatusUpdates(changeValue.statuses).catch((error) => {
-                  this.logger.error(
-                    'Error processing status updates',
-                    error instanceof Error ? error.stack : error,
-                  );
-                }),
+                this.processStatusUpdates(changeValue.statuses).catch(
+                  (error) => {
+                    this.logger.error(
+                      'Error processing status updates',
+                      error instanceof Error ? error.stack : error,
+                    );
+                  },
+                ),
               );
             }
 
             // Process incoming messages
             if (changeValue.messages) {
-              this.logger.log('Processing incoming messages from webhook payload');
+              this.logger.log(
+                'Processing incoming messages from webhook payload',
+              );
               processingPromises.push(
                 this.processIncomingMessages(changeValue).catch((error) => {
                   this.logger.error(
@@ -246,7 +256,9 @@ export class WhatsappService extends BaseLoggerService {
             // Wait for all processing to complete (errors already caught above)
             await Promise.allSettled(processingPromises);
           } else {
-            this.logger.warn('Change value is missing or invalid, skipping processing');
+            this.logger.warn(
+              'Change value is missing or invalid, skipping processing',
+            );
           }
         } else {
           this.logger.warn('Changes array is missing, empty, or invalid');
@@ -309,7 +321,10 @@ export class WhatsappService extends BaseLoggerService {
         continue;
       }
 
-      if (!timestamp || (typeof timestamp !== 'string' && typeof timestamp !== 'number')) {
+      if (
+        !timestamp ||
+        (typeof timestamp !== 'string' && typeof timestamp !== 'number')
+      ) {
         this.logger.warn(
           `Status at index ${i} (ID: ${statusId}) has invalid or missing timestamp, skipping`,
         );
@@ -317,7 +332,9 @@ export class WhatsappService extends BaseLoggerService {
       }
 
       const failureReason =
-        status.errors && Array.isArray(status.errors) && status.errors.length > 0
+        status.errors &&
+        Array.isArray(status.errors) &&
+        status.errors.length > 0
           ? status.errors[0]?.message
           : undefined;
 
@@ -357,9 +374,6 @@ export class WhatsappService extends BaseLoggerService {
       return;
     }
 
-    const contacts = Array.isArray(changeValue.contacts)
-      ? changeValue.contacts
-      : [];
     const metadata =
       changeValue.metadata && typeof changeValue.metadata === 'object'
         ? changeValue.metadata
@@ -395,12 +409,32 @@ export class WhatsappService extends BaseLoggerService {
         if (messageType === 'text') {
           textBody = msg.text?.body;
           messageFormat = 'text';
+        } else if (messageType === 'button') {
+          // WhatsApp Cloud API "button" reply messages:
+          // { type: "button", button: { text: string, payload?: string } }
+          const buttonText =
+            typeof msg.button?.text === 'string' ? msg.button.text : undefined;
+          const buttonPayload =
+            typeof msg.button?.payload === 'string'
+              ? msg.button.payload
+              : undefined;
+
+          if (buttonText) {
+            textBody = buttonText;
+            messageFormat = 'text';
+          } else {
+            // Preserve the user-visible label, but keep payload for downstream parsing/debugging.
+            // (If your chatbot logic depends on payloads, it can detect the suffix.)
+            textBody = buttonPayload
+              ? `${buttonText || '[Button]'} (payload:${buttonPayload})`
+              : buttonText || '[Button]';
+            messageFormat = 'text';
+          }
         } else if (messageType === 'image' || messageType === 'video') {
           const media = messageType === 'image' ? msg.image : msg.video;
           const caption = media?.caption;
           mimeType = media?.mime_type;
           mediaId = media?.id;
-          const webhookMediaUrl = media?.url;
 
           if (messageType === 'image') {
             textBody = caption || '[Image]';
@@ -457,7 +491,9 @@ export class WhatsappService extends BaseLoggerService {
   private async resolveProjectByPhoneNumberId(phoneNumberId?: string) {
     // Validate phoneNumberId
     if (!phoneNumberId) {
-      this.logger.debug('resolveProjectByPhoneNumberId called without phoneNumberId');
+      this.logger.debug(
+        'resolveProjectByPhoneNumberId called without phoneNumberId',
+      );
       return null;
     }
 
@@ -477,7 +513,9 @@ export class WhatsappService extends BaseLoggerService {
     }
 
     try {
-      this.logger.debug(`Resolving project for phone number ID: ${phoneNumberId}`);
+      this.logger.debug(
+        `Resolving project for phone number ID: ${phoneNumberId}`,
+      );
 
       const model = (this.projectService as any)['projectModel'];
       if (!model) {
@@ -532,7 +570,11 @@ export class WhatsappService extends BaseLoggerService {
       return null;
     }
 
-    if (!accessToken || typeof accessToken !== 'string' || accessToken.trim() === '') {
+    if (
+      !accessToken ||
+      typeof accessToken !== 'string' ||
+      accessToken.trim() === ''
+    ) {
       this.logger.warn('fetchMediaUrl called with invalid accessToken');
       return null;
     }
@@ -540,9 +582,9 @@ export class WhatsappService extends BaseLoggerService {
     try {
       const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
       const url = `https://graph.facebook.com/${apiVersion}/${mediaId}`;
-      
+
       this.logger.log(`Fetching media URL for media ID: ${mediaId}`);
-      
+
       const response = await this.axiosInstance.get(url, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -555,7 +597,9 @@ export class WhatsappService extends BaseLoggerService {
 
       const mediaUrl = response.data?.url;
       if (mediaUrl && typeof mediaUrl === 'string') {
-        this.logger.log(`Successfully fetched media URL for media ID: ${mediaId}`);
+        this.logger.log(
+          `Successfully fetched media URL for media ID: ${mediaId}`,
+        );
         return mediaUrl;
       } else {
         this.logger.warn(
@@ -587,13 +631,17 @@ export class WhatsappService extends BaseLoggerService {
       throw new BadRequestException('Invalid media URL');
     }
 
-    if (!accessToken || typeof accessToken !== 'string' || accessToken.trim() === '') {
+    if (
+      !accessToken ||
+      typeof accessToken !== 'string' ||
+      accessToken.trim() === ''
+    ) {
       throw new BadRequestException('Invalid access token');
     }
 
     try {
       this.logger.log(`Proxying media from URL: ${url}`);
-      
+
       const response = await this.axiosInstance.get(url, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -602,11 +650,14 @@ export class WhatsappService extends BaseLoggerService {
         timeout: 30000, // 30 seconds for media
       });
 
-      const contentType = response.headers['content-type'] || 'application/octet-stream';
+      const contentType =
+        response.headers['content-type'] || 'application/octet-stream';
       const data = Buffer.from(response.data);
 
-      this.logger.log(`Successfully proxied media, size: ${data.length} bytes, type: ${contentType}`);
-      
+      this.logger.log(
+        `Successfully proxied media, size: ${data.length} bytes, type: ${contentType}`,
+      );
+
       return { data, contentType };
     } catch (error) {
       this.logger.error(
@@ -627,11 +678,15 @@ export class WhatsappService extends BaseLoggerService {
     mediaId?: string;
     mediaUrl?: string;
   }) {
+    this.logger.log('handleInboundTextMessage called with args', args);
     // Validate args object exists
     if (!args || typeof args !== 'object') {
-      this.logger.error('handleInboundTextMessage called with invalid args object', {
-        args,
-      });
+      this.logger.error(
+        'handleInboundTextMessage called with invalid args object',
+        {
+          args,
+        },
+      );
       return;
     }
 
@@ -655,7 +710,11 @@ export class WhatsappService extends BaseLoggerService {
       return;
     }
 
-    if (!wabaMessageId || typeof wabaMessageId !== 'string' || wabaMessageId.trim() === '') {
+    if (
+      !wabaMessageId ||
+      typeof wabaMessageId !== 'string' ||
+      wabaMessageId.trim() === ''
+    ) {
       this.logger.error(
         `handleInboundTextMessage called with invalid or missing "wabaMessageId" field for from: ${from}`,
         { from, wabaMessageId, fromPhoneNumberId },
@@ -668,7 +727,10 @@ export class WhatsappService extends BaseLoggerService {
     );
 
     // Validate optional fields
-    if (fromPhoneNumberId !== undefined && (typeof fromPhoneNumberId !== 'string' || fromPhoneNumberId.trim() === '')) {
+    if (
+      fromPhoneNumberId !== undefined &&
+      (typeof fromPhoneNumberId !== 'string' || fromPhoneNumberId.trim() === '')
+    ) {
       this.logger.warn(
         `Invalid fromPhoneNumberId provided for message from ${from}, message ID: ${wabaMessageId}. Continuing without phone number ID.`,
       );
@@ -703,7 +765,11 @@ export class WhatsappService extends BaseLoggerService {
 
     // Use media URL from webhook if provided, otherwise fetch via Graph API
     let mediaUrl: string | null = null;
-    if (providedMediaUrl && typeof providedMediaUrl === 'string' && providedMediaUrl.trim() !== '') {
+    if (
+      providedMediaUrl &&
+      typeof providedMediaUrl === 'string' &&
+      providedMediaUrl.trim() !== ''
+    ) {
       // Use URL directly from webhook payload
       mediaUrl = providedMediaUrl;
       this.logger.log(
@@ -711,7 +777,10 @@ export class WhatsappService extends BaseLoggerService {
       );
     } else if (mediaId && project.permanentAccessToken) {
       // Fallback: Fetch media URL via Graph API if not provided in webhook
-      mediaUrl = await this.fetchMediaUrl(mediaId, project.permanentAccessToken);
+      mediaUrl = await this.fetchMediaUrl(
+        mediaId,
+        project.permanentAccessToken,
+      );
       if (mediaUrl) {
         this.logger.log(
           `Fetched media URL via Graph API for media ID: ${mediaId}, message ID: ${wabaMessageId}`,
@@ -995,7 +1064,11 @@ export class WhatsappService extends BaseLoggerService {
     failureReason?: string,
   ): Promise<void> {
     // Validate required parameters
-    if (!wabaMessageId || typeof wabaMessageId !== 'string' || wabaMessageId.trim() === '') {
+    if (
+      !wabaMessageId ||
+      typeof wabaMessageId !== 'string' ||
+      wabaMessageId.trim() === ''
+    ) {
       this.logger.error(
         'updateMessageStatus called with invalid wabaMessageId',
         { wabaMessageId, status, timestamp },
@@ -1011,7 +1084,10 @@ export class WhatsappService extends BaseLoggerService {
       return;
     }
 
-    if (!timestamp || (typeof timestamp !== 'string' && typeof timestamp !== 'number')) {
+    if (
+      !timestamp ||
+      (typeof timestamp !== 'string' && typeof timestamp !== 'number')
+    ) {
       this.logger.warn(
         `updateMessageStatus called with invalid timestamp for message ID: ${wabaMessageId}, status: ${status}`,
         { wabaMessageId, status, timestamp },
@@ -3474,8 +3550,6 @@ export class WhatsappService extends BaseLoggerService {
     };
   }
 
- 
-
   /**
    * Core logic to send a single template message via Meta Graph API.
    * This method is typically called by the Queue Worker, but can be called directly.
@@ -3506,7 +3580,10 @@ export class WhatsappService extends BaseLoggerService {
     };
     this.logger.log('optimizedSendSingleTemplateMessage called', entryLogData);
     // Console fallback for visibility
-    console.log(`[WHATSAPP] optimizedSendSingleTemplateMessage called`, entryLogData);
+    console.log(
+      `[WHATSAPP] optimizedSendSingleTemplateMessage called`,
+      entryLogData,
+    );
 
     const {
       projectId,
@@ -3709,7 +3786,8 @@ export class WhatsappService extends BaseLoggerService {
             messageType: payload.messageType,
           });
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           const errorStack = error instanceof Error ? error.stack : undefined;
           this.logger.error('Failed to create WABA message record', {
             error: errorMessage,
@@ -3735,20 +3813,24 @@ export class WhatsappService extends BaseLoggerService {
           // This is a non-critical operation
         }
       } else {
-        this.logger.warn('Skipping WABA message record creation: messageId is missing', {
-          phoneNumber: normalizedRecipientPhoneNumber,
-          projectId,
-          adminId,
-          templateName,
-        });
+        this.logger.warn(
+          'Skipping WABA message record creation: messageId is missing',
+          {
+            phoneNumber: normalizedRecipientPhoneNumber,
+            projectId,
+            adminId,
+            templateName,
+          },
+        );
       }
 
       return { success: true, data: response.data, messageId };
     } catch (error) {
       // Handle error message creation with proper error handling
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
-      
+
       this.logger.error('Failed to send template message to Meta API', {
         error: errorMessage,
         stack: errorStack,
@@ -3803,8 +3885,12 @@ export class WhatsappService extends BaseLoggerService {
           templateName,
         });
       } catch (errorLogError) {
-        const logError = errorLogError instanceof Error ? errorLogError.message : String(errorLogError);
-        const logErrorStack = errorLogError instanceof Error ? errorLogError.stack : undefined;
+        const logError =
+          errorLogError instanceof Error
+            ? errorLogError.message
+            : String(errorLogError);
+        const logErrorStack =
+          errorLogError instanceof Error ? errorLogError.stack : undefined;
         this.logger.error('Failed to create error message record', {
           error: logError,
           stack: logErrorStack,
@@ -3950,7 +4036,7 @@ export class WhatsappService extends BaseLoggerService {
       attendeeId,
       apiCampaignId,
       programId,
-      programAssignmentId, 
+      programAssignmentId,
       programSlotId,
     } = payload;
 
