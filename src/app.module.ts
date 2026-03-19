@@ -40,6 +40,7 @@ import { AttendeeAssociationModule } from './attendee-association/attendee-assoc
 import { CalendarService } from './calendar/calendar.service';
 import { AddonModule } from './addon/addon.module';
 import { SubscriptionAddonModule } from './subscription-addon/subscription-addon.module';
+import { AddonPurchaseModule } from './addon-purchase/addon-purchase.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { RazorpayModule } from './razorpay/razorpay.module';
 import { NotificationModule } from './notification/notification.module';
@@ -70,10 +71,12 @@ import { WinstonModule } from 'nest-winston';
 import { WebinarWebhookModule } from './webinar-webhook/webinar-webhook.module';
 import { ProgramModule } from './whatsapp-program/program.module';
 import { InterestPoolSettingsModule } from './interest-pool-settings/interest-pool-settings.module';
+import { PaymentsModule } from './payments/payments.module';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
 import { HealthModule } from './health/health.module';
 import { OtelWinstonTransport } from './logger/otel-winston-transport';
+import { PabblyTokenBlacklistModule } from './auth/pabbly-token-blacklist.module';
 
 @Module({
   imports: [
@@ -81,6 +84,7 @@ import { OtelWinstonTransport } from './logger/otel-winston-transport';
       load: [configurations],
       isGlobal: true,
     }),
+    PabblyTokenBlacklistModule,
     WinstonModule.forRoot({
       transports: [
         // Console transport for development
@@ -182,6 +186,7 @@ import { OtelWinstonTransport } from './logger/otel-winston-transport';
     CustomLeadTypeModule,
     AddonModule,
     SubscriptionAddonModule,
+    AddonPurchaseModule,
     WhatsappModule,
     RazorpayModule,
     NotificationModule,
@@ -217,6 +222,7 @@ import { OtelWinstonTransport } from './logger/otel-winston-transport';
     WebinarWebhookModule,
     ProgramModule,
     InterestPoolSettingsModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService, FileStorageService],

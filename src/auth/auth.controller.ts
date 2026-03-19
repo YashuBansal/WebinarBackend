@@ -18,15 +18,15 @@ import { CreateClientDto, ValidateOtpDto } from './dto/createClient.dto';
 import { GeneratePablyTokenDto } from './dto/generatePablyToken.dto';
 import mongoose, { Types } from 'mongoose';
 import { ApiAccessTokenService } from 'src/api-access-token/api-access-token.service';
-import { UsersService } from 'src/users/users.service';
+import { PabblyTokenBlacklistService } from './pabbly-token-blacklist.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-    private readonly userService: UsersService,
     private readonly apiTokenService: ApiAccessTokenService,
+    private readonly pabblyTokenBlacklist: PabblyTokenBlacklistService,
   ) {}
 
   private getCookieOptions(): CookieOptions {
@@ -199,7 +199,10 @@ export class AuthController {
       new Types.ObjectId(tokenId),
     );
     if (token) {
-      await this.userService.loadExpiredPablyTokens();
+      await this.pabblyTokenBlacklist.blacklistToken(
+        (token as any)?.token,
+        (token as any)?.tokenExpiry,
+      );
     }
     return token;
   }

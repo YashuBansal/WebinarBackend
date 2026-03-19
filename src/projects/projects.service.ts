@@ -80,7 +80,11 @@ export class ProjectsService {
 
     const projectCount = await this.projectModel.countDocuments({ adminId });
 
-    if (userSubscription.plan.whatsappProjectLimit <= projectCount) {
+    const whatsappProjectLimit =
+      (userSubscription.whatsappProjectLimit ||
+        userSubscription.plan.whatsappProjectLimit ||
+        0) + (userSubscription.whatsappProjectLimitAddon || 0);
+    if (whatsappProjectLimit <= projectCount) {
       throw new NotAcceptableException(
         'You have reached the limit of WhatsApp projects',
       );

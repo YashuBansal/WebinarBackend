@@ -36,7 +36,6 @@ import { BaseLoggerService } from 'src/logger/base-logger.service';
 
 @Injectable()
 export class ZoomService extends BaseLoggerService implements OnModuleInit {
-
   // Simple in-memory rate limiter (consider using Redis for production)
   private readonly rateLimitMap = new Map<
     string,
@@ -1242,11 +1241,21 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
   }
 
   async handleMeetingCreated(projectId: string, adminId: string) {
-    await this.notifyZoomRealtimeUpdate(adminId, projectId, 'meetings', 'created');
+    await this.notifyZoomRealtimeUpdate(
+      adminId,
+      projectId,
+      'meetings',
+      'created',
+    );
   }
 
   async handleWebinarCreated(projectId: string, adminId: string) {
-    await this.notifyZoomRealtimeUpdate(adminId, projectId, 'webinars', 'created');
+    await this.notifyZoomRealtimeUpdate(
+      adminId,
+      projectId,
+      'webinars',
+      'created',
+    );
   }
 
   private async notifyZoomRealtimeUpdate(
@@ -1393,7 +1402,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
 
       if (!project) {
         this.logWebhookProcessing(correlationId, 'error', 'Project not found', {
-          projectId
+          projectId,
         });
         return;
       }
@@ -1442,7 +1451,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         {
           event,
           isWebinar,
-          projectId
+          projectId,
         },
       );
 
@@ -2168,8 +2177,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
             Array.isArray(registrant.custom_questions) &&
             registrant.custom_questions.find(
               (q: any) =>
-                q?.title &&
-                String(q.title).toLowerCase() === 'profession',
+                q?.title && String(q.title).toLowerCase() === 'profession',
             )?.value;
           return {
             email: registrant.email,
@@ -3249,7 +3257,11 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       adminId,
     });
 
-    if (userSubscription.plan.zoomProjectLimit <= projectCount) {
+    const zoomProjectLimit =
+      (userSubscription.zoomProjectLimit ||
+        userSubscription.plan.zoomProjectLimit ||
+        0) + (userSubscription.zoomProjectLimitAddon || 0);
+    if (zoomProjectLimit <= projectCount) {
       throw new NotAcceptableException(
         'You have reached the limit of Zoom projects',
       );

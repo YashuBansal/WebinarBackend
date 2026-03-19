@@ -51,6 +51,13 @@ async function bootstrap() {
   });
   const PORT = process.env.PORT ?? 3001;
 
+  // Razorpay webhooks require the raw request body for signature verification.
+  // This must be registered BEFORE express.json().
+  app.use(
+    '/api/v1/payments/razorpay/webhook',
+    express.raw({ type: 'application/json' }),
+  );
+
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
 

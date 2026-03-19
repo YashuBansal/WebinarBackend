@@ -24,19 +24,27 @@ export class RazorpayService {
     private readonly addonService: AddOnService,
   ) {}
 
-  async createOrder(amount: number) {
+  async createOrder(
+    amount: number,
+    meta?: {
+      receipt?: string;
+      notes?: Record<string, string>;
+    },
+  ) {
     console.log(' - ---------- > ', amount, typeof amount);
     const instance = new Razorpay({
       key_id: this.configService.get('RAZORPAY_KEY_ID'),
       key_secret: this.configService.get('RAZORPAY_KEY_SECRET'),
     });
 
-    const options = {
+    const orderOptions: any = {
       amount: Math.floor(amount * 100),
       currency: 'INR',
+      receipt: meta?.receipt,
+      notes: meta?.notes,
     };
-    console.log(options);
-    const result = instance.orders.create(options);
+    console.log(orderOptions);
+    const result = await instance.orders.create(orderOptions);
     return result;
   }
 
@@ -60,7 +68,11 @@ export class RazorpayService {
     return { planData, result };
   }
 
-  async createAddonOrder(addon: string, adminId: string) {
+  async createAddonOrder(
+    addon: string,
+    adminId: string,
+    meta?: { purchaseId?: string },
+  ) {
     const subscription =
       await this.subscriptionService.getSubscription(adminId);
     if (!subscription) {
@@ -74,7 +86,10 @@ export class RazorpayService {
     const { totalAmount } = this.subscriptionService.generatePriceForAddon(
       addonData.addOnPrice,
     );
-    const result = await this.createOrder(totalAmount);
+    const result = await this.createOrder(totalAmount, {
+      receipt: meta?.purchaseId ? `addon_purchase_${meta.purchaseId}` : undefined,
+      notes: meta?.purchaseId ? { purchaseId: meta.purchaseId } : undefined,
+    });
     return { addonData, result };
   }
 }

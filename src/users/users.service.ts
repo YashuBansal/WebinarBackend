@@ -6,7 +6,6 @@ import {
   Logger,
   NotAcceptableException,
   NotFoundException,
-  OnModuleInit,
 } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { InjectModel } from '@nestjs/mongoose';
@@ -42,9 +41,8 @@ import { ApiAccessTokenService } from 'src/api-access-token/api-access-token.ser
 import { SocketEvents } from 'src/websocket/dto/socket.dto';
 
 @Injectable()
-export class UsersService implements OnModuleInit {
+export class UsersService {
   private readonly logger = new Logger(UsersService.name);
-  public expiredPablyTokens: Set<string> = new Set();
 
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
@@ -64,26 +62,15 @@ export class UsersService implements OnModuleInit {
     private readonly apiTokenService: ApiAccessTokenService,
   ) {}
 
-  async onModuleInit() {
-    await this.loadExpiredPablyTokens();
-  }
-
   async getUserSubscription(userId: string) {
     return this.subscriptionService.getSubscription(userId);
   }
 
-  async loadExpiredPablyTokens() {
-    const tokens = await this.apiTokenService.fetchExpiredTokens();
-    tokens.forEach((token) => this.expiredPablyTokens.add(token.token));
-  }
 
   getUsers() {
     return this.userModel.find();
   }
 
-  addExpiredToken(pabblyToken: string) {
-    this.expiredPablyTokens.add(pabblyToken);
-  }
 
   async setTwoFactorAuthenticationSecret(
     secret: string,
@@ -1200,6 +1187,8 @@ export class UsersService implements OnModuleInit {
         employeeLimit: plan.employeeCount,
         toggleLimit: plan.toggleLimit,
         webinarLimit: plan.webinarLimit,
+        whatsappProjectLimit: plan.whatsappProjectLimit || 0,
+        zoomProjectLimit: plan.zoomProjectLimit || 0,
         expiryDate: currentPlanExpiry,
       };
 

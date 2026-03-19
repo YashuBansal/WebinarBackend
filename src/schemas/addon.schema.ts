@@ -13,6 +13,15 @@ export class AddOn extends Document {
   @Prop({ type: Number, min: 0, required: true })
   contactLimit: number;
 
+  @Prop({ type: Number, min: 0, default: 0 })
+  webinarLimit: number;
+
+  @Prop({ type: Number, min: 0, default: 0 })
+  whatsappProjectLimit: number;
+
+  @Prop({ type: Number, min: 0, default: 0 })
+  zoomProjectLimit: number;
+
   @Prop({ type: Number, min: 0, required: true })
   addOnPrice: number;
 

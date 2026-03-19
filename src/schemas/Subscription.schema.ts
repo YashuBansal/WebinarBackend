@@ -58,7 +58,39 @@ export class Subscription extends Document {
     default: 0,
     required: false,
   })
+  whatsappProjectLimit: number;
+
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0,
+    required: false,
+  })
+  zoomProjectLimit: number;
+
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0,
+    required: false,
+  })
   webinarLimitAddon: number;
+
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0,
+    required: false,
+  })
+  whatsappProjectLimitAddon: number;
+
+  @Prop({
+    type: Number,
+    min: 0,
+    default: 0,
+    required: false,
+  })
+  zoomProjectLimitAddon: number;
 
   @Prop({
     type: Number,

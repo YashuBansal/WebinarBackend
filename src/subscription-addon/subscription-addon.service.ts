@@ -1,71 +1,56 @@
-import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
-import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model, Types } from 'mongoose';
-import { SubscriptionAddOn } from 'src/schemas/SubscriptionAddon.schema';
-import { SubscriptionService } from 'src/subscription/subscription.service';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
+import {
+  SubscriptionAddOn,
+  UserAddonStatus,
+} from 'src/schemas/SubscriptionAddon.schema';
 
 @Injectable()
 export class SubscriptionAddonService {
-  private readonly logger = new Logger(SubscriptionAddOn.name);
-
   constructor(
     @InjectModel(SubscriptionAddOn.name)
     private SubscriptionAddOnModel: Model<SubscriptionAddOn>,
-    @Inject(forwardRef(() => SubscriptionService))
-    private readonly subscriptionService: SubscriptionService,
-    @InjectConnection() private readonly connection: Connection,
   ) {}
-
-  async onModuleInit() {
-    this.logger.log(
-      'Starting MongoDB Change Stream for subscription addons...',
-    );
-    this.watchSubscriptionAddons();
-  }
-
-  private async watchSubscriptionAddons() {
-    const pipeline = [{ $match: { operationType: 'delete' } }];
-
-    const changeStream = this.SubscriptionAddOnModel.watch(pipeline, {
-      fullDocumentBeforeChange: 'whenAvailable',
-    });
-
-    changeStream.on('change', async (change) => {
-      this.logger.log(`Detected expired add-on: ${JSON.stringify(change)}`);
-
-      const deletedDocument = change.fullDocumentBeforeChange;
-      if (!deletedDocument) {
-        this.logger.error('No document found before deletion');
-        return;
-      }
-
-      const subscriptionId = deletedDocument.subscription.toString();
-      console.log(subscriptionId);
-      await this.subscriptionService.updateSingleSubscriptionAddon(
-        subscriptionId,
-      );
-    });
-
-    changeStream.on('error', (err) => {
-      this.logger.error('Change Stream Error:', err);
-    });
-  }
 
   async createSubscriptionAddon(
     subscriptionId: string,
     expiryDate: Date,
     addOnId: string,
+    purchaseId?: string,
     employeeLimit: number = 0,
     contactLimit: number = 0,
+    webinarLimit: number = 0,
+    whatsappProjectLimit: number = 0,
+    zoomProjectLimit: number = 0,
+    benefitsSnapshot?: SubscriptionAddOn['benefitsSnapshot'],
+    session?: ClientSession,
   ): Promise<SubscriptionAddOn> {
     const subscriptionAddon = new this.SubscriptionAddOnModel({
-      subscription: subscriptionId,
+      subscription: new Types.ObjectId(`${subscriptionId}`),
       expiryDate,
-      addOn: addOnId,
+      addOn: new Types.ObjectId(`${addOnId}`),
+      purchase: purchaseId ? new Types.ObjectId(`${purchaseId}`) : undefined,
+      status: UserAddonStatus.ACTIVE,
       employeeLimit,
       contactLimit,
+      webinarLimit,
+      whatsappProjectLimit,
+      zoomProjectLimit,
+      benefitsSnapshot,
     });
-    return subscriptionAddon.save();
+    return subscriptionAddon.save({ session });
+  }
+
+  async markExpiredAddons(now: Date = new Date(), session?: ClientSession) {
+    return this.SubscriptionAddOnModel.updateMany(
+      {
+        status: UserAddonStatus.ACTIVE,
+        expiryDate: { $lte: now },
+      },
+      { $set: { status: UserAddonStatus.EXPIRED } },
+      { session },
+    );
   }
 
   async getUserAddons(subscriptionId: string) {
@@ -91,12 +76,26 @@ export class SubscriptionAddonService {
       },
       {
         $project: {
-          addonName: '$addOnDetails.addonName',
+          addonName: { $ifNull: ['$benefitsSnapshot.addonName', '$addOnDetails.addonName'] },
           expiryDate: '$expiryDate',
-          employeeLimit: '$addOnDetails.employeeLimit',
-          contactLimit: '$addOnDetails.contactLimit',
-          addOnPrice: '$addOnDetails.addOnPrice',
-          addOnId: '$addOnDetails._id',
+          employeeLimit: { $ifNull: ['$benefitsSnapshot.employeeLimit', '$addOnDetails.employeeLimit'] },
+          contactLimit: { $ifNull: ['$benefitsSnapshot.contactLimit', '$addOnDetails.contactLimit'] },
+          webinarLimit: { $ifNull: ['$benefitsSnapshot.webinarLimit', '$addOnDetails.webinarLimit'] },
+          whatsappProjectLimit: {
+            $ifNull: [
+              '$benefitsSnapshot.whatsappProjectLimit',
+              '$addOnDetails.whatsappProjectLimit',
+            ],
+          },
+          zoomProjectLimit: {
+            $ifNull: [
+              '$benefitsSnapshot.zoomProjectLimit',
+              '$addOnDetails.zoomProjectLimit',
+            ],
+          },
+          addOnPrice: { $ifNull: ['$benefitsSnapshot.addOnPrice', '$addOnDetails.addOnPrice'] },
+          addOnId: '$addOn',
+          status: '$status',
         },
       },
     ]).exec();

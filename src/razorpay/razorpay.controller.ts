@@ -1,20 +1,24 @@
-import { Body, Controller, Post, Query, Redirect } from '@nestjs/common';
+import { Body, Controller, Logger, Post, Query, Redirect } from '@nestjs/common';
 import { RazorpayService } from './razorpay.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import {
   RazorPayAddOnDTO,
   RazorPayCheckoutPlanDTO,
+  RazorPayConfirmAddonDTO,
   RazorPayUpdatePlanDTO,
 } from './dto/razorpay.dto';
 import { ConfigService } from '@nestjs/config';
 import crypto from 'crypto';
 import { Id } from 'src/decorators/custom.decorator';
+import { AddonPurchaseService } from 'src/addon-purchase/addon-purchase.service';
 @Controller('razorpay')
 export class RazorpayController {
+  private readonly logger = new Logger(RazorpayController.name);
   constructor(
     private razorpayService: RazorpayService,
     private subscriptionService: SubscriptionService,
     private readonly configService: ConfigService,
+    private readonly addonPurchaseService: AddonPurchaseService,
   ) {}
 
   @Post('/checkout')
@@ -75,7 +79,26 @@ export class RazorpayController {
     @Body('addon') addon: string,
     @Id() adminId: string,
   ): Promise<any> {
-    return this.razorpayService.createAddonOrder(addon, adminId);
+    // Deprecated endpoint: kept as alias for backwards compatibility.
+    this.logger.warn('DeprecatedEndpointUsed: POST /razorpay/addon/checkout');
+
+    // Create purchase-ledger order under the hood.
+    const idempotencyKey = crypto.randomUUID();
+    const { purchase, order, addon: addonData } =
+      await this.addonPurchaseService.createRazorpayPurchaseOrder({
+        adminId,
+        addonId: addon,
+        idempotencyKey,
+      });
+
+    // Backward-compatible response shape for older clients + include canonical fields.
+    return {
+      purchase,
+      order,
+      addon: addonData,
+      addonData,
+      result: order,
+    };
   }
 
   @Post('addon/payment-success')
@@ -84,21 +107,34 @@ export class RazorpayController {
     @Body() body: any,
     @Query() query: RazorPayAddOnDTO,
   ): Promise<any> {
-    const addonUpdate = await this.subscriptionService.addAddonToSubscription(
-      query.adminId,
-      query.addonId,
-    );
+    // Deprecated endpoint: kept as alias for backwards compatibility.
+    this.logger.warn('DeprecatedEndpointUsed: POST /razorpay/addon/payment-success');
+
+    const generatedSignature = crypto
+      .createHmac('sha256', this.configService.get('RAZORPAY_KEY_SECRET'))
+      .update(`${body.razorpay_order_id}|${body.razorpay_payment_id}`)
+      .digest('hex');
+
+    if (generatedSignature !== body.razorpay_signature) {
+      return { url: 'http://localhost:5173/failed' };
+    }
+
+    const finalizeResult =
+      await this.addonPurchaseService.finalizeRazorpayAddonPurchase({
+        providerOrderId: body.razorpay_order_id,
+        providerPaymentId: body.razorpay_payment_id,
+      });
 
     const env = this.configService.get('NEST_ENV');
     const frontendProductionUrl = this.configService.get(
       'FRONTEND_MAIN_PRODUCTION',
     );
-    if (addonUpdate) {
+    if (finalizeResult) {
       return {
         url:
           env === 'development'
-            ? `http://localhost:5173/addons/${query.adminId}`
-            : `${frontendProductionUrl}/addons/${query.adminId}`,
+            ? `http://localhost:5173/addons/${query.adminId}?purchaseId=${finalizeResult.purchaseId}`
+            : `${frontendProductionUrl}/addons/${query.adminId}?purchaseId=${finalizeResult.purchaseId}`,
       };
     } else {
       return {
@@ -108,5 +144,29 @@ export class RazorpayController {
             : `${frontendProductionUrl}/failed`,
       };
     }
+  }
+
+  /**
+   * Fallback for environments where webhooks aren't reachable.
+   * Confirms signature and finalizes the purchase immediately.
+   */
+  @Post('addon/confirm')
+  async confirmAddonPayment(@Body() body: RazorPayConfirmAddonDTO) {
+    // Alias route for backwards compatibility; canonical route is
+    // POST /payments/razorpay/confirm-addon
+    const generatedSignature = crypto
+      .createHmac('sha256', this.configService.get('RAZORPAY_KEY_SECRET'))
+      .update(`${body.razorpay_order_id}|${body.razorpay_payment_id}`)
+      .digest('hex');
+
+    if (generatedSignature !== body.razorpay_signature) {
+      return { ok: false, message: 'Invalid signature' };
+    }
+
+    return await this.addonPurchaseService.finalizeRazorpayAddonPurchase({
+      providerOrderId: body.razorpay_order_id,
+      providerPaymentId: body.razorpay_payment_id,
+      purchaseId: body.purchaseId,
+    });
   }
 }

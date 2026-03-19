@@ -40,6 +40,16 @@ export class SubscriptionDto {
   @Min(0, { message: 'Webinar limit cannot be less than 0.' })
   webinarLimit?: number;
 
+  @IsOptional()
+  @IsInt({ message: 'WhatsApp project limit must be an integer value.' })
+  @Min(0, { message: 'WhatsApp project limit cannot be less than 0.' })
+  whatsappProjectLimit?: number;
+
+  @IsOptional()
+  @IsInt({ message: 'Zoom project limit must be an integer value.' })
+  @Min(0, { message: 'Zoom project limit cannot be less than 0.' })
+  zoomProjectLimit?: number;
+
   @IsNumber()
   @IsOptional()
   expiryDate?: number;

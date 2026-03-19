@@ -5,6 +5,7 @@ import { SubscriptionService } from 'src/subscription/subscription.service';
 import { UsersService } from 'src/users/users.service';
 import { CampaignService } from 'src/whatsapp-embed/campaign/campaign.service';
 import { ProgramService } from 'src/whatsapp-program/program.service';
+import { AddonPurchaseService } from 'src/addon-purchase/addon-purchase.service';
 
 @Injectable()
 export class CronService implements OnModuleInit {
@@ -16,6 +17,7 @@ export class CronService implements OnModuleInit {
     private readonly subscriptionService: SubscriptionService,
     private readonly campaignService: CampaignService,
     private readonly programService: ProgramService,
+    private readonly addonPurchaseService: AddonPurchaseService,
   ) {}
 
   async onModuleInit() {
@@ -84,5 +86,11 @@ export class CronService implements OnModuleInit {
 
     this.logger.log('Cleaning up subscription addons...');
     await this.subscriptionService.updateSubscriptionAddons();
+
+    this.logger.log('Reconciling paid addon purchases...');
+    await this.addonPurchaseService.reconcilePaidPurchases(100);
+
+    this.logger.log('Backfilling missing addon billing histories...');
+    await this.addonPurchaseService.reconcileMissingAddonBilling(200);
   }
 }

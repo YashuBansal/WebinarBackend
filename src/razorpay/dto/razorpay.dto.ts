@@ -1,4 +1,4 @@
-import { IsEnum, IsMongoId } from 'class-validator';
+import { IsEnum, IsMongoId, IsNotEmpty, IsString } from 'class-validator';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
 
 export class RazorPayUpdatePlanDTO {
@@ -30,4 +30,22 @@ export class RazorPayAddOnDTO {
 
   @IsMongoId()
   adminId: string;
+}
+
+export class RazorPayConfirmAddonDTO {
+  @IsNotEmpty()
+  @IsMongoId()
+  purchaseId: string;
+
+  @IsNotEmpty()
+  @IsString()
+  razorpay_order_id: string;
+
+  @IsNotEmpty()
+  @IsString()
+  razorpay_payment_id: string;
+
+  @IsNotEmpty()
+  @IsString()
+  razorpay_signature: string;
 }

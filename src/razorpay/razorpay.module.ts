@@ -12,6 +12,7 @@ import { AddonModule } from 'src/addon/addon.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { AttendeesModule } from 'src/attendees/attendees.module';
 import { UsersModule } from 'src/users/users.module';
+import { AddonPurchaseModule } from 'src/addon-purchase/addon-purchase.module';
 
 @Module({
   imports: [
@@ -20,9 +21,11 @@ import { UsersModule } from 'src/users/users.module';
     forwardRef(() => SubscriptionModule),
     AttendeesModule,
     UsersModule,
+    forwardRef(() => AddonPurchaseModule),
   ],
   providers: [RazorpayService],
   controllers: [RazorpayController],
+  exports: [RazorpayService],
 })
 export class RazorpayModule {
   configure(consumer: MiddlewareConsumer) {

@@ -108,6 +108,8 @@ export class SubscriptionService {
       contactLimit: number;
       employeeLimit: number;
       webinarLimit?: number;
+      whatsappProjectLimit?: number;
+      zoomProjectLimit?: number;
     };
   }): Promise<any> {
     const result = await this.SubscriptionModel.updateMany(
@@ -146,6 +148,25 @@ export class SubscriptionService {
       typeof (subscription as any).plan.webinarLimit === 'number'
     ) {
       subscription.webinarLimit = (subscription as any).plan.webinarLimit;
+      await subscription.save();
+    }
+
+    // Backfill project limits for legacy subscriptions that predate these fields.
+    if (
+      (!subscription.whatsappProjectLimit && subscription.whatsappProjectLimit !== 0) &&
+      (subscription as any).plan &&
+      typeof (subscription as any).plan.whatsappProjectLimit === 'number'
+    ) {
+      subscription.whatsappProjectLimit = (subscription as any).plan.whatsappProjectLimit;
+      await subscription.save();
+    }
+
+    if (
+      (!subscription.zoomProjectLimit && subscription.zoomProjectLimit !== 0) &&
+      (subscription as any).plan &&
+      typeof (subscription as any).plan.zoomProjectLimit === 'number'
+    ) {
+      subscription.zoomProjectLimit = (subscription as any).plan.zoomProjectLimit;
       await subscription.save();
     }
 
@@ -276,24 +297,42 @@ export class SubscriptionService {
           subscription._id as string,
           addOnExpiry,
           addOn._id as string,
+          undefined,
           addOn.employeeLimit,
           addOn.contactLimit,
+          addOn.webinarLimit || 0,
+          addOn.whatsappProjectLimit || 0,
+          addOn.zoomProjectLimit || 0,
+          {
+            addonName: addOn.addonName,
+            employeeLimit: addOn.employeeLimit,
+            contactLimit: addOn.contactLimit,
+            webinarLimit: addOn.webinarLimit || 0,
+            whatsappProjectLimit: addOn.whatsappProjectLimit || 0,
+            zoomProjectLimit: addOn.zoomProjectLimit || 0,
+            addOnPrice: addOn.addOnPrice,
+            validityInDays: addOn.validityInDays,
+          },
+          session,
         )
         .catch(() => {
           throw new Error('Failed to create subscription addon');
         });
 
-      subscription.employeeLimitAddon = Math.max(
-        (subscription.employeeLimitAddon || 0) + addOn.employeeLimit,
-        0,
+      // Transaction-safe increment (legacy flow); daily recompute also corrects drift.
+      await this.SubscriptionModel.updateOne(
+        { _id: subscription._id },
+        {
+          $inc: {
+            employeeLimitAddon: Math.max(addOn.employeeLimit, 0),
+            contactLimitAddon: Math.max(addOn.contactLimit, 0),
+            webinarLimitAddon: Math.max(addOn.webinarLimit || 0, 0),
+            whatsappProjectLimitAddon: Math.max(addOn.whatsappProjectLimit || 0, 0),
+            zoomProjectLimitAddon: Math.max(addOn.zoomProjectLimit || 0, 0),
+          },
+        },
+        { session },
       );
-
-      subscription.contactLimitAddon = Math.max(
-        (subscription.contactLimitAddon || 0) + addOn.contactLimit,
-        0,
-      );
-
-      await subscription.save();
       await session.commitTransaction();
       session.endSession();
       const { itemAmount, taxAmount, totalAmount } = this.generatePriceForAddon(
@@ -325,10 +364,14 @@ export class SubscriptionService {
   }
 
   generatePriceForAddon(amount: number) {
-    const taxAmount = amount * (this.GST_VALUE / 100);
-    const totalAmount = amount + taxAmount;
+    // Add-on price is GST-inclusive (same model as plans).
+    const totalAmount = this.roundToTwoDecimals(amount);
+    const taxAmount = this.roundToTwoDecimals(
+      this.calculateInclusiveGST(totalAmount, this.GST_VALUE || 0),
+    );
+    const itemAmount = this.roundToTwoDecimals(totalAmount - taxAmount);
     return {
-      itemAmount: amount,
+      itemAmount,
       taxAmount,
       totalAmount,
     };
@@ -443,6 +486,8 @@ export class SubscriptionService {
     subscription.employeeLimit = plan.employeeCount;
     subscription.toggleLimit = plan.toggleLimit;
     subscription.webinarLimit = plan.webinarLimit;
+    subscription.whatsappProjectLimit = plan.whatsappProjectLimit || 0;
+    subscription.zoomProjectLimit = plan.zoomProjectLimit || 0;
 
     const { totalWithGST, itemAmount, discountAmount, gst } =
       this.generatePriceForPlan(durationConfig);
@@ -614,12 +659,26 @@ export class SubscriptionService {
   async updateSubscriptionAddons() {
     // read it before making any changes
     // it is used to update the subscription document with the addons Limits when the addon is expired
+    await this.subscriptionAddonService.markExpiredAddons();
+    const now = new Date();
     const pipeline: PipelineStage[] = [
       {
         $lookup: {
           from: 'subscriptionaddons',
-          localField: '_id',
-          foreignField: 'subscription',
+          let: { subscriptionId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$subscription', '$$subscriptionId'] },
+                    { $eq: ['$status', 'ACTIVE'] },
+                    { $gt: ['$expiryDate', now] },
+                  ],
+                },
+              },
+            },
+          ],
           as: 'addonDetails',
         },
       },
@@ -629,6 +688,9 @@ export class SubscriptionService {
             { addonDetails: { $ne: [] } },
             { employeeLimitAddon: { $gt: 0 } },
             { contactLimitAddon: { $gt: 0 } },
+            { webinarLimitAddon: { $gt: 0 } },
+            { whatsappProjectLimitAddon: { $gt: 0 } },
+            { zoomProjectLimitAddon: { $gt: 0 } },
           ],
         },
       },
@@ -652,6 +714,33 @@ export class SubscriptionService {
               },
             },
           },
+          totalWebinarLimitAddon: {
+            $sum: {
+              $map: {
+                input: '$addonDetails',
+                as: 'addon',
+                in: { $ifNull: ['$$addon.webinarLimit', 0] },
+              },
+            },
+          },
+          totalWhatsappProjectLimitAddon: {
+            $sum: {
+              $map: {
+                input: '$addonDetails',
+                as: 'addon',
+                in: { $ifNull: ['$$addon.whatsappProjectLimit', 0] },
+              },
+            },
+          },
+          totalZoomProjectLimitAddon: {
+            $sum: {
+              $map: {
+                input: '$addonDetails',
+                as: 'addon',
+                in: { $ifNull: ['$$addon.zoomProjectLimit', 0] },
+              },
+            },
+          },
         },
       },
       {
@@ -670,6 +759,22 @@ export class SubscriptionService {
             {
               $expr: { $ne: ['$contactLimitAddon', '$totalContactLimitAddon'] },
             },
+            {
+              $expr: { $ne: ['$webinarLimitAddon', '$totalWebinarLimitAddon'] },
+            },
+            {
+              $expr: {
+                $ne: [
+                  '$whatsappProjectLimitAddon',
+                  '$totalWhatsappProjectLimitAddon',
+                ],
+              },
+            },
+            {
+              $expr: {
+                $ne: ['$zoomProjectLimitAddon', '$totalZoomProjectLimitAddon'],
+              },
+            },
           ],
         },
       },
@@ -677,11 +782,22 @@ export class SubscriptionService {
         $set: {
           employeeLimitAddon: { $ifNull: ['$totalEmployeeLimitAddon', 0] },
           contactLimitAddon: { $ifNull: ['$totalContactLimitAddon', 0] },
+          webinarLimitAddon: { $ifNull: ['$totalWebinarLimitAddon', 0] },
+          whatsappProjectLimitAddon: {
+            $ifNull: ['$totalWhatsappProjectLimitAddon', 0],
+          },
+          zoomProjectLimitAddon: { $ifNull: ['$totalZoomProjectLimitAddon', 0] },
         },
       },
 
       {
-        $unset: ['totalEmployeeLimitAddon', 'totalContactLimitAddon'],
+        $unset: [
+          'totalEmployeeLimitAddon',
+          'totalContactLimitAddon',
+          'totalWebinarLimitAddon',
+          'totalWhatsappProjectLimitAddon',
+          'totalZoomProjectLimitAddon',
+        ],
       },
       {
         $merge: {
@@ -702,6 +818,8 @@ export class SubscriptionService {
     if (!subscription) {
       throw new NotFoundException('Subscription not found');
     }
+    await this.subscriptionAddonService.markExpiredAddons();
+    const now = new Date();
 
     const pipeline: PipelineStage[] = [
       {
@@ -712,8 +830,20 @@ export class SubscriptionService {
       {
         $lookup: {
           from: 'subscriptionaddons',
-          localField: '_id',
-          foreignField: 'subscription',
+          let: { subscriptionId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$subscription', '$$subscriptionId'] },
+                    { $eq: ['$status', 'ACTIVE'] },
+                    { $gt: ['$expiryDate', now] },
+                  ],
+                },
+              },
+            },
+          ],
           as: 'addonDetails',
         },
       },
@@ -737,6 +867,33 @@ export class SubscriptionService {
               },
             },
           },
+          totalWebinarLimitAddon: {
+            $sum: {
+              $map: {
+                input: '$addonDetails',
+                as: 'addon',
+                in: { $ifNull: ['$$addon.webinarLimit', 0] },
+              },
+            },
+          },
+          totalWhatsappProjectLimitAddon: {
+            $sum: {
+              $map: {
+                input: '$addonDetails',
+                as: 'addon',
+                in: { $ifNull: ['$$addon.whatsappProjectLimit', 0] },
+              },
+            },
+          },
+          totalZoomProjectLimitAddon: {
+            $sum: {
+              $map: {
+                input: '$addonDetails',
+                as: 'addon',
+                in: { $ifNull: ['$$addon.zoomProjectLimit', 0] },
+              },
+            },
+          },
         },
       },
     ];
@@ -747,6 +904,11 @@ export class SubscriptionService {
     } else {
       subscription.employeeLimitAddon = result[0].totalEmployeeLimitAddon;
       subscription.contactLimitAddon = result[0].totalContactLimitAddon;
+      subscription.webinarLimitAddon = result[0].totalWebinarLimitAddon || 0;
+      subscription.whatsappProjectLimitAddon =
+        result[0].totalWhatsappProjectLimitAddon || 0;
+      subscription.zoomProjectLimitAddon =
+        result[0].totalZoomProjectLimitAddon || 0;
       await subscription.save();
     }
     console.log('result -------- >', result);

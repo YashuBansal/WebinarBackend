@@ -3,6 +3,7 @@ import { Document, Types } from 'mongoose';
 import { Plans } from './Plans.schema';
 import { User } from './User.schema';
 import { AddOn } from './addon.schema';
+import { AddonPurchase } from './AddonPurchase.schema';
 
 export enum DurationType {
   ONE_MONTH = 'monthly',
@@ -114,6 +115,14 @@ export class BillingHistory extends Document {
     required: false,
   })
   addOn?: Types.ObjectId | null;
+
+  // Idempotency link: ensure exactly-one invoice per addon purchase
+  @Prop({
+    type: Types.ObjectId,
+    ref: AddonPurchase.name,
+    required: false,
+  })
+  addonPurchase?: Types.ObjectId | null;
 }
 
 const BillingHistorySchema = SchemaFactory.createForClass(BillingHistory);
@@ -121,6 +130,7 @@ const BillingHistorySchema = SchemaFactory.createForClass(BillingHistory);
 BillingHistorySchema.index({ date: 1 });
 BillingHistorySchema.index({ admin: 1, date: 1 });
 BillingHistorySchema.index({ invoiceNumber: 1 }, { unique: true });
+BillingHistorySchema.index({ addonPurchase: 1 }, { unique: true, sparse: true });
 
 // Add pre-save middleware to transform `admin` and `plan` to ObjectId
 BillingHistorySchema.pre('save', function (next) {

@@ -3,7 +3,7 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class FileStorageService {
@@ -32,7 +32,7 @@ export class FileStorageService {
   async saveFile(file: Express.Multer.File, subfolder: string): Promise<{ publicUrl: string; filePath: string }> {
     try {
       const fileExtension = file.originalname.split('.').pop();
-      const uniqueFileName = `${uuidv4()}.${fileExtension}`;
+      const uniqueFileName = `${randomUUID()}.${fileExtension}`;
       
       const destinationFolder = join(this.uploadPath, subfolder);
       const filePath = join(destinationFolder, uniqueFileName);

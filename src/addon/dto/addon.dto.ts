@@ -21,6 +21,21 @@ export class CreateAddOnDto {
   @Min(0)
   contactLimit: number;
 
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  webinarLimit?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  whatsappProjectLimit?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  zoomProjectLimit?: number;
+
   @IsNotEmpty()
   @IsNumber()
   @Min(0)
@@ -41,6 +56,21 @@ export class UpdateAddOnDto {
   @IsNumber()
   @Min(0)
   contactLimit?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  webinarLimit?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  whatsappProjectLimit?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  zoomProjectLimit?: number;
 
   @IsOptional()
   @IsNumber()

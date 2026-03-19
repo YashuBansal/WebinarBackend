@@ -6,14 +6,14 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { NextFunction, Response } from 'express';
-import { UsersService } from 'src/users/users.service';
+import { PabblyTokenBlacklistService } from 'src/auth/pabbly-token-blacklist.service';
 
 @Injectable()
 export class AuthAdminTokenMiddleware implements NestMiddleware {
   constructor(
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
-    private readonly userService: UsersService,
+    private readonly pabblyTokenBlacklist: PabblyTokenBlacklistService,
   ) {}
 
   async use(req, res: Response, next: NextFunction) {
@@ -29,7 +29,7 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
 
     if (
       pabbly_access_token &&
-      this.userService.expiredPablyTokens.has(pabbly_access_token)
+      (await this.pabblyTokenBlacklist.isBlacklisted(pabbly_access_token))
     ) {
       throw new UnauthorizedException('Pably token has expired.');
     }
@@ -45,7 +45,7 @@ export class AuthAdminTokenMiddleware implements NestMiddleware {
           decodeOptions,
         );
 
-        if (this.userService.expiredPablyTokens.has(queryAccessToken)) {
+        if (await this.pabblyTokenBlacklist.isBlacklisted(queryAccessToken)) {
           throw new UnauthorizedException(
             'Unauthorized, Invalid API access token.',
           );

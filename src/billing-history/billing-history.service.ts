@@ -67,6 +67,7 @@ export class BillingHistoryService {
     taxAmount: number,
     totalAmount: number,
     taxPercent: number,
+    addonPurchaseId?: string,
   ): Promise<BillingHistory> {
     const invoiceNumber = await this.generateNextInvoiceNumber();
 
@@ -74,6 +75,9 @@ export class BillingHistoryService {
       admin: new Types.ObjectId(`${adminId}`),
       date: new Date(),
       addOn: new Types.ObjectId(`${addOnId}`),
+      addonPurchase: addonPurchaseId
+        ? new Types.ObjectId(`${addonPurchaseId}`)
+        : undefined,
       billingType: BillingType.ADD_ON,
       amount: parseFloat(totalAmount.toFixed(2)),
       itemAmount: parseFloat(itemAmount.toFixed(2)),
@@ -82,6 +86,13 @@ export class BillingHistoryService {
       invoiceNumber,
     });
     return billingHistory.save();
+  }
+
+  async getByAddonPurchaseId(addonPurchaseId: string) {
+    if (!Types.ObjectId.isValid(addonPurchaseId)) return null;
+    return this.BillingHistoryModel.findOne({
+      addonPurchase: new Types.ObjectId(addonPurchaseId),
+    }).exec();
   }
 
   async getBillingHistory(queryDto: GetBillingHistoryDto): Promise<{
