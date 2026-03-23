@@ -3,6 +3,7 @@ import {
   forwardRef,
   Inject,
   Injectable,
+  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -22,8 +23,22 @@ export class AddOnService {
   ) {}
 
   async createAddOn(createAddOnDto: CreateAddOnDto): Promise<AddOn> {
-    const addOn = new this.addOnModel(createAddOnDto);
-    return addOn.save();
+    const addonName = String(createAddOnDto?.addonName || '').trim();
+    const existing = await this.addOnModel.findOne({ addonName }).select('_id').lean();
+    if (existing) {
+      throw new ConflictException('Addon name already exists');
+    }
+
+    try {
+      const addOn = new this.addOnModel({ ...createAddOnDto, addonName });
+      return await addOn.save();
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (e?.code === 11000 || msg.includes('E11000')) {
+        throw new ConflictException('Addon name already exists');
+      }
+      throw e;
+    }
   }
 
   async getAddOns(): Promise<AddOn[]> {
@@ -42,15 +57,35 @@ export class AddOnService {
     id: string,
     updateAddOnDto: UpdateAddOnDto,
   ): Promise<AddOn> {
-    const addOn = await this.addOnModel
-      .findByIdAndUpdate(id, updateAddOnDto, {
-        new: true,
-      })
-      .exec();
-    if (!addOn) {
-      throw new NotFoundException('AddOn not found');
+    if (typeof (updateAddOnDto as any)?.addonName === 'string') {
+      const addonName = String((updateAddOnDto as any).addonName).trim();
+      const existing = await this.addOnModel
+        .findOne({ addonName, _id: { $ne: id } })
+        .select('_id')
+        .lean();
+      if (existing) {
+        throw new ConflictException('Addon name already exists');
+      }
+      (updateAddOnDto as any).addonName = addonName;
     }
-    return addOn;
+
+    try {
+      const addOn = await this.addOnModel
+        .findByIdAndUpdate(id, updateAddOnDto, {
+          new: true,
+        })
+        .exec();
+      if (!addOn) {
+        throw new NotFoundException('AddOn not found');
+      }
+      return addOn;
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (e?.code === 11000 || msg.includes('E11000')) {
+        throw new ConflictException('Addon name already exists');
+      }
+      throw e;
+    }
   }
 
   async deleteAddOn(id: string): Promise<void> {

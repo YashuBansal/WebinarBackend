@@ -4,7 +4,7 @@ import { Document } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class AddOn extends Document {
-  @Prop({ type: String, required: true })
+  @Prop({ type: String, required: true, unique: true, trim: true })
   addonName: string;
 
   @Prop({ type: Number, min: 0, required: true })
@@ -33,3 +33,6 @@ export class AddOn extends Document {
 }
 
 export const AddOnSchema = SchemaFactory.createForClass(AddOn);
+
+// Ensure addon names are unique (case-sensitive by default).
+AddOnSchema.index({ addonName: 1 }, { unique: true });

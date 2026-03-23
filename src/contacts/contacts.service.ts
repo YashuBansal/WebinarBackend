@@ -64,6 +64,7 @@ export class ContactsService {
       const normalizedContacts = contacts.map(contact => ({
         ...contact,
         phone: this.normalizePhoneNumber(contact.phone, defaultCountryCode),
+        tags: this.normalizeTags(contact.tags),
       }));
 
       // Get all phone numbers for duplicate checking (phone is unique per project)
@@ -107,11 +108,11 @@ export class ContactsService {
             // Handle tags based on replaceTags flag
             if (contactData.tags && contactData.tags.length > 0) {
               if (replaceTags) {
-                updateData.tags = contactData.tags;
+                updateData.tags = this.normalizeTags(contactData.tags);
               } else {
                 // Merge tags, removing duplicates
-                const existingTags = existingContact.tags || [];
-                const newTags = contactData.tags || [];
+                const existingTags = this.normalizeTags(existingContact.tags || []);
+                const newTags = this.normalizeTags(contactData.tags || []);
                 const mergedTags = [...new Set([...existingTags, ...newTags])];
                 updateData.tags = mergedTags;
               }
@@ -285,6 +286,17 @@ export class ContactsService {
 
     // Default: return cleaned phone as is
     return cleanedPhone;
+  }
+
+  private normalizeTag(tag: string): string {
+    return String(tag).trim().toLowerCase().replace(/\s+/g, '_');
+  }
+
+  private normalizeTags(tags?: string[]): string[] {
+    if (!Array.isArray(tags)) return [];
+    return tags
+      .map((tag) => this.normalizeTag(tag))
+      .filter(Boolean);
   }
 
   async findAll(
