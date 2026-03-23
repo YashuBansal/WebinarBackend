@@ -9,7 +9,6 @@ import { UsersModule } from 'src/users/users.module';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: WabaTag.name, schema: WabaTagSchema }]),
-    UsersModule,
   ],
   controllers: [WabaTagsController],
   providers: [WabaTagsService],

@@ -179,4 +179,56 @@ export class WabaTagsService {
       })
       .sort({ createdAt: -1 });
   }
+
+  async ensureTagsExist(
+    projectId: Types.ObjectId,
+    adminId: Types.ObjectId,
+    tags: string[],
+  ): Promise<void> {
+    if (!Array.isArray(tags) || tags.length === 0) return;
+
+    const candidateNames = Array.from(
+      new Set(
+        tags
+          .map((tag) =>
+            String(tag)
+              .toLowerCase()
+              .trim()
+              .replace(/[^a-z0-9_\-\.]/g, ''),
+          )
+          .filter(Boolean),
+      ),
+    );
+
+    if (candidateNames.length === 0) return;
+
+    const existing = await this.wabaTagModel
+      .find({
+        projectId,
+        adminId,
+        name: { $in: candidateNames },
+      })
+      .select(['name'])
+      .lean();
+
+    const existingNames = new Set(existing.map((tag) => tag.name));
+    const missingNames = candidateNames.filter((name) => !existingNames.has(name));
+
+    if (missingNames.length === 0) return;
+
+    try {
+      await this.wabaTagModel.insertMany(
+        missingNames.map((name) => ({
+          name,
+          projectId,
+          adminId,
+        })),
+        { ordered: false },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Some tags already existed while auto-creating tags for project ${projectId.toString()}: ${error?.message ?? String(error)}`,
+      );
+    }
+  }
 }

@@ -15,6 +15,7 @@ import {
   PaginationQueryDto,
   ContactFiltersDto,
 } from './dto/contacts.dto';
+import { WabaTagsService } from 'src/waba-tags/waba-tags.service';
 
 @Injectable()
 export class ContactsService {
@@ -23,6 +24,7 @@ export class ContactsService {
   constructor(
     @InjectModel(Contact.name)
     private readonly contactModel: Model<ContactDocument>,
+    private readonly wabaTagsService: WabaTagsService,
   ) {}
 
   async create(
@@ -30,6 +32,7 @@ export class ContactsService {
     adminId: Types.ObjectId,
   ): Promise<Contact> {
     const { phone, projectId } = createContactDto;
+    const normalizedTags = this.normalizeTags(createContactDto.tags);
 
     // Check if contact already exists with same email or phone for this admin
     const existingContact = await this.contactModel.findOne({
@@ -46,9 +49,16 @@ export class ContactsService {
 
     const newContact = await this.contactModel.create({
       ...createContactDto,
+      tags: normalizedTags,
       projectId: new Types.ObjectId(projectId),
       adminId,
     });
+
+    await this.wabaTagsService.ensureTagsExist(
+      new Types.ObjectId(projectId),
+      adminId,
+      normalizedTags,
+    );
 
     return newContact;
   }
@@ -70,6 +80,8 @@ export class ContactsService {
       // Get all phone numbers for duplicate checking (phone is unique per project)
       const phones = normalizedContacts.map((c) => c.phone);
       const projectId = new Types.ObjectId(normalizedContacts[0]?.projectId);
+      const importTags = normalizedContacts.flatMap((c) => c.tags || []);
+      await this.wabaTagsService.ensureTagsExist(projectId, adminId, importTags);
 
       // Find existing contacts by phone (phone is unique per project)
       const existingContacts = await this.contactModel
