@@ -19,6 +19,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "migrate:attendee-tags": "ts-node -r tsconfig-paths/register scripts/migrate-attendee-tags.ts",
+    "normalize:contact-tags:project": "ts-node -r tsconfig-paths/register scripts/normalize-contact-tags-by-project.ts",
     "delete:attendee-tags": "ts-node -r tsconfig-paths/register scripts/delete-attendee-tags.ts",
     "delete:duplicate-attendees": "ts-node -r tsconfig-paths/register scripts/delete-duplicate-attendees.ts",
     "restore:deleted-attendees": "ts-node -r tsconfig-paths/register scripts/restore-deleted-attendees.ts",
