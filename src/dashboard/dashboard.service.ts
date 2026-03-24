@@ -37,7 +37,6 @@ export class DashboardService {
         'Start date cannot be greater than end date',
       );
     }
-    console.log(startDate, endDate);
     return {
       startDate: new Date(startDate.setDate(startDate.getDate() - 1)),
       endDate,
@@ -536,7 +535,6 @@ export class DashboardService {
     adminId: Types.ObjectId,
     webinarId?: Types.ObjectId,
   ) {
-    console.log(startDate, endDate, adminId, webinarId);
     const assignmentsCount = await this.assingmentService.getRevisedAssignments(
       startDate,
       endDate,
@@ -574,7 +572,6 @@ export class DashboardService {
     employeeId: Types.ObjectId,
     webinarId?: Types.ObjectId,
   ) {
-    console.log(startDate, endDate, employeeId, webinarId);
     const assignmentsCount =
       await this.assingmentService.getRevisedEmployeeAssignments(
         startDate,

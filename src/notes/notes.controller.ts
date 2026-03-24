@@ -42,12 +42,10 @@ export class NotesController {
     if (!createdBy) {
       throw new BadRequestException('UserID is required.');
     }
-    console.log("body ---- > ", body, adminId);
 
     const attendee = await this.attendeeService.fetchAttendeeById(
       new Types.ObjectId(`${body.attendee}`),
     );
-    console.log("notes controller ---- > ", attendee , createdBy);
 
     if (
       !attendee ||

@@ -24,7 +24,6 @@ export class RevenueService {
         'Start date cannot be greater than end date',
       );
     }
-    console.log(startDate, endDate);
     return { startDate, endDate };
   }
 

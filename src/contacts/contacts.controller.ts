@@ -29,7 +29,6 @@ export class ContactsController {
     @Body() createContactDto: CreateContactDto,
     @Id() adminId: string,
   ) {
-    console.log('createContactDto', createContactDto, adminId);
     return this.contactsService.create(
       createContactDto,
       new Types.ObjectId(adminId),
@@ -122,7 +121,6 @@ export class ContactsController {
     @Id() adminId: string,
     @Body() bulkDeleteDto: { contactIds: string[] },
   ) {
-    console.log('bulkDeleteDto', bulkDeleteDto, adminId);
     return this.contactsService.bulkRemove(
       new Types.ObjectId(`${adminId}`),
       bulkDeleteDto.contactIds.map((id) => new Types.ObjectId(id)),

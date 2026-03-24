@@ -33,6 +33,7 @@ import { ZoomMeetingService } from './zoom-meeting/zoom-meeting.service';
 import { ZoomMeetingOccurrence } from './zoom-meeting/zoom-meeting.schema';
 import axios from 'axios';
 import { BaseLoggerService } from 'src/logger/base-logger.service';
+import { SubscriptionService } from 'src/subscription/subscription.service';
 
 @Injectable()
 export class ZoomService extends BaseLoggerService implements OnModuleInit {
@@ -56,6 +57,8 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     private readonly whatsappService: WhatsappService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => SubscriptionService))
+    private readonly subscriptionService: SubscriptionService,
     @Inject(forwardRef(() => AttendeesService))
     private readonly attendeesService: AttendeesService,
     private readonly webhookQueueService: WebhookQueueService,
@@ -3246,12 +3249,20 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       secretToken?: string;
     },
   ) {
-    const userSubscription: any = await this.usersService.getUserSubscription(
+    let userSubscription: any = await this.usersService.getUserSubscription(
       adminId.toString(),
     );
     if (!userSubscription) {
       throw new NotAcceptableException('User not found');
     }
+
+    // Recompute addon totals just-in-time so expired addons stop granting limits immediately.
+    await this.subscriptionService.updateSingleSubscriptionAddon(
+      userSubscription._id.toString(),
+    );
+    userSubscription = await this.usersService.getUserSubscription(
+      adminId.toString(),
+    );
 
     const projectCount = await this.zoomProjectModel.countDocuments({
       adminId,

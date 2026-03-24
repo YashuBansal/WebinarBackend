@@ -17,11 +17,13 @@ import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 import { AttendeesModule } from 'src/attendees/attendees.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
 import { ZoomMeetingModule } from './zoom-meeting/zoom-meeting.module';
+import { SubscriptionModule } from 'src/subscription/subscription.module';
 
 @Module({
   imports: [
     HttpModule,
     forwardRef(() => UsersModule),
+    forwardRef(() => SubscriptionModule),
     forwardRef(() => ProjectsModule),
     forwardRef(() => WebinarModule),
     forwardRef(() => AttendeesModule),

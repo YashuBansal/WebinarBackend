@@ -81,11 +81,6 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.authService.refreshToken(body.email);
-    console.log(
-      this.configService.get('NODE_ENV') !== 'development',
-      '--- log ---',
-      this.configService.get('NODE_ENV'),
-    );
     if (result.access_token) {
       response.cookie(
         this.configService.get('ACCESS_TOKEN_NAME'),

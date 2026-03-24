@@ -60,9 +60,16 @@ export class WebinarService {
       throw new BadRequestException('Invalid admin id');
     }
 
-    const subscription: any = await this.subscriptionService.getSubscription(
+    let subscription: any = await this.subscriptionService.getSubscription(
       adminId,
     );
+    if (!subscription) {
+      throw new NotAcceptableException('Subscription not found');
+    }
+    await this.subscriptionService.updateSingleSubscriptionAddon(
+      subscription._id.toString(),
+    );
+    subscription = await this.subscriptionService.getSubscription(adminId);
 
     if (subscription?.isExpired?.()) {
       throw new NotAcceptableException(
@@ -196,8 +203,6 @@ export class WebinarService {
     filters: WebinarFilterDTO = {},
     usePagination: boolean = true, // Flag to enable/disable pagination
   ): Promise<any> {
-    console.log('limterr-r ===> ', limit);
-
     const skip = (page - 1) * limit;
 
     const query = { adminId: new Types.ObjectId(`${adminId}`) };
@@ -519,7 +524,6 @@ export class WebinarService {
       throw new BadRequestException(error.message);
     } finally {
       await session.endSession();
-      console.log('Session ended.');
     }
   }
 

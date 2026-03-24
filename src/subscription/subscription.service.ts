@@ -50,7 +50,6 @@ export class SubscriptionService {
     const gstValueStr = this.configService.get<number>('GST_VALUE') || 0;
     const headerLabel =
       this.configService.get<string | undefined>('HEADER_LABEL') || undefined;
-    console.log(`GST Value is ${gstValueStr}%`, typeof gstValueStr);
 
     const gstValue = parseInt(gstValueStr.toString());
     if (!isNaN(gstValue) && gstValue > 0) {
@@ -527,7 +526,6 @@ export class SubscriptionService {
     if (!subscription) {
       throw new NotFoundException('Subscription not found');
     }
-    console.log(subscription);
     subscription.contactCount = subscription.contactCount + count;
     await subscription.save();
     return subscription;
@@ -657,11 +655,30 @@ export class SubscriptionService {
   }
 
   async updateSubscriptionAddons() {
-    // read it before making any changes
-    // it is used to update the subscription document with the addons Limits when the addon is expired
     await this.subscriptionAddonService.markExpiredAddons();
-    const now = new Date();
-    const pipeline: PipelineStage[] = [
+    return this.updateSubscriptionAddonsForSubscriptions();
+  }
+
+  private buildSubscriptionAddonRecountPipeline(
+    now: Date,
+    subscriptionIds?: string[],
+  ): PipelineStage[] {
+    const pipeline: PipelineStage[] = [];
+    if (Array.isArray(subscriptionIds) && subscriptionIds.length > 0) {
+      const objectIds = subscriptionIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      if (objectIds.length === 0) {
+        return [];
+      }
+      pipeline.push({
+        $match: {
+          _id: { $in: objectIds },
+        },
+      });
+    }
+
+    pipeline.push(
       {
         $lookup: {
           from: 'subscriptionaddons',
@@ -789,7 +806,6 @@ export class SubscriptionService {
           zoomProjectLimitAddon: { $ifNull: ['$totalZoomProjectLimitAddon', 0] },
         },
       },
-
       {
         $unset: [
           'totalEmployeeLimitAddon',
@@ -807,10 +823,33 @@ export class SubscriptionService {
           whenNotMatched: 'discard',
         },
       },
-    ];
-    const result = await this.SubscriptionModel.aggregate(pipeline).exec();
-    console.log('result -------- >', result);
-    return result;
+    );
+
+    return pipeline;
+  }
+
+  async updateSubscriptionAddonsForSubscriptions(subscriptionIds?: string[]) {
+    if (Array.isArray(subscriptionIds) && subscriptionIds.length === 0) {
+      return [];
+    }
+    const now = new Date();
+    const pipeline = this.buildSubscriptionAddonRecountPipeline(
+      now,
+      subscriptionIds,
+    );
+    if (pipeline.length === 0) {
+      return [];
+    }
+    return this.SubscriptionModel.aggregate(pipeline).exec();
+  }
+
+  async expireAndRecomputeAffectedSubscriptionAddons() {
+    const affectedSubscriptionIds =
+      await this.subscriptionAddonService.markExpiredAddonsAndGetAffectedSubscriptions();
+    if (!affectedSubscriptionIds.length) {
+      return [];
+    }
+    return this.updateSubscriptionAddonsForSubscriptions(affectedSubscriptionIds);
   }
 
   async updateSingleSubscriptionAddon(subscriptionId: string) {
@@ -900,7 +939,13 @@ export class SubscriptionService {
 
     const result = await this.SubscriptionModel.aggregate(pipeline).exec();
     if (result && result.length === 0) {
-      throw new NotFoundException('No addons found');
+      subscription.employeeLimitAddon = 0;
+      subscription.contactLimitAddon = 0;
+      subscription.webinarLimitAddon = 0;
+      subscription.whatsappProjectLimitAddon = 0;
+      subscription.zoomProjectLimitAddon = 0;
+      await subscription.save();
+      return [];
     } else {
       subscription.employeeLimitAddon = result[0].totalEmployeeLimitAddon;
       subscription.contactLimitAddon = result[0].totalContactLimitAddon;
@@ -911,7 +956,6 @@ export class SubscriptionService {
         result[0].totalZoomProjectLimitAddon || 0;
       await subscription.save();
     }
-    console.log('result -------- >', result);
     return result;
   }
 

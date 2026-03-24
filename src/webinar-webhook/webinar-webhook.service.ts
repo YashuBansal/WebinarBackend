@@ -318,8 +318,6 @@ export class WebinarWebhookService {
         attendeeDTO,
       );
 
-      console.log('result', attendeeDTO);
-
       this.logger.log(
         `Successfully created attendee from webhook ${webhook._id} for email: ${attendeeDTO.email}`,
       );

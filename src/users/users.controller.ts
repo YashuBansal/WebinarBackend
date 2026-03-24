@@ -67,7 +67,6 @@ export class UsersController {
   ): Promise<any> {
     // console.log(files, '================== files ======================');
     if (files?.document && role === this.configService.get('appRoles').ADMIN) {
-      console.log(files.document);
       updateUserInfoDto.documents = files.document;
     }
     const client = await this.usersService.updateUser(id, updateUserInfoDto);
@@ -115,7 +114,6 @@ export class UsersController {
     );
     clients.page = page;
     const processingTime = Date.now() - start;
-    console.log(`Processing time: ${processingTime} milliseconds`);
     return clients ? { ...clients, processingTime } : clients;
   }
 
@@ -143,11 +141,6 @@ export class UsersController {
     @Param('id') id: string,
     @Body() updateUserInfoDto: UpdateUserInfoDto,
   ): Promise<any> {
-    console.log(
-      documents,
-      '==================== documents ============================',
-    );
-
     const client = await this.usersService.updateClient(id, updateUserInfoDto);
     return client;
   }
@@ -181,7 +174,6 @@ export class UsersController {
     @Id() id: string,
     @Body() body: { isActive: boolean },
   ): Promise<any> {
-    console.log(userId, id, body?.isActive);
     return this.usersService.changeEmployeeStatus(userId, id, body?.isActive);
   }
 

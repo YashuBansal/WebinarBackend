@@ -75,7 +75,6 @@ export class AttendeesController {
     );
 
     const processingTime = Date.now() - start;
-    console.log(`Processing time: ${processingTime} milliseconds`);
     return result ? { ...result, processingTime } : result;
   }
 
@@ -116,7 +115,6 @@ export class AttendeesController {
     const start = Date.now();
     const page = Number(query?.page) > 0 ? Number(query?.page) : 1;
     const limit = Number(query?.limit) > 0 ? Number(query?.limit) : 25;
-    console.log('im here', query);
     const result = await this.attendeesService.fetchGroupedAttendees(
       new Types.ObjectId(`${adminId}`),
       page,
@@ -125,7 +123,6 @@ export class AttendeesController {
       query.sort,
     );
     const processingTime = Date.now() - start;
-    console.log(`Processing time: ${processingTime} milliseconds`);
     return { ...result, processingTime };
   }
 
@@ -155,7 +152,6 @@ export class AttendeesController {
       body.sort,
     );
     const processingTime = Date.now() - start;
-    console.log(`Processing time: ${processingTime} milliseconds`);
     return { ...result, processingTime };
   }
 

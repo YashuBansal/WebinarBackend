@@ -90,7 +90,6 @@ export class AttendeeAssociationService {
     adminId: Types.ObjectId,
     attendees: string[],
   ) {
-    console.log('attendee-association -> deleted');
     return this.attendeeAssociationModel
       .deleteMany({
         adminId: adminId,

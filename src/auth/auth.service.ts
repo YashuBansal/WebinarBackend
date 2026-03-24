@@ -146,8 +146,6 @@ export class AuthService {
   async refreshToken(email: string): Promise<any> {
     const user = await this.usersService.getUser(email);
 
-    console.log(email, '<--- user ---> ', user?._id);
-
     if (!user) {
       throw new NotFoundException('Incorrect E-Mail');
     }

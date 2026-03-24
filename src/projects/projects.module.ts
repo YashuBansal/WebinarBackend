@@ -7,11 +7,13 @@ import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { UsersModule } from 'src/users/users.module';
 import { HttpModule } from '@nestjs/axios';
 import { WabaMessageModule } from 'src/whatsapp-embed/waba-message/waba-message.module';
+import { SubscriptionModule } from 'src/subscription/subscription.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Project.name, schema: ProjectSchema }]),
     forwardRef(() => UsersModule),
+    forwardRef(() => SubscriptionModule),
     HttpModule,
     WabaMessageModule
   ],

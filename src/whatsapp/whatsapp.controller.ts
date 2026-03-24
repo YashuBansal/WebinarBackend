@@ -86,13 +86,8 @@ export class WhatsappController {
     @Query('hub.verify_token') token: string,
     @Res() res: Response,
   ) {
-    console.log('Received Webhook Verification Request:', { mode, token });
-
     try {
       this.whatsappService.verifyWebhookToken(mode, token);
-      console.log(
-        'Webhook verification successful. Responding with challenge.',
-      );
       // Respond with the challenge token
       res.status(HttpStatus.OK).send(challenge);
     } catch (error) {

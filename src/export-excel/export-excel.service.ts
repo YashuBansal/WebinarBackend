@@ -347,7 +347,6 @@ export class ExportExcelService {
         filterData,
         sort,
       );
-    console.log(aggregationResult);
     let parsedData = [];
 
     if (Array.isArray(aggregationResult?.data)) {
@@ -381,8 +380,6 @@ export class ExportExcelService {
 
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
-
-    console.log(parsedData);
 
     const payload = {
       data: parsedData,
@@ -467,7 +464,6 @@ export class ExportExcelService {
         formatLeadType: true,
       },
     );
-    console.log(aggregationResult);
 
     const userDir = this.getUserDirectory(adminId);
     const filePath = path.join(userDir, fileName);
@@ -507,7 +503,6 @@ export class ExportExcelService {
     adminId: string,
   ) {
     const { startDate, endDate, fileName } = obj;
-    console.log(fileName);
 
     const columns = [
       'client',
@@ -569,7 +564,6 @@ export class ExportExcelService {
       isKey: true,
     };
     updateProgress(50);
-    console.log(payload);
 
     const workerPath = path.resolve(
       __dirname,
@@ -750,7 +744,6 @@ export class ExportExcelService {
       filePath,
     };
     updateProgress(50);
-    console.log(payload);
 
     const workerPath = path.resolve(
       __dirname,
@@ -857,8 +850,6 @@ export class ExportExcelService {
         limit,
         filters,
       );
-
-    console.log(aggregationResult.data);
     updateProgress(50);
 
     const fileName = `UserActivities-${Date.now()}.xlsx`;

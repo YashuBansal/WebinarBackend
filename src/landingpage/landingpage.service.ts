@@ -23,8 +23,6 @@ export class LandingpageService {
     createLandingDto: CreateLandingDto,
     file: Express.Multer.File,
   ): Promise<any> {
-    console.log(file);
-
     if (file) {
       if (file.mimetype.includes('image')) {
         const response = await this.cloudinaryService.uploadImage(
@@ -44,9 +42,7 @@ export class LandingpageService {
     }
 
     const existingLandingPage = await this.landingPageModel.findOne();
-    console.log('file exists cheack -----> ', createLandingDto);
     if (existingLandingPage) {
-      console.log(existingLandingPage);
       if (createLandingDto?.file) {
         if (existingLandingPage?.file?.public_id) {
           await this.cloudinaryService.deleteFile(

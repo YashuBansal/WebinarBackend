@@ -915,7 +915,6 @@ export class EnrollmentsService {
       : parseInt(productData.productLevel) === 0
         ? 0
         : undefined;
-    console.log(page, limit, level, productData);
     const skip = (page - 1) * limit;
 
     const basePipeline: PipelineStage[] = [
@@ -993,7 +992,6 @@ export class EnrollmentsService {
     const total = countResult[0]?.total || 0;
     const totalPages = Math.ceil(total / limit) || 1;
     const pagination = { page, totalPages, total };
-    console.log(pagination, limit);
     return { data: mainResult || [], pagination };
   }
 
@@ -1018,7 +1016,6 @@ export class EnrollmentsService {
     adminId: Types.ObjectId,
     attendees: string[],
   ) {
-    console.log('enrollments -> deleted');
     return this.enrollmentModel
       .deleteMany({
         adminId: adminId,

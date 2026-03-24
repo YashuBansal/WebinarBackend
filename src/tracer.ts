@@ -66,9 +66,6 @@ function initOpenTelemetry() {
 
   try {
     sdk.start();
-    console.log(
-      `[OTEL] OpenTelemetry instrumentation initialized (service=${OTEL_SERVICE_NAME})`,
-    );
 
     // Minimal sanity OTEL log to verify connectivity
     const startupLogger = logs.getLogger(OTEL_SERVICE_NAME);
@@ -97,7 +94,7 @@ process.on('SIGTERM', () => {
   }
 
   Promise.all([sdk.shutdown(), loggerProvider.shutdown()])
-    .then(() => console.log('[OTEL] OpenTelemetry SDK shut down successfully'))
+    .then(() => undefined)
     .catch((error) =>
       console.error('[OTEL] Error shutting down OpenTelemetry:', error),
     )

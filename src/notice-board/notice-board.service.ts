@@ -33,15 +33,8 @@ export class NoticeBoardService {
     } else if (notice.type === 'reminder') {
       role = this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
     }
-    console.log('Role:', role);
 
     for (const employee of employees) {
-      console.log(
-        'Employee:',
-        employee.role,
-        employee.isActive,
-        employee.userName,
-      );
       if (employee.isActive && String(employee.role) === role) {
         const notification = {
           recipient: String(employee._id),

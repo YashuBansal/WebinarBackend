@@ -96,7 +96,6 @@ export class WabaMessageService {
       return wabaMessage;
     } catch (error) {
       this.logger.error('Error saving waba message', error);
-      console.log('error ------------------------- > ', error);
       throw new InternalServerErrorException('Error saving waba message');
     }
   }
@@ -120,7 +119,6 @@ export class WabaMessageService {
   ) {
     const { page, limit } = paginationOptions;
     const skip = (page - 1) * limit;
-    console.log('query', query);
 
     const count = await this.wabaMessageModel.countDocuments(query);
     const wabaMessages = await this.wabaMessageModel

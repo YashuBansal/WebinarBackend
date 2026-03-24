@@ -39,7 +39,6 @@ async function bootstrap() {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.log('Blocked by CORS:', origin);
         // Do not throw an error here; simply disallow the origin safely
         callback(null, false);
       }
@@ -100,8 +99,5 @@ async function bootstrap() {
   });
 
   await app.listen(PORT);
-  console.log(
-    `process running on PORT ${PORT} ==================================== `,
-  );
 }
 bootstrap();

@@ -91,8 +91,6 @@ export class ApiCampaignService {
       processedMessageTemplate,
     );
 
-    console.log('sampleJSON', sampleJSON);
-
     const apiCampaign = new this.apiCampaignModel({
       ...rest,
       name: trimmedName,

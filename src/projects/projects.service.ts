@@ -17,6 +17,7 @@ import { FetchWabaDetailsDto } from './dto/waba.dto';
 import { WabaMessageService } from 'src/whatsapp-embed/waba-message/waba-message.service';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 import { UsersService } from 'src/users/users.service';
+import { SubscriptionService } from 'src/subscription/subscription.service';
 
 @Injectable()
 export class ProjectsService {
@@ -29,6 +30,8 @@ export class ProjectsService {
     private readonly wabaMessageService: WabaMessageService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => SubscriptionService))
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   async fetchWabaMessages(
@@ -71,12 +74,20 @@ export class ProjectsService {
     createProjectDto: CreateProjectDto,
     adminId: Types.ObjectId,
   ): Promise<Project> {
-    const userSubscription: any = await this.usersService.getUserSubscription(
+    let userSubscription: any = await this.usersService.getUserSubscription(
       adminId.toString(),
     );
     if (!userSubscription) {
       throw new NotAcceptableException('User not found');
     }
+
+    // Recompute addon totals just-in-time so expired addons stop granting limits immediately.
+    await this.subscriptionService.updateSingleSubscriptionAddon(
+      userSubscription._id.toString(),
+    );
+    userSubscription = await this.usersService.getUserSubscription(
+      adminId.toString(),
+    );
 
     const projectCount = await this.projectModel.countDocuments({ adminId });
 

@@ -31,7 +31,6 @@ export class RazorpayService {
       notes?: Record<string, string>;
     },
   ) {
-    console.log(' - ---------- > ', amount, typeof amount);
     const instance = new Razorpay({
       key_id: this.configService.get('RAZORPAY_KEY_ID'),
       key_secret: this.configService.get('RAZORPAY_KEY_SECRET'),
@@ -43,7 +42,6 @@ export class RazorpayService {
       receipt: meta?.receipt,
       notes: meta?.notes,
     };
-    console.log(orderOptions);
     const result = await instance.orders.create(orderOptions);
     return result;
   }

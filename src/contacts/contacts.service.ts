@@ -497,8 +497,6 @@ export class ContactsService {
     adminId: Types.ObjectId,
     contactIds: Types.ObjectId[],
   ): Promise<{ deleted: Contact[]; failed: any[] }> {
-    console.log('contactIds', contactIds, adminId);
-
     try {
       // First, get the contacts that will be deleted for the response
       const contactsToDelete = await this.contactModel

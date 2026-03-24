@@ -72,7 +72,6 @@ export class UserActivityController {
     if (!userId || !mongoose.isValidObjectId(userId)) {
       throw new BadRequestException('User ID is required.');
     }
-    console.log();
 
     const activities = await this.userActivityService.getUserActivitiesByUser(
       new Types.ObjectId(`${userId}`),

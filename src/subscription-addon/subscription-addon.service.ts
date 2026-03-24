@@ -53,6 +53,43 @@ export class SubscriptionAddonService {
     );
   }
 
+  async markExpiredAddonsAndGetAffectedSubscriptions(
+    now: Date = new Date(),
+    session?: ClientSession,
+  ): Promise<string[]> {
+    const expiredActiveAddons = await this.SubscriptionAddOnModel.find(
+      {
+        status: UserAddonStatus.ACTIVE,
+        expiryDate: { $lte: now },
+      },
+      { subscription: 1 },
+      { session },
+    ).lean();
+
+    if (!expiredActiveAddons.length) {
+      return [];
+    }
+
+    const affectedSubscriptionIds = Array.from(
+      new Set(
+        expiredActiveAddons
+          .map((entry) => entry.subscription?.toString())
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+
+    await this.SubscriptionAddOnModel.updateMany(
+      {
+        status: UserAddonStatus.ACTIVE,
+        expiryDate: { $lte: now },
+      },
+      { $set: { status: UserAddonStatus.EXPIRED } },
+      { session },
+    );
+
+    return affectedSubscriptionIds;
+  }
+
   async getUserAddons(subscriptionId: string) {
     return await this.SubscriptionAddOnModel.aggregate([
       {

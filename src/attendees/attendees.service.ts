@@ -568,7 +568,6 @@ export class AttendeesService {
         data: tempAttendees,
       };
     } catch (error) {
-      console.log(error);
       throw new BadRequestException(
         error?.message || 'Attendee Import Failed. Please try again.',
       );
@@ -841,7 +840,6 @@ export class AttendeesService {
       throw new BadRequestException(error.message);
     } finally {
       await session.endSession();
-      console.log('Session ended.');
     }
   }
 
@@ -917,7 +915,6 @@ export class AttendeesService {
       throw new BadRequestException(error.message);
     } finally {
       await session.endSession();
-      console.log('Session ended.');
     }
   }
 

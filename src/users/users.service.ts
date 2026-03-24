@@ -132,7 +132,6 @@ export class UsersService {
     id: string,
     twoFactorAuthenticationCode: string,
   ) {
-    console.log(id, twoFactorAuthenticationCode);
     const user = await this.userModel.findById(id);
     const isCodeValid =
       await this.twofaService.isTwoFactorAuthenticationCodeValid(
@@ -782,7 +781,6 @@ export class UsersService {
   }
 
   async getUser(email: string): Promise<User> {
-    console.log(email);
     const user = await this.userModel.findOne({ email: email });
     return user;
   }
@@ -1391,7 +1389,6 @@ export class UsersService {
   ) {
     // Check if there's any data to process
     if (!empData || empData.length === 0) {
-      console.log('No employee data provided for update.');
       return { acknowledged: true, modifiedCount: 0, matchedCount: 0 }; // Mimic bulkWrite result structure
     }
 
@@ -1415,13 +1412,11 @@ export class UsersService {
         ],
       },
     }));
-    console.log('Bulk operations prepared:', operations);
 
     // Execute the bulk write operation
     const result = await this.userModel.bulkWrite(operations, {
       ordered: false, // Process updates even if some fail (optional)
     });
-    console.log('Bulk update result:', result);
     return result;
   }
 
@@ -1491,9 +1486,6 @@ export class UsersService {
       );
     }
     if (!updates || updates.length === 0) {
-      console.log(
-        'bulkUpdateUsersDailyContactCount called with no updates. Returning early.',
-      );
       // Return a result object indicating no operations were performed, similar to bulkWrite output structure
       return {
         acknowledged: true,

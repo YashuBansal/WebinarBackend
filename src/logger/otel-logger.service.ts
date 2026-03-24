@@ -40,8 +40,6 @@ export class OtelLoggerService implements LoggerService {
 
   log(message: any, context?: string) {
     this.emitLog('log', message, context);
-    // Also log to console for local development
-    console.log(`[${context || 'App'}] ${message}`);
   }
 
   error(message: any, trace?: string, context?: string) {
@@ -64,8 +62,6 @@ export class OtelLoggerService implements LoggerService {
 
   verbose(message: any, context?: string) {
     this.emitLog('verbose', message, context);
-    // Also log to console for local development
-    console.log(`[${context || 'App'}] VERBOSE: ${message}`);
   }
 
   /**

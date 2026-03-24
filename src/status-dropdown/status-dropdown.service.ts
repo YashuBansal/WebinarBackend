@@ -108,7 +108,6 @@ export class StatusDropdownService {
       const arr = Object.keys(defaultOptionsObject).filter(
         (key) => defaultOptionsObject[key],
       );
-      console.log(arr);
       defaultOptions.push(...arr);
     }
 

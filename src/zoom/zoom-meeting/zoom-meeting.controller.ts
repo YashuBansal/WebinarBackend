@@ -40,7 +40,6 @@ export class ZoomMeetingController {
     ) {
       throw new BadRequestException('Invalid adminId or projectId');
     }
-    console.log(adminId, projectId, id);
     return await this.zoomMeetingService.getZoomWebinar(
       new Types.ObjectId(adminId),
       new Types.ObjectId(projectId),

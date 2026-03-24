@@ -85,7 +85,6 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
         };
         this.logger.log('Processing queue job - calling optimizedSendSingleTemplateMessage', logData);
         // Console fallback for visibility
-        console.log(`[QUEUE] Processing job ${job.id} - ${phoneNumber} - ${templateName}`, logData);
 
         try {
           // Call the method and capture result
@@ -102,7 +101,6 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
           };
           this.logger.log('Queue job completed successfully', successLogData);
           // Console fallback for visibility
-          console.log(`[QUEUE] Job ${job.id} completed successfully`, successLogData);
           
           return result;
         } catch (error) {

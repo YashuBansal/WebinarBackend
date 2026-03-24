@@ -35,6 +35,12 @@ export class CronService implements OnModuleInit {
     await this.everyWeekJobs();
   }
 
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async handleAddonExpirySync(): Promise<void> {
+    this.logger.log('Running addon expiry sync...');
+    await this.subscriptionService.expireAndRecomputeAffectedSubscriptionAddons();
+  }
+
   @Cron(CronExpression.EVERY_MINUTE) // Every 10 minutes
   async handleAutoAssignments() {
     this.logger.log('Running auto-assignments evaluation...');
@@ -84,8 +90,6 @@ export class CronService implements OnModuleInit {
     this.logger.log('Checking for upcoming expiry for plans...');
     await this.userService.alertAdminsForExpiry();
 
-    this.logger.log('Cleaning up subscription addons...');
-    await this.subscriptionService.updateSubscriptionAddons();
 
     this.logger.log('Reconciling paid addon purchases...');
     await this.addonPurchaseService.reconcilePaidPurchases(100);

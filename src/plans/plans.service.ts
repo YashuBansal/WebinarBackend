@@ -68,12 +68,10 @@ export class PlansService {
     if (planSubscriptionCount.length === 0) {
       return plans;
     }
-    console.log(planSubscriptionCount);
     return plans.map((plan) => {
       const subscriptionCount = planSubscriptionCount.find(
         (count) => String(count._id) === String(plan._id),
       );
-      console.log(subscriptionCount);
       return {
         ...plan,
         subscriptionCount: subscriptionCount?.subscriptionCount || 0,
@@ -82,7 +80,6 @@ export class PlansService {
   }
 
   async addPlan(createPlanDto: CreatePlansDto): Promise<any> {
-    console.log(createPlanDto);
     const existingPlan = await this.plansModel.findOne({
       internalName: createPlanDto.internalName,
     });
@@ -117,6 +114,8 @@ export class PlansService {
         contactLimit: updatePlanDto.contactLimit,
         employeeLimit: updatePlanDto.employeeCount,
         webinarLimit: updatePlanDto.webinarLimit,
+        whatsappProjectLimit: updatePlanDto.whatsappProjectLimit,
+        zoomProjectLimit: updatePlanDto.zoomProjectLimit,
       },
     });
     return plan;

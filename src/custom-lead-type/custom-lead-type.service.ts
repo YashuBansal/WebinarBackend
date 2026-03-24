@@ -45,7 +45,6 @@ export class CustomLeadTypeService {
     adminId: string,
     data: CustomLeadTypeDto,
   ) {
-    console.log('leadTypeId', leadTypeId, adminId, data);
     return await this.customLeadTypeModel
       .findOneAndUpdate(
         { _id: leadTypeId, createdBy: new Types.ObjectId(`${adminId}`) },

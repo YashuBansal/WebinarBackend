@@ -73,7 +73,6 @@ export class ExportExcelController {
       throw new BadRequestException('User document not found.');
 
     const filePath = path.resolve(userDocument.filePath);
-    console.log(filePath);
     // check if file exists
     if (!fs.existsSync(filePath))
       throw new BadRequestException('File not found.');

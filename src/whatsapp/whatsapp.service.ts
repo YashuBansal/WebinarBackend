@@ -112,7 +112,6 @@ export class WhatsappService extends BaseLoggerService {
 
   onModuleInit() {
     this.usersService.getSuperAdminDetails(true).then((superAdmin) => {
-      console.log('superAdmin -------- >', superAdmin);
       if (superAdmin?.whatsappToken) {
         this.apiKey = superAdmin.whatsappToken;
       }
@@ -3579,11 +3578,6 @@ export class WhatsappService extends BaseLoggerService {
       fromPhoneNumberId: payload?.fromPhoneNumberId,
     };
     this.logger.log('optimizedSendSingleTemplateMessage called', entryLogData);
-    // Console fallback for visibility
-    console.log(
-      `[WHATSAPP] optimizedSendSingleTemplateMessage called`,
-      entryLogData,
-    );
 
     const {
       projectId,

@@ -51,7 +51,6 @@ export class UserActivityService {
       String(role) ===
         String(this.configService.get('appRoles')['EMPLOYEE_REMINDER'])
     ) {
-      console.log('emp event');
       this.socketGateway.emitSocketEvent(
         adminId,
         SocketEvents.EMPLOYEE_ACTIVITY_LOG,
@@ -61,8 +60,6 @@ export class UserActivityService {
       );
 
       if (dto.action === 'reActive') {
-        console.log('reActive event', activity);
-
         const employee = await this.userService.getUserById(user);
 
         if (employee) {

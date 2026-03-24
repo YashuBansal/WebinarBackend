@@ -110,8 +110,6 @@ export class ProductsService {
       };
     }
 
-    console.log(pipeline);
-
     const result = await this.productsModel
       .find(pipeline)
       .sort({ updatedAt: -1 })

@@ -82,7 +82,6 @@ export class ApiCampaignController {
     @Body() executeApiCampaignDto: ExecuteApiCampaignDto,
     @Id() adminId: string,
   ) {
-    console.log(`adminId: ${adminId} , body: ${JSON.stringify(executeApiCampaignDto)}`);
     return this.apiCampaignService.execute(executeApiCampaignDto, adminId);
   }
 }
