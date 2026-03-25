@@ -4180,6 +4180,7 @@ export class WhatsappService extends BaseLoggerService {
       failed: 0,
       duplicates: 0,
       invalid: 0,
+      invalidButQueued: 0,
       errors: [] as string[],
     };
 
@@ -4197,10 +4198,14 @@ export class WhatsappService extends BaseLoggerService {
 
             if (!formatted.isValid) {
               results.invalid++;
-              results.errors.push(
-                `${recipientPhoneNumber}: Invalid phone format`,
+              results.invalidButQueued++;
+              this.logger.log(
+                `invalidbutqueued: ${recipientPhoneNumber} (invalid phone format)`,
               );
-              return;
+              results.errors.push(
+                `${recipientPhoneNumber}: Invalid phone format (queued)`,
+              );
+              // Do not stop invalid recipients; only stop duplicates.
             }
 
             if (uniquePhoneNumbers.has(formatted.phoneNumber)) {
@@ -4251,7 +4256,7 @@ export class WhatsappService extends BaseLoggerService {
 
     return {
       success: true,
-      message: `Processing completed. Enqueued: ${results.enqueued}, Duplicates: ${results.duplicates}, Invalid: ${results.invalid}, Failed: ${results.failed}`,
+      message: `Processing completed. Enqueued: ${results.enqueued}, Duplicates: ${results.duplicates}, Invalid: ${results.invalid}, InvalidButQueued: ${results.invalidButQueued}, Failed: ${results.failed}`,
       stats: results,
     };
   }
