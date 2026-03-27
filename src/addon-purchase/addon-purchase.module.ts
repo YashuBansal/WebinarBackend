@@ -12,6 +12,7 @@ import { RazorpayModule } from 'src/razorpay/razorpay.module';
 import { SubscriptionAddonModule } from 'src/subscription-addon/subscription-addon.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { BillingHistoryModule } from 'src/billing-history/billing-history.module';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { BillingHistoryModule } from 'src/billing-history/billing-history.module
     ]),
     AddonModule,
     SubscriptionModule,
+    UsersModule,
     forwardRef(() => RazorpayModule),
     forwardRef(() => SubscriptionAddonModule),
     BillingHistoryModule,

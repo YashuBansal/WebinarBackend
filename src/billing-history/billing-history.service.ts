@@ -68,12 +68,15 @@ export class BillingHistoryService {
     totalAmount: number,
     taxPercent: number,
     addonPurchaseId?: string,
+    dates?: { startDate?: Date; expiryDate?: Date },
   ): Promise<BillingHistory> {
     const invoiceNumber = await this.generateNextInvoiceNumber();
 
     const billingHistory = new this.BillingHistoryModel({
       admin: new Types.ObjectId(`${adminId}`),
       date: new Date(),
+      startDate: dates?.startDate,
+      expiryDate: dates?.expiryDate,
       addOn: new Types.ObjectId(`${addOnId}`),
       addonPurchase: addonPurchaseId
         ? new Types.ObjectId(`${addonPurchaseId}`)

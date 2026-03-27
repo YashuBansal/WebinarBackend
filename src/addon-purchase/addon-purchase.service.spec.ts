@@ -46,6 +46,13 @@ describe('AddonPurchaseService', () => {
     getByAddonPurchaseId: jest.fn(),
   };
 
+  const usersService = {
+    getUserById: jest.fn().mockResolvedValue({
+      _id: '507f1f77bcf86cd799439011',
+      isActive: true,
+    }),
+  };
+
   const connection = {
     startSession: jest.fn(),
   };
@@ -61,6 +68,7 @@ describe('AddonPurchaseService', () => {
       razorpayService as any,
       subscriptionAddonService as any,
       billingHistoryService as any,
+      usersService as any,
       connection as any,
     );
   });

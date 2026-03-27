@@ -137,4 +137,14 @@ export class SubscriptionAddonService {
       },
     ]).exec();
   }
+
+  async getUserAddonByPurchaseId(purchaseId: string) {
+    if (!Types.ObjectId.isValid(purchaseId)) return null;
+    return this.SubscriptionAddOnModel.findOne(
+      { purchase: new Types.ObjectId(purchaseId) },
+      { startAt: 1, expiryDate: 1 },
+    )
+      .lean()
+      .exec();
+  }
 }

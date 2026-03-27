@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  NotAcceptableException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -18,6 +19,7 @@ import { Connection } from 'mongoose';
 import { SubscriptionAddonService } from 'src/subscription-addon/subscription-addon.service';
 import { UserAddonStatus } from 'src/schemas/SubscriptionAddon.schema';
 import { BillingHistoryService } from 'src/billing-history/billing-history.service';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class AddonPurchaseService {
@@ -29,6 +31,7 @@ export class AddonPurchaseService {
     private readonly razorpayService: RazorpayService,
     private readonly subscriptionAddonService: SubscriptionAddonService,
     private readonly billingHistoryService: BillingHistoryService,
+    private readonly usersService: UsersService,
     @InjectConnection() private readonly connection: Connection,
   ) {}
 
@@ -64,7 +67,27 @@ export class AddonPurchaseService {
       throw new BadRequestException('Idempotency-Key header is required');
     }
 
+    const user = await this.usersService.getUserById(adminId);
+    if (!user || !user.isActive) {
+      throw new NotAcceptableException(
+        'Account is inactive. You cannot buy add-ons.',
+      );
+    }
+
     const subscription = await this.subscriptionService.getSubscription(adminId);
+    const subscriptionExpiry = subscription?.expiryDate
+      ? new Date(subscription.expiryDate)
+      : null;
+    if (
+      !subscriptionExpiry ||
+      Number.isNaN(subscriptionExpiry.getTime()) ||
+      subscriptionExpiry.getTime() <= Date.now()
+    ) {
+      throw new NotAcceptableException(
+        'Subscription has expired. Please renew to buy add-ons.',
+      );
+    }
+
     const addon = await this.addonService.getAddOnById(addonId);
 
     const { totalAmount } = this.subscriptionService.generatePriceForAddon(
@@ -234,6 +257,7 @@ export class AddonPurchaseService {
           totalAmount,
           this.subscriptionService.GST_VALUE || 0,
           purchase._id.toString(),
+          { startDate: new Date(), expiryDate: endAt },
         );
       } catch (e: any) {
         const msg = String(e?.message || e);
@@ -323,6 +347,11 @@ export class AddonPurchaseService {
         const { itemAmount, taxAmount, totalAmount } =
           this.subscriptionService.generatePriceForAddon(addon.addOnPrice);
 
+        const userAddon =
+          await this.subscriptionAddonService.getUserAddonByPurchaseId(
+            p._id.toString(),
+          );
+
         await this.billingHistoryService.addOneBillingHistory(
           p.admin.toString(),
           p.addon.toString(),
@@ -331,6 +360,10 @@ export class AddonPurchaseService {
           totalAmount,
           this.subscriptionService.GST_VALUE || 0,
           p._id.toString(),
+          {
+            startDate: userAddon?.startAt ? new Date(userAddon.startAt) : undefined,
+            expiryDate: userAddon?.expiryDate ? new Date(userAddon.expiryDate) : undefined,
+          },
         );
       } catch (_) {
         // best-effort reconciliation; leave counters for observability

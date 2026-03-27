@@ -345,6 +345,15 @@ export class SubscriptionService {
         taxAmount,
         totalAmount,
         this.GST_VALUE,
+        undefined,
+        {
+          startDate: subscriptionAddon?.startAt
+            ? new Date(subscriptionAddon.startAt)
+            : new Date(),
+          expiryDate: subscriptionAddon?.expiryDate
+            ? new Date(subscriptionAddon.expiryDate)
+            : undefined,
+        },
       ).catch(() => {
         throw new Error('Failed to create billing history');
       });
