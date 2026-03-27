@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import {
   IsNotEmpty,
   IsString,
-  IsEmail,
   IsOptional,
   IsArray,
   IsBoolean,
@@ -10,6 +9,7 @@ import {
   MinLength,
   MaxLength,
   ArrayMaxSize,
+  IsIn,
 } from 'class-validator';
 
 export class CreateContactDto {
@@ -163,6 +163,22 @@ export class ContactFiltersDto {
   readonly search?: string;
 
   @IsOptional()
+  @IsString()
+  readonly firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  readonly lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  readonly email?: string;
+
+  @IsOptional()
+  @IsString()
+  readonly phone?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   readonly tags?: string[];
@@ -175,4 +191,24 @@ export class ContactFiltersDto {
   @IsOptional()
   @IsMongoId()
   readonly projectId?: string;
+}
+
+export class BulkUpdateContactTagsDto {
+  @IsArray()
+  @IsMongoId({ each: true })
+  @ArrayMaxSize(1000, { message: 'Maximum 1000 contacts allowed per request' })
+  readonly contactIds: string[];
+
+  @IsMongoId()
+  @IsNotEmpty()
+  readonly projectId: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(10, { message: 'Maximum 10 tags allowed' })
+  readonly tags: string[];
+
+  @IsString()
+  @IsIn(['add', 'remove'])
+  readonly operation: 'add' | 'remove';
 }

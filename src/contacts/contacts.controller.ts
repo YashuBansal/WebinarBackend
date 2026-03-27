@@ -14,6 +14,7 @@ import {
   CreateContactDto,
   UpdateContactDto,
   BulkCreateContactsDto,
+  BulkUpdateContactTagsDto,
   PaginationQueryDto,
   ContactFiltersDto,
 } from './dto/contacts.dto';
@@ -100,6 +101,17 @@ export class ContactsController {
     return this.contactsService.findOne(
       new Types.ObjectId(adminId),
       new Types.ObjectId(contactId),
+    );
+  }
+
+  @Patch('bulk/tags')
+  async bulkUpdateTags(
+    @Id() adminId: string,
+    @Body() bulkUpdateContactTagsDto: BulkUpdateContactTagsDto,
+  ) {
+    return this.contactsService.bulkUpdateTags(
+      new Types.ObjectId(adminId),
+      bulkUpdateContactTagsDto,
     );
   }
 

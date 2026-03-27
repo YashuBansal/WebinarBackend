@@ -11,6 +11,7 @@ import {
   CreateContactDto,
   UpdateContactDto,
   BulkCreateContactsDto,
+  BulkUpdateContactTagsDto,
   CSVImportDto,
   PaginationQueryDto,
   ContactFiltersDto,
@@ -326,14 +327,35 @@ export class ContactsService {
 
     // Apply filters
     if (filters) {
+      const makeRegex = (value: string) => ({
+        $regex: value.replace(/[\\.*+?^${}()|[\]\\]/g, '\\$&'),
+        $options: 'i',
+      });
+
       if (filters.search) {
-        const escapedSearch = filters.search.replace(/[\\.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedSearch = makeRegex(filters.search);
         filter.$or = [
-          { firstName: { $regex: escapedSearch, $options: 'i' } },
-          { lastName: { $regex: escapedSearch, $options: 'i' } },
-          { email: { $regex: escapedSearch, $options: 'i' } },
-          { phone: { $regex: escapedSearch, $options: 'i' } },
+          { firstName: escapedSearch },
+          { lastName: escapedSearch },
+          { email: escapedSearch },
+          { phone: escapedSearch },
         ];
+      }
+
+      if (filters.firstName) {
+        filter.firstName = makeRegex(filters.firstName);
+      }
+
+      if (filters.lastName) {
+        filter.lastName = makeRegex(filters.lastName);
+      }
+
+      if (filters.email) {
+        filter.email = makeRegex(filters.email);
+      }
+
+      if (filters.phone) {
+        filter.phone = makeRegex(filters.phone);
       }
 
       if (filters.tags && filters.tags.length > 0) {
@@ -491,6 +513,44 @@ export class ContactsService {
     };
 
     return this.findAll(adminId, paginationOptions, filters);
+  }
+
+  async bulkUpdateTags(
+    adminId: Types.ObjectId,
+    bulkUpdateContactTagsDto: BulkUpdateContactTagsDto,
+  ): Promise<{ matchedCount: number; modifiedCount: number }> {
+    const projectId = new Types.ObjectId(bulkUpdateContactTagsDto.projectId);
+    const contactObjectIds = bulkUpdateContactTagsDto.contactIds.map(
+      (id) => new Types.ObjectId(id),
+    );
+    const normalizedTags = this.normalizeTags(bulkUpdateContactTagsDto.tags);
+
+    if (normalizedTags.length === 0 || contactObjectIds.length === 0) {
+      return { matchedCount: 0, modifiedCount: 0 };
+    }
+
+    if (bulkUpdateContactTagsDto.operation === 'add') {
+      await this.wabaTagsService.ensureTagsExist(projectId, adminId, normalizedTags);
+    }
+
+    const query = {
+      _id: { $in: contactObjectIds },
+      adminId,
+      projectId,
+      isDeleted: false,
+    };
+
+    const update =
+      bulkUpdateContactTagsDto.operation === 'add'
+        ? { $addToSet: { tags: { $each: normalizedTags } } }
+        : { $pull: { tags: { $in: normalizedTags } } };
+
+    const result = await this.contactModel.updateMany(query, update);
+
+    return {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    };
   }
 
   async bulkRemove(

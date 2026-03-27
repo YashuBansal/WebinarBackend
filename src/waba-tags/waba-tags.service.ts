@@ -8,6 +8,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { WabaTag, WabaTagDocument } from 'src/schemas/waba-tags.schema';
+import { Contact, ContactDocument } from 'src/contacts/Contact.schema';
 import {
   CreateWabaTagDto,
   UpdateWabaTagDto,
@@ -20,6 +21,7 @@ export class WabaTagsService {
 
   constructor(
     @InjectModel(WabaTag.name) private wabaTagModel: Model<WabaTagDocument>,
+    @InjectModel(Contact.name) private contactModel: Model<ContactDocument>,
   ) {}
 
   async createWabaTag(
@@ -116,6 +118,7 @@ export class WabaTagsService {
     }
 
     if (updateWabaTagDto.name) {
+      const previousName = wabaTag.name;
       const sanitizedName = updateWabaTagDto.name
         .toLowerCase()
         .trim()
@@ -142,6 +145,23 @@ export class WabaTagsService {
       }
 
       wabaTag.name = sanitizedName;
+
+      if (sanitizedName !== previousName) {
+        await this.contactModel.updateMany(
+          {
+            adminId,
+            projectId: wabaTag.projectId,
+            isDeleted: false,
+            tags: previousName,
+          },
+          {
+            $set: { 'tags.$[tagName]': sanitizedName },
+          },
+          {
+            arrayFilters: [{ tagName: previousName }],
+          },
+        );
+      }
     }
 
     return await wabaTag.save();
@@ -163,6 +183,15 @@ export class WabaTagsService {
     if (!wabaTag) {
       throw new NotFoundException('Tag not found');
     }
+
+    await this.contactModel.updateMany(
+      {
+        adminId,
+        projectId: wabaTag.projectId,
+        isDeleted: false,
+      },
+      { $pull: { tags: wabaTag.name } },
+    );
 
     await this.wabaTagModel.deleteOne({ _id: new Types.ObjectId(tagId) });
     return wabaTag;
