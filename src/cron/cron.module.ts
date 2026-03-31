@@ -7,6 +7,8 @@ import { AlarmModule } from 'src/alarm/alarm.module';
 import { CampaignModule } from 'src/whatsapp-embed/campaign/campaign.module';
 import { ProgramModule } from 'src/whatsapp-program/program.module';
 import { AddonPurchaseModule } from 'src/addon-purchase/addon-purchase.module';
+import { ProfileModule } from 'src/profile/profile.module';
+import { ProjectsModule } from 'src/projects/projects.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { AddonPurchaseModule } from 'src/addon-purchase/addon-purchase.module';
     AlarmModule,
     CampaignModule,
     ProgramModule,
+    ProfileModule,
+    ProjectsModule,
   ],
   providers: [CronService],
 })

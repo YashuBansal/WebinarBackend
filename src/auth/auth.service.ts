@@ -6,6 +6,7 @@ import {
   Logger,
   NotAcceptableException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 
 import { UsersService } from 'src/users/users.service';
@@ -104,18 +105,15 @@ export class AuthService {
     const result = user.toObject();
     delete result['password'];
 
-    const payload = {
-      id: user?._id,
-      role: user?.role,
-      adminId: user?.adminId,
-    };
+    // Generate and persist refresh token (rotation base) after successful signin.
+    const { accessToken, refreshToken } = await this.generateTokens(
+      user._id as Types.ObjectId,
+    );
 
     return {
       userData: result,
-      access_token: await this.jwtService.signAsync(payload, {
-        secret: this.configService.get('ACCESS_TOKEN_SECRET'),
-        expiresIn: '1h',
-      }),
+      access_token: accessToken,
+      refresh_token: refreshToken,
     };
   }
 
@@ -158,15 +156,34 @@ export class AuthService {
     return this.finalizeSignInAfterUserResolved(user, signInDto);
   }
 
-  async refreshToken(email: string): Promise<any> {
-    const user = await this.usersService.getUser(email);
-
-    if (!user) {
-      throw new NotFoundException('Incorrect E-Mail');
+  async refreshToken(refreshToken: string): Promise<any> {
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token missing');
     }
 
-    const result = user.toObject();
-    delete result['password'];
+    let decoded: any;
+    try {
+      decoded = this.jwtService.verify(refreshToken, {
+        secret: this.configService.get('REFRESH_TOKEN_SECRET'),
+      });
+    } catch (e) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    const userId = decoded?.id;
+    if (!userId) {
+      throw new UnauthorizedException('Invalid refresh token payload');
+    }
+
+    const user = await this.userModel.findById(userId).exec();
+    if (!user || !user.refreshToken) {
+      throw new UnauthorizedException('Refresh token not recognized');
+    }
+
+    // Compare incoming refresh token vs stored (server-side invalidation).
+    if (String(user.refreshToken) !== String(refreshToken)) {
+      throw new UnauthorizedException('Refresh token rotated or revoked');
+    }
 
     const payload = {
       id: user?._id,
@@ -174,11 +191,49 @@ export class AuthService {
       adminId: user?.adminId,
     };
 
+    // Rotation: create new refresh token + update DB.
+    const newRefreshToken = await this.jwtService.signAsync(
+      { id: user._id },
+      {
+        secret: this.configService.get('REFRESH_TOKEN_SECRET'),
+        expiresIn: '1d',
+      },
+    );
+    user.refreshToken = newRefreshToken;
+    await user.save({ validateBeforeSave: false });
+
     const access_token = await this.jwtService.signAsync(payload, {
       secret: this.configService.get('ACCESS_TOKEN_SECRET'),
       expiresIn: '1h',
     });
-    return { access_token, user };
+
+    return { access_token, refresh_token: newRefreshToken };
+  }
+
+  async logout(refreshToken?: string): Promise<void> {
+    // Best-effort invalidation: if token doesn't verify, still proceed with client cookie clear.
+    if (!refreshToken) return;
+
+    let decoded: any;
+    try {
+      decoded = this.jwtService.verify(refreshToken, {
+        secret: this.configService.get('REFRESH_TOKEN_SECRET'),
+      });
+    } catch {
+      return;
+    }
+
+    const userId = decoded?.id;
+    if (!userId) return;
+
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) return;
+
+    // Only invalidate if the provided token is the active one.
+    if (user.refreshToken && String(user.refreshToken) === String(refreshToken)) {
+      user.refreshToken = '';
+      await user.save({ validateBeforeSave: false });
+    }
   }
 
   async createEmployee(

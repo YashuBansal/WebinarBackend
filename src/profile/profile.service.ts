@@ -203,7 +203,7 @@ export class ProfileService {
         return DisplayNameStatus.APPROVED;
       case 'PENDING_REVIEW':
         return DisplayNameStatus.PENDING;
-      case 'DECLINED':
+      case 'REJECTED':
         return DisplayNameStatus.REJECTED;
       default:
         return DisplayNameStatus.UNKNOWN;
@@ -425,7 +425,7 @@ export class ProfileService {
         `Successfully fetched display name status for phone number ${phoneNumberId}`,
       );
 
-      const displayNameStatus = this.mapNameStatus(response.data?.name_status || 'UNKNOWN');
+      const displayNameStatus = response.data?.name_status;
       const displayPhoneNumber = response.data.display_phone_number || '';
       const verifiedName = response.data.verified_name || '';
       const qualityRating = response.data.quality_rating || '';

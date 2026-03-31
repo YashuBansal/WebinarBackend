@@ -1384,6 +1384,20 @@ export class UsersService {
     return this.userModel.find({ adminId }, '_id email userName isActive role');
   }
 
+  /**
+   * Used by cron jobs to ensure only active admins' projects are processed.
+   */
+  async findActiveUsersByIds(
+    ids: Array<Types.ObjectId | string>,
+  ): Promise<Array<Pick<User, '_id'>>> {
+    if (!ids?.length) return [];
+
+    return this.userModel
+      .find({ _id: { $in: ids }, isActive: true })
+      .select('_id')
+      .lean();
+  }
+
   async updateEmployeeAssignmentCounts(
     empData: { _id: Types.ObjectId; count: number }[],
   ) {

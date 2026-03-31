@@ -25,16 +25,16 @@ import { AttendeeAssociationModule } from 'src/attendee-association/attendee-ass
 
 @Module({
   imports: [
-    forwardRef(() => UsersModule),
-    forwardRef(() => AttendeesModule),
-    forwardRef(() => WebinarModule),
-    forwardRef(() => SubscriptionModule),
     MongooseModule.forFeature([
       {
         name: Assignments.name,
         schema: AssignmentsSchema,
       },
     ]),
+    forwardRef(() => UsersModule),
+    forwardRef(() => AttendeesModule),
+    forwardRef(() => WebinarModule),
+    forwardRef(() => SubscriptionModule),
     NotificationModule,
     EnrollmentsModule,
     AttendeeLogModule,

@@ -367,6 +367,11 @@ export class WabaMessageService {
       phoneNumber: string;
       lastMessagePreview?: string;
       lastMessageAt?: string;
+      lastMessageStatus?: string;
+      lastMessageSentAt?: string;
+      lastMessageDeliveredAt?: string;
+      lastMessageReadAt?: string;
+      lastMessageFailureReason?: string;
       unreadCount: number;
       lastMessageDirection?: 'inbound' | 'outbound';
     }>
@@ -469,10 +474,20 @@ export class WabaMessageService {
       let lastMessagePreview: string | undefined;
       let lastMessageAt: string | undefined;
       let lastMessageDirection: 'inbound' | 'outbound' | undefined;
+      let lastMessageStatus: string | undefined;
+      let lastMessageSentAt: string | undefined;
+      let lastMessageDeliveredAt: string | undefined;
+      let lastMessageReadAt: string | undefined;
+      let lastMessageFailureReason: string | undefined;
 
       if (lastMessage) {
         lastMessageAt = lastMessage.createdAt.toISOString();
         lastMessageDirection = lastMessage.direction;
+        lastMessageStatus = lastMessage.status;
+        lastMessageSentAt = lastMessage.sentAt?.toISOString();
+        lastMessageDeliveredAt = lastMessage.deliveredAt?.toISOString();
+        lastMessageReadAt = lastMessage.readAt?.toISOString();
+        lastMessageFailureReason = lastMessage.failureReason;
 
         if (lastMessage.messageFormat === 'media') {
           if (lastMessage.mimeType?.startsWith('image/')) {
@@ -498,6 +513,11 @@ export class WabaMessageService {
         phoneNumber,
         lastMessagePreview,
         lastMessageAt,
+        lastMessageStatus,
+        lastMessageSentAt,
+        lastMessageDeliveredAt,
+        lastMessageReadAt,
+        lastMessageFailureReason,
         unreadCount,
         lastMessageDirection,
       };
@@ -526,6 +546,11 @@ export class WabaMessageService {
       timeRemaining: number;
       lastMessagePreview?: string;
       lastMessageAt?: string;
+      lastMessageStatus?: string;
+      lastMessageSentAt?: string;
+      lastMessageDeliveredAt?: string;
+      lastMessageReadAt?: string;
+      lastMessageFailureReason?: string;
       unreadCount: number;
       lastMessageDirection?: 'inbound' | 'outbound';
     }>
@@ -658,10 +683,20 @@ export class WabaMessageService {
       let lastMessagePreview: string | undefined;
       let lastMessageAt: string | undefined;
       let lastMessageDirection: 'inbound' | 'outbound' | undefined;
+      let lastMessageStatus: string | undefined;
+      let lastMessageSentAt: string | undefined;
+      let lastMessageDeliveredAt: string | undefined;
+      let lastMessageReadAt: string | undefined;
+      let lastMessageFailureReason: string | undefined;
 
       if (lastMessage) {
         lastMessageAt = lastMessage.createdAt.toISOString();
         lastMessageDirection = lastMessage.direction;
+        lastMessageStatus = lastMessage.status;
+        lastMessageSentAt = lastMessage.sentAt?.toISOString();
+        lastMessageDeliveredAt = lastMessage.deliveredAt?.toISOString();
+        lastMessageReadAt = lastMessage.readAt?.toISOString();
+        lastMessageFailureReason = lastMessage.failureReason;
 
         if (lastMessage.messageFormat === 'media') {
           if (lastMessage.mimeType?.startsWith('image/')) {
@@ -691,6 +726,11 @@ export class WabaMessageService {
         timeRemaining: Math.max(0, timeRemaining),
         lastMessagePreview,
         lastMessageAt,
+        lastMessageStatus,
+        lastMessageSentAt,
+        lastMessageDeliveredAt,
+        lastMessageReadAt,
+        lastMessageFailureReason,
         unreadCount,
         lastMessageDirection,
       };

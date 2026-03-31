@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
@@ -32,16 +33,27 @@ export class AuthController {
     private readonly pabblyTokenBlacklist: PabblyTokenBlacklistService,
   ) {}
 
-  private getCookieOptions(): CookieOptions {
+  private getCookieOptions(maxAgeMs: number): CookieOptions {
     const isProduction = this.configService.get('NODE_ENV') !== 'development';
     const cookieDomain = this.configService.get('COOKIE_DOMAIN');
 
     return {
       httpOnly: true, // Prevents client-side JS from accessing the cookie
-      secure: true, // Only send cookie over HTTPS in production
+      secure: true, // SameSite=None requires Secure; keep consistent across envs
       sameSite: 'none',
-      maxAge: 3600000 * 5,
+      maxAge: maxAgeMs,
+      // Dev/localhost par domain mismatch se cookie set fail ho sakti hai,
+      // isliye domain sirf production me apply karte hain.
+      ...(cookieDomain && isProduction ? { domain: cookieDomain } : {}),
     };
+  }
+
+  private getAccessCookieOptions(): CookieOptions {
+    return this.getCookieOptions(3600000 * 5);
+  }
+
+  private getRefreshCookieOptions(): CookieOptions {
+    return this.getCookieOptions(3600000 * 24);
   }
 
   @Post('login')
@@ -65,40 +77,78 @@ export class AuthController {
       response.cookie(
         this.configService.get('ACCESS_TOKEN_NAME'),
         result.access_token,
-        this.getCookieOptions(),
+        this.getAccessCookieOptions(),
+      );
+    }
+    if (result.refresh_token) {
+      const refreshTokenName =
+        this.configService.get('REFRESH_TOKEN_NAME') || 'refreshToken';
+      response.cookie(
+        refreshTokenName,
+        result.refresh_token,
+        this.getRefreshCookieOptions(),
       );
     }
     return result.userData;
   }
 
   @Post('logout')
-  async logout(@Res({ passthrough: true }) response: Response) {
-    const cookieOptions = this.getCookieOptions();
+  async logout(
+    @Req() req: any,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const refreshTokenName =
+      this.configService.get('REFRESH_TOKEN_NAME') || 'refreshToken';
+    const refreshToken = req?.cookies?.[refreshTokenName];
+
     const accessTokenName = this.configService.get('ACCESS_TOKEN_NAME');
+    const accessCookieOptions = this.getAccessCookieOptions();
+    const refreshCookieOptions = this.getRefreshCookieOptions();
     response.clearCookie(accessTokenName, {
-      ...cookieOptions,
+      ...accessCookieOptions,
       maxAge: 0, // A common practice to explicitly expire it
     });
+
+    response.clearCookie(refreshTokenName, {
+      ...refreshCookieOptions,
+      maxAge: 0,
+    });
+
+    if (refreshToken) {
+      await this.authService.logout(refreshToken);
+    }
     return { message: 'Successfully logged out' };
   }
 
   @Post('refresh')
   async refreshToken(
-    @Body() body: { email: string },
+    @Req() req: any,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.authService.refreshToken(body.email);
+    const refreshTokenName =
+      this.configService.get('REFRESH_TOKEN_NAME') || 'refreshToken';
+    const refreshToken = req?.cookies?.[refreshTokenName];
+
+    const result = await this.authService.refreshToken(refreshToken);
     if (result.access_token) {
       response.cookie(
         this.configService.get('ACCESS_TOKEN_NAME'),
         result.access_token,
-        this.getCookieOptions(),
+        this.getAccessCookieOptions(),
+      );
+    }
+
+    if (result.refresh_token) {
+      response.cookie(
+        refreshTokenName,
+        result.refresh_token,
+        this.getRefreshCookieOptions(),
       );
     }
 
     return {
       status: true,
-      message: 'Refresh token generated',
+      message: 'Refresh token rotated',
     };
   }
 
