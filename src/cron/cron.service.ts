@@ -45,7 +45,7 @@ export class CronService implements OnModuleInit {
     await this.subscriptionService.expireAndRecomputeAffectedSubscriptionAddons();
   }
 
-  @Cron(CronExpression.EVERY_MINUTE) // Every 10 minutes
+  @Cron(CronExpression.EVERY_10_MINUTES) // Every 10 minutes
   async handleAutoAssignments() {
     this.logger.log('Running auto-assignments evaluation...');
     try {
@@ -76,7 +76,7 @@ export class CronService implements OnModuleInit {
     }
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_HOUR)
   async handleHourlyProfileSync(): Promise<void> {
     const startedAt = Date.now();
     this.logger.log('Running hourly profile sync...');

@@ -48,35 +48,13 @@ export class WabaTemplateService {
       throw error;
     }
 
-    // Step 2: Delete all existing templates for this project
-    let deletedCount = 0;
-    try {
-      const deleteResult = await this.wabaTemplateModel.deleteMany({
-        projectId,
-      });
-      deletedCount = deleteResult.deletedCount || 0;
-      this.logger.log(
-        `Deleted ${deletedCount} existing templates for project ${projectId}`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Failed to delete existing templates for project ${projectId}`,
-        error?.message || error,
-      );
-      throw error;
+    if (!Array.isArray(wabaTemplates)) {
+      wabaTemplates = [];
     }
 
-    // Step 3: If no templates from Meta, return early
-    if (!Array.isArray(wabaTemplates) || wabaTemplates.length === 0) {
-      this.logger.warn(
-        `No templates returned from Meta for project ${projectId}`,
-      );
-      return { fetched: 0, inserted: 0, deleted: deletedCount };
-    }
-
-    // Step 4: Prepare new templates for insertion (dedupe by name+language)
-    const templatesToInsert: any[] = [];
+    const bulkOps: any[] = [];
     const seenKeys = new Set<string>();
+    const metaTemplateIds: string[] = [];
     let skippedMissing = 0;
     let skippedDuplicate = 0;
 
@@ -84,13 +62,15 @@ export class WabaTemplateService {
       const name = tpl.name;
       const language = tpl.language;
 
-      if (!name || !language) {
+      if (!name || !language || !tpl.id) {
         skippedMissing += 1;
         this.logger.warn(
-          `Skipping template with missing name or language: ${JSON.stringify(tpl)}`,
+          `Skipping template with missing name, language, or id: ${JSON.stringify(tpl)}`,
         );
         continue;
       }
+      
+      metaTemplateIds.push(tpl.id);
 
       const key = `${name}::${language}`;
       if (seenKeys.has(key)) {
@@ -108,65 +88,62 @@ export class WabaTemplateService {
         ...this.mapTemplateToSchema(tpl, now),
       };
 
-      templatesToInsert.push(templateDoc);
+      bulkOps.push({
+        updateOne: {
+          filter: { projectId, name, language },
+          update: { $set: templateDoc },
+          upsert: true,
+        },
+      });
     }
 
     this.logger.log(
-      `Prepared ${templatesToInsert.length} templates for insertion (skipped missing=${skippedMissing}, duplicates=${skippedDuplicate}) for project ${projectId}`,
+      `Prepared ${bulkOps.length} templates for upsertion (skipped missing=${skippedMissing}, duplicates=${skippedDuplicate}) for project ${projectId}`,
     );
 
-    // Step 5: Insert all new templates
-    let insertedCount = 0;
-    if (templatesToInsert.length > 0) {
+    let upsertedCount = 0;
+    let modifiedCount = 0;
+    
+    if (bulkOps.length > 0) {
       try {
-        const insertResult = await this.wabaTemplateModel.insertMany(
-          templatesToInsert,
-          {
-            ordered: false,
-          },
-        );
-        insertedCount = insertResult.length;
-        this.logger.log(
-          `Inserted ${insertedCount} new templates for project ${projectId}`,
-        );
+        const bulkResult = await this.wabaTemplateModel.bulkWrite(bulkOps, {
+          ordered: false,
+        });
+        upsertedCount = bulkResult.upsertedCount || 0;
+        modifiedCount = bulkResult.modifiedCount || 0;
       } catch (error: any) {
-        // Log detailed error information for debugging
         this.logger.error(
-          `Failed to insert templates for project ${projectId}`,
-          {
-            message: error?.message,
-            name: error?.name,
-            code: error?.code,
-            errors: error?.errors,
-            writeErrors: error?.writeErrors,
-            insertedDocs: error?.insertedDocs,
-            nInserted: error?.nInserted,
-          },
+          `Failed to bulk write templates for project ${projectId}. Proceeding to cleanup...`,
+          error?.message,
         );
-
-        // Log first template that failed for debugging
-        if (templatesToInsert.length > 0) {
-          this.logger.error(
-            `Sample template that failed: ${JSON.stringify(templatesToInsert[0], null, 2)}`,
-          );
-        }
-
-        // If insert fails, templates remain deleted (clean state)
-        throw error;
       }
-    } else {
-      this.logger.warn(
-        `No templates prepared for insertion for project ${projectId}`,
+    }
+
+    let deletedCount = 0;
+    try {
+      const deleteResult = await this.wabaTemplateModel.deleteMany({
+        projectId,
+        id: { $nin: metaTemplateIds },
+      });
+      deletedCount = deleteResult.deletedCount || 0;
+      if (deletedCount > 0) {
+        this.logger.log(`Cleaned up ${deletedCount} orphaned templates for project ${projectId}`);
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to clean up orphaned templates for project ${projectId}`,
+        error?.message,
       );
     }
 
     this.logger.log(
-      `WABA template sync completed for project ${projectId}: fetched=${wabaTemplates.length}, inserted=${insertedCount}, deleted=${deletedCount}`,
+      `WABA template sync completed for project ${projectId}: fetched=${wabaTemplates.length}, upserted=${upsertedCount}, modified=${modifiedCount}, deleted=${deletedCount}`,
     );
 
     return {
       fetched: wabaTemplates.length,
-      inserted: insertedCount,
+      upserted: upsertedCount,
+      modified: modifiedCount,
       deleted: deletedCount,
     };
   }
@@ -212,12 +189,19 @@ export class WabaTemplateService {
     projectId: Types.ObjectId,
     createTemplateDto: CreateTemplateDto,
   ) {
-    await this.whatsappService.createTemplateForWaba(
+    const result = await this.whatsappService.createTemplateForWaba(
       adminId,
       projectId,
       createTemplateDto,
     );
-    await this.syncWabaTemplates(adminId, projectId);
+    try {
+      await this.syncWabaTemplates(adminId, projectId);
+    } catch (error) {
+      this.logger.error(
+        `Template created on Meta, but failed to sync locally for project ${projectId}. Error: ${error.message || error}`,
+      );
+    }
+    return result;
   }
 
   async deleteTemplate(
@@ -225,12 +209,19 @@ export class WabaTemplateService {
     projectId: Types.ObjectId,
     deleteTemplateDto: DeleteTemplateDto,
   ) {
-    await this.whatsappService.deleteTemplateForWaba(
+    const result = await this.whatsappService.deleteTemplateForWaba(
       adminId,
       projectId,
       deleteTemplateDto,
     );
-    await this.syncWabaTemplates(adminId, projectId);
+    try {
+      await this.syncWabaTemplates(adminId, projectId);
+    } catch (error) {
+      this.logger.error(
+        `Template deleted on Meta, but failed to sync locally for project ${projectId}. Error: ${error.message || error}`,
+      );
+    }
+    return result;
   }
 
   private mapTemplateToSchema(tpl: TemplateResponseDto, now: Date) {
