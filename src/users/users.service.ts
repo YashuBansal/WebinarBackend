@@ -39,6 +39,8 @@ import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { TwoFactorAuthenticationService } from 'src/two-factor-authentication/two-factor-authentication.service';
 import { ApiAccessTokenService } from 'src/api-access-token/api-access-token.service';
 import { SocketEvents } from 'src/websocket/dto/socket.dto';
+import { RolesService } from 'src/roles/roles.service';
+import { PlansService } from 'src/plans/plans.service';
 
 @Injectable()
 export class UsersService {
@@ -46,8 +48,8 @@ export class UsersService {
 
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
-    @InjectModel(Roles.name) private rolesModel: Model<Roles>,
-    @InjectModel(Plans.name) private plansModel: Model<Plans>,
+    private readonly rolesService: RolesService,
+    @Inject(forwardRef(() => PlansService)) private readonly plansService: PlansService,
     private configService: ConfigService,
     private readonly billingHistoryService: BillingHistoryService,
     @Inject(forwardRef(() => SubscriptionService))
@@ -977,9 +979,7 @@ export class UsersService {
     createEmployeeDto: CreateEmployeeDto,
     creatorDetailsDto: CreatorDetailsDto,
   ): Promise<any> {
-    const role = await this.rolesModel.findOne({
-      name: createEmployeeDto?.role,
-    });
+    const role = await this.rolesService.getRoleByName(createEmployeeDto?.role);
     if (!role) throw new NotFoundException('No Role Found with the given ID.');
     const user = await this.userModel.create({
       ...createEmployeeDto,
@@ -1008,9 +1008,7 @@ export class UsersService {
       const hashPassword = await bcrypt.hash(updateEmployeeDto.password, 10);
       updateEmployeeDto.password = hashPassword;
     }
-    const role = await this.rolesModel.findOne({
-      name: updateEmployeeDto?.role,
-    });
+    const role = await this.rolesService.getRoleByName(updateEmployeeDto?.role);
 
     if (!role) throw new NotFoundException('No Role Found with the given ID.');
 
@@ -1095,11 +1093,8 @@ export class UsersService {
     const normalizedEmail = createClientDto.email.trim().toLowerCase();
     createClientDto.email = normalizedEmail;
 
-    const plan = await this.plansModel.findOne({
-      _id: new Types.ObjectId(`${createClientDto.plan}`),
-    });
+    const plan = await this.plansService.getPlan(createClientDto.plan as string);
 
-    if (!plan) throw new NotFoundException('No Plans Found with the given ID.');
     const isDurationConfig = plan.planDurationConfig.has(
       createClientDto.durationType,
     );

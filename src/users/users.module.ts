@@ -8,14 +8,13 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from 'src/schemas/User.schema';
-import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { BillingHistoryModule } from 'src/billing-history/billing-history.module';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
-import { Roles, RolesSchema } from 'src/schemas/Roles.schema';
-
+import { RolesModule } from 'src/roles/roles.module';
+import { PlansModule } from 'src/plans/plans.module';
 import { diskStorage } from 'multer';
 import { MulterModule } from '@nestjs/platform-express';
 
@@ -43,17 +42,11 @@ import { ApiAccessTokenModule } from 'src/api-access-token/api-access-token.modu
         name: User.name,
         schema: UserSchema,
       },
-      {
-        name: Plans.name,
-        schema: PlansSchema,
-      },
-      {
-        name: Roles.name,
-        schema: RolesSchema,
-      },
     ]),
     BillingHistoryModule,
     NotificationModule,
+    RolesModule,
+    forwardRef(() => PlansModule),
     forwardRef(() => CustomLeadTypeModule),
     forwardRef(() => ProductsModule),
     WebsocketModule,

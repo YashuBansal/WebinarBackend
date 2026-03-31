@@ -74,4 +74,8 @@ export class RolesService implements OnModuleInit {
     }
     return role.name;
   }
+
+  async getRoleByName(name: string): Promise<Roles | null> {
+    return this.rolesModel.findOne({ name }).exec();
+  }
 }
