@@ -23,7 +23,8 @@ interface SyncResult {
   projectId: string;
   projectName: string;
   fetched: number;
-  inserted: number;
+  upserted: number;
+  modified: number;
   deleted: number;
 }
 
@@ -34,7 +35,8 @@ interface SyncReport {
     totalProjects: number;
     totalProcessed: number;
     totalTemplatesFetched: number;
-    totalTemplatesInserted: number;
+    totalTemplatesUpserted: number;
+    totalTemplatesModified: number;
     totalTemplatesDeleted: number;
     totalErrors: number;
   };
@@ -74,7 +76,8 @@ async function syncWabaTemplates() {
     const results: SyncResult[] = [];
     let totalProcessed = 0;
     let totalTemplatesFetched = 0;
-    let totalTemplatesInserted = 0;
+    let totalTemplatesUpserted = 0;
+    let totalTemplatesModified = 0;
     let totalTemplatesDeleted = 0;
 
     // Process each project
@@ -100,19 +103,21 @@ async function syncWabaTemplates() {
         );
 
         totalTemplatesFetched += syncResult.fetched;
-        totalTemplatesInserted += syncResult.inserted;
+        totalTemplatesUpserted += syncResult.upserted;
+        totalTemplatesModified += syncResult.modified;
         totalTemplatesDeleted += syncResult.deleted;
 
         results.push({
           projectId,
           projectName: project.projectName,
           fetched: syncResult.fetched,
-          inserted: syncResult.inserted,
+          upserted: syncResult.upserted,
+          modified: syncResult.modified,
           deleted: syncResult.deleted,
         });
 
         logger.log(
-          `  Sync completed for ${project.projectName}: fetched=${syncResult.fetched}, inserted=${syncResult.inserted}, deleted=${syncResult.deleted}`,
+          `  Sync completed for ${project.projectName}: fetched=${syncResult.fetched}, upserted=${syncResult.upserted}, modified=${syncResult.modified}, deleted=${syncResult.deleted}`,
         );
 
         totalProcessed++;
@@ -138,7 +143,7 @@ async function syncWabaTemplates() {
       // Log progress every 10 projects
       if ((i + 1) % 10 === 0) {
         logger.log(
-          `Progress: ${i + 1}/${projects.length} projects processed. Templates: fetched=${totalTemplatesFetched}, inserted=${totalTemplatesInserted}, deleted=${totalTemplatesDeleted}, Errors: ${errors.length}`,
+          `Progress: ${i + 1}/${projects.length} projects processed. Templates: fetched=${totalTemplatesFetched}, upserted=${totalTemplatesUpserted}, modified=${totalTemplatesModified}, deleted=${totalTemplatesDeleted}, Errors: ${errors.length}`,
         );
       }
     }
@@ -156,7 +161,8 @@ async function syncWabaTemplates() {
         totalProjects: projects.length,
         totalProcessed,
         totalTemplatesFetched,
-        totalTemplatesInserted,
+        totalTemplatesUpserted,
+        totalTemplatesModified,
         totalTemplatesDeleted,
         totalErrors: errors.length,
       },
@@ -175,7 +181,7 @@ async function syncWabaTemplates() {
     // Summary
     logger.log('Sync completed.');
     logger.log(
-      `Summary: Projects: ${projects.length}, Processed: ${totalProcessed}, Templates Fetched: ${totalTemplatesFetched}, Inserted: ${totalTemplatesInserted}, Deleted: ${totalTemplatesDeleted}, Errors: ${errors.length}`,
+      `Summary: Projects: ${projects.length}, Processed: ${totalProcessed}, Templates Fetched: ${totalTemplatesFetched}, Upserted: ${totalTemplatesUpserted}, Modified: ${totalTemplatesModified}, Deleted: ${totalTemplatesDeleted}, Errors: ${errors.length}`,
     );
 
     if (errors.length > 0) {
