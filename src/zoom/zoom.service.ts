@@ -492,7 +492,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
       // Log full error for diagnostics
-      console.error('Zoom token exchange failed:', { status, payload });
+      this.logger.error('Zoom token exchange failed', { status, payload });
       throw new NotAcceptableException(
         zoomApiErrorMessage(
           payload,
@@ -515,10 +515,9 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       );
       accountId = profileResponse.data.account_id;
     } catch (error: any) {
-      console.error(
-        'Failed to get user profile:',
-        error?.response?.data || error?.message,
-      );
+      this.logger.error('Failed to get user profile', {
+        payload: error?.response?.data || error?.message,
+      });
       // If we can't get account_id, we'll still save the tokens but without accountId
       accountId = '';
     }
@@ -600,7 +599,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error('Zoom user profile failed:', { status, payload });
+      this.logger.error('Zoom user profile failed', { status, payload });
       throw new NotAcceptableException(
         zoomApiErrorMessage(payload, 'Failed to fetch Zoom profile'),
       );
@@ -636,7 +635,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error('Zoom list meetings failed:', { status, payload });
+      this.logger.error('Zoom list meetings failed', { status, payload });
       throw new NotAcceptableException(
         zoomApiErrorMessage(payload, 'Failed to fetch meetings from Zoom'),
       );
@@ -704,7 +703,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error('Zoom list webinars failed:', { status, payload });
+      this.logger.error('Zoom list webinars failed', { status, payload });
       throw new NotAcceptableException(
         zoomApiErrorMessage(payload, 'Failed to fetch webinars from Zoom'),
       );
@@ -771,7 +770,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error('Zoom webinar details failed:', { status, payload });
+      this.logger.error('Zoom webinar details failed', { status, payload });
       throw new NotAcceptableException(
         zoomApiErrorMessage(
           payload,
@@ -883,7 +882,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error('Zoom webinar registrants failed:', { status, payload });
+      this.logger.error('Zoom webinar registrants failed', { status, payload });
       throw new NotAcceptableException(
         zoomApiErrorMessage(
           payload,
@@ -1482,13 +1481,6 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
           payload: payload,
         },
       );
-
-      // axios.post(`https://c1296fc23ed8.ngrok-free.app/api/v1/zoom/webhook-v2?projectId=${projectId}`, payload).then((response) => {
-      //   // console.log('response', response);
-      // }).catch((error) => {
-      //   console.log('error', error);
-      // });
-      // return;
 
       // Validate project ID format
       const zoomProjectId = mongoose.isValidObjectId(projectId)
@@ -2829,7 +2821,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error('Zoom meeting details failed:', { status, payload });
+      this.logger.error('Zoom meeting details failed', { status, payload });
       throw new NotAcceptableException(
         zoomApiErrorMessage(
           payload,
@@ -2933,8 +2925,8 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error(
-        `Zoom ${isWebinar ? 'webinar' : 'meeting'} registrants fetch failed:`,
+      this.logger.error(
+        `Zoom ${isWebinar ? 'webinar' : 'meeting'} registrants fetch failed`,
         { status, payload },
       );
       throw new NotAcceptableException(
@@ -3108,8 +3100,8 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error(
-        `Zoom ${isWebinar ? 'webinar' : 'meeting'} all registrants fetch failed:`,
+      this.logger.error(
+        `Zoom ${isWebinar ? 'webinar' : 'meeting'} all registrants fetch failed`,
         { status, payload },
       );
       throw new NotAcceptableException(
@@ -3217,8 +3209,8 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error(
-        `Zoom ${isWebinar ? 'webinar' : 'meeting'} all registrants fetch failed:`,
+      this.logger.error(
+        `Zoom ${isWebinar ? 'webinar' : 'meeting'} all registrants fetch failed`,
         { status, payload },
       );
       throw new NotAcceptableException(
@@ -3261,7 +3253,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error('Zoom add registrant failed:', { status, payload });
+      this.logger.error('Zoom add registrant failed', { status, payload });
       throw new NotAcceptableException(
         zoomApiErrorMessage(payload, 'Failed to add meeting registrant'),
       );
@@ -3569,7 +3561,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      console.error('Zoom credential validation failed:', { status, payload });
+      this.logger.error('Zoom credential validation failed', { status, payload });
       throw new NotAcceptableException('Invalid Zoom credentials or account');
     }
 
