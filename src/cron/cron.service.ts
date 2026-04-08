@@ -8,6 +8,7 @@ import { ProgramService } from 'src/whatsapp-program/program.service';
 import { AddonPurchaseService } from 'src/addon-purchase/addon-purchase.service';
 import { ProfileService } from 'src/profile/profile.service';
 import { ProjectsService } from 'src/projects/projects.service';
+import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-template.service';
 
 @Injectable()
 export class CronService implements OnModuleInit {
@@ -22,6 +23,7 @@ export class CronService implements OnModuleInit {
     private readonly addonPurchaseService: AddonPurchaseService,
     private readonly profileService: ProfileService,
     private readonly projectsService: ProjectsService,
+    private readonly wabaTemplateService: WabaTemplateService,
   ) {}
 
   async onModuleInit() {
@@ -52,6 +54,20 @@ export class CronService implements OnModuleInit {
       await this.programService.evaluateAllAutoAssignments();
     } catch (error) {
       this.logger.error('Error during auto-assignments evaluation', error);
+    }
+  }
+
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async handlePendingWabaTemplatesSync(): Promise<void> {
+    this.logger.log('Checking pending WABA templates for Meta sync...');
+
+    try {
+      const result = await this.wabaTemplateService.syncPendingWabaTemplates();
+      this.logger.log(
+        `Pending WABA templates sync finished: ${JSON.stringify(result)}`,
+      );
+    } catch (error) {
+      this.logger.error('Pending WABA templates sync failed', error as any);
     }
   }
 

@@ -2,6 +2,8 @@
 // Reference: https://developers.zoom.us/docs/api/rest/webhook-events/
 
 export enum ZoomWebhookEvent {
+  /** Marketplace app uninstall / user revoked authorization */
+  AppDeauthorized = 'app_deauthorized',
   MeetingParticipantJoined = 'meeting.participant_joined',
   MeetingParticipantLeft = 'meeting.participant_left',
   MeetingStarted = 'meeting.started',

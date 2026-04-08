@@ -108,6 +108,22 @@ export class ZoomMeetingService {
     }
   }
 
+  /**
+   * Resolve meeting/webinar -> projectId without knowing project upfront.
+   * Used by webhook-v3 (no projectId query param).
+   */
+  async findAnyByMeetingId(meetingId: string): Promise<ZoomMeeting | null> {
+    try {
+      return await this.zoomMeetingModel
+        .findOne({ id: meetingId })
+        .select('projectId id')
+        .lean();
+    } catch (error) {
+      this.logger.error('Error finding meeting by id (any project)', error);
+      return null;
+    }
+  }
+
   async syncZoomWebinarData(
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,

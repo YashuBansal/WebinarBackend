@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Delete, Put, Query, Headers, BadRequestException, Logger } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Delete, Put, Query, Headers, BadRequestException, Logger, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import mongoose, { Types } from 'mongoose';
 import { Id } from 'src/decorators/custom.decorator';
 import { ZoomService } from './zoom.service';
@@ -14,6 +15,7 @@ export class ZoomController {
   constructor(
     private readonly zoomService: ZoomService,
     private readonly webhookQueueService: WebhookQueueService,
+    private readonly configService: ConfigService,
   ) { }
 
   @Post('oauth/exchange')
@@ -76,6 +78,33 @@ export class ZoomController {
     return { statusCode: HttpStatus.OK, message: 'Profile', data: profile };
   }
 
+  /**
+   * Zoom Marketplace "Deauthorization Notification Endpoint URL".
+   * Register: POST https://your-api/api/v1/zoom/deauthorize
+   * Optional: set ZOOM_DEAUTHORIZATION_SECRET to match Zoom's verification token (Authorization header).
+   */
+  @Post('deauthorize')
+  @HttpCode(HttpStatus.OK)
+  async deauthorize(
+    @Body() body: Record<string, unknown>,
+    @Headers('authorization') authorization?: string,
+  ) {
+    const secret = this.configService.get<string>('ZOOM_DEAUTHORIZATION_SECRET')?.trim();
+    if (secret) {
+      const auth = authorization?.trim() ?? '';
+      const ok =
+        auth === secret ||
+        auth === `Bearer ${secret}` ||
+        auth === `bearer ${secret}`;
+      if (!ok) {
+        this.logger.warn('zoom/deauthorize rejected: invalid authorization');
+        throw new UnauthorizedException('Invalid deauthorization request');
+      }
+    }
+    await this.zoomService.handleAppDeauthorized(body);
+    return { statusCode: HttpStatus.OK, message: 'Deauthorization processed', data: null };
+  }
+
   @Post('webhook-v2')
   @HttpCode(HttpStatus.OK)
   async webhook(@Body() body: any, @Query('projectId') projectId: string) {
@@ -105,6 +134,37 @@ export class ZoomController {
       });
       // Still return 200 OK to prevent Zoom from retrying
       // The event is lost, but we log it for monitoring
+    }
+
+    return { statusCode: HttpStatus.OK, message: 'Webhook received' };
+  }
+
+  @Post('webhook-v3')
+  @HttpCode(HttpStatus.OK)
+  async webhookV3(@Body() body: any) {
+    this.logger.log(` ========================= ${body?.event} (v3) ========================= `);
+
+    // Handle validation synchronously (needs to return response)
+    if (body.event === 'endpoint.url_validation') {
+      return await this.zoomService.validateWebhookV3(body);
+    }
+
+    const deduplicationId = this.generateDeduplicationIdV3(body);
+    this.logger.log(`Deduplication ID (v3):::::::::::::::::::::::: ${deduplicationId}`);
+
+    // Enqueue webhook for processing with v3 sentinel projectId (resolved later in service)
+    const enqueued = await this.webhookQueueService.enqueue(
+      body,
+      '__v3__',
+      deduplicationId,
+    );
+
+    if (!enqueued) {
+      this.logger.error('Failed to enqueue webhook event - queue is full', {
+        event: body?.event,
+        deduplicationId,
+      });
+      // Still return 200 OK to prevent Zoom from retrying
     }
 
     return { statusCode: HttpStatus.OK, message: 'Webhook received' };
@@ -149,6 +209,48 @@ export class ZoomController {
 
     // Join all parts with a delimiter and create a hash-like string
     // Using a simple concatenation since we need deterministic IDs
+    return parts.filter(p => p).join('|');
+  }
+
+  /**
+   * Same as v2 dedupe, but without projectId (v3 has no query param).
+   */
+  private generateDeduplicationIdV3(body: any): string {
+    const parts: string[] = [
+      body?.event || '',
+      body?.event_ts || body?.payload?.event_ts || '',
+    ];
+
+    const accountId = body?.payload?.account_id || body?.account_id || '';
+    if (accountId) {
+      parts.push(accountId);
+    }
+
+    const objectId = body?.payload?.object?.id || body?.object?.id || '';
+    if (objectId) {
+      parts.push(objectId);
+    }
+
+    const registrantId =
+      body?.payload?.object?.registrant?.id ||
+      body?.payload?.object?.registrant?.email ||
+      body?.object?.registrant?.id ||
+      body?.object?.registrant?.email ||
+      '';
+    if (registrantId) {
+      parts.push(registrantId);
+    }
+
+    const participantId =
+      body?.payload?.object?.participant?.user_id ||
+      body?.payload?.object?.participant?.id ||
+      body?.object?.participant?.user_id ||
+      body?.object?.participant?.id ||
+      '';
+    if (participantId) {
+      parts.push(participantId);
+    }
+
     return parts.filter(p => p).join('|');
   }
 
@@ -241,6 +343,23 @@ export class ZoomController {
       return { statusCode: HttpStatus.NOT_FOUND, message: 'Project not found', data: null };
     }
     return { statusCode: HttpStatus.OK, message: 'Project updated', data: project };
+  }
+
+  @Post('projects/:id/disconnect-oauth')
+  @HttpCode(HttpStatus.OK)
+  async disconnectOAuth(@Id() adminId: string, @Param('id') id: string) {
+    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
+      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    }
+    const project = await this.zoomService.disconnectOAuthProject(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Zoom disconnected from project',
+      data: project,
+    };
   }
 
   @Delete('projects/:id')

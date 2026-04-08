@@ -32,7 +32,6 @@ import {
   TemplateResponseDto,
 } from './dto/template.dto';
 import {
-  SendTemplateMessageDto,
   SendBulkTemplateMessageDto,
   ISendSingleTemplateMessagePayload,
   IFormattedPhoneData,
@@ -1546,7 +1545,6 @@ export class WhatsappService extends BaseLoggerService {
       const checkParams: any = {
         access_token: permanentAccessToken,
         name: createTemplateDto.name,
-        limit: 1,
         fields: 'name,language,status',
       };
       const existing = await this.axiosInstance.get(url, {
@@ -1557,13 +1555,15 @@ export class WhatsappService extends BaseLoggerService {
       const hasDuplicate = list.some(
         (t: any) =>
           String(t?.name || '').toLowerCase() ===
-          String(createTemplateDto.name).toLowerCase(),
+            String(createTemplateDto.name).toLowerCase() &&
+          String(t?.language || '').toLowerCase() ===
+            String(createTemplateDto.language).toLowerCase(),
       );
       if (hasDuplicate) {
         throw new BadRequestException({
           source: 'app',
-          message: 'A template with the same name already exists.',
-          code: 'TEMPLATE_NAME_DUPLICATE',
+          message: 'A template with the same name and language already exists.',
+          code: 'TEMPLATE_DUPLICATE',
         } as any);
       }
     } catch (err) {
@@ -2038,8 +2038,13 @@ export class WhatsappService extends BaseLoggerService {
         { name: templateName },
       );
 
+      const targetLanguage = language || 'en_US';
       const ourTemplate = templates.find(
-        (template: any) => template.name === templateName,
+        (template: any) => 
+          template.name === templateName &&
+          (template.language === targetLanguage || template.language === targetLanguage.replace('-', '_'))
+      ) || templates.find(
+        (template: any) => template.name === templateName
       );
 
       if (!ourTemplate) {
@@ -2103,8 +2108,13 @@ export class WhatsappService extends BaseLoggerService {
         { name: templateName },
       );
 
+      const targetLanguage = language || 'en_US';
       const ourTemplate = templates.find(
-        (template: any) => template.name === templateName,
+        (template: any) => 
+          template.name === templateName &&
+          (template.language === targetLanguage || template.language === targetLanguage.replace('-', '_'))
+      ) || templates.find(
+        (template: any) => template.name === templateName
       );
 
       if (!ourTemplate) {
@@ -2377,12 +2387,14 @@ export class WhatsappService extends BaseLoggerService {
     templateName,
     givenVariableLength,
     headerMediaAssetId,
+    language,
   }: {
     adminId: string;
     projectId: string;
     templateName: string;
     givenVariableLength: number;
     headerMediaAssetId?: string;
+    language?: string;
   }): Promise<{
     template: WabaTemplateDocument;
   }> {
@@ -2390,6 +2402,7 @@ export class WhatsappService extends BaseLoggerService {
       new Types.ObjectId(adminId),
       new Types.ObjectId(projectId),
       templateName,
+      language
     );
 
     if (!template) {
@@ -2471,6 +2484,7 @@ export class WhatsappService extends BaseLoggerService {
       templateName,
       givenVariableLength: variableMappings.length,
       headerMediaAssetId,
+      language,
     });
 
     const contactData = await this.contactsService.getContactByIds(

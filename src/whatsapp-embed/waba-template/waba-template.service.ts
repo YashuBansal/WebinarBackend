@@ -320,10 +320,86 @@ export class WabaTemplateService {
     return matches ? matches.length : 0;
   }
 
+  async getPendingWabaTemplateAdminProjectPairs(): Promise<
+    Array<{ adminId: Types.ObjectId; projectId: Types.ObjectId }>
+  > {
+    return this.wabaTemplateModel
+      .aggregate([
+        {
+          $match: {
+            status: WabaTemplateStatus.PENDING,
+            is_deleted: false,
+            is_active: true,
+          },
+        },
+        {
+          $group: {
+            _id: { adminId: '$adminId', projectId: '$projectId' },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            adminId: '$_id.adminId',
+            projectId: '$_id.projectId',
+          },
+        },
+      ])
+      .exec();
+  }
+
+  /**
+   * Cron job ke liye: agar DB mein pending WABA templates hain
+   * to unke admin+project pairs ko loop karke Meta se sync karega.
+   */
+  async syncPendingWabaTemplates(): Promise<{
+    pendingPairsCount: number;
+    syncedCount: number;
+    failedCount: number;
+    elapsedMs: number;
+  }> {
+    const startedAt = Date.now();
+
+    const pendingPairs = await this.getPendingWabaTemplateAdminProjectPairs();
+
+    if (pendingPairs.length === 0) {
+      return {
+        pendingPairsCount: 0,
+        syncedCount: 0,
+        failedCount: 0,
+        elapsedMs: Date.now() - startedAt,
+      };
+    }
+
+    let syncedCount = 0;
+    let failedCount = 0;
+
+    for (const pair of pendingPairs) {
+      try {
+        await this.syncWabaTemplates(pair.adminId, pair.projectId);
+        syncedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        this.logger.error(
+          `Pending WABA template sync failed for project=${pair.projectId} admin=${pair.adminId}`,
+          (error as any)?.response?.data || (error as any)?.message || error,
+        );
+      }
+    }
+
+    return {
+      pendingPairsCount: pendingPairs.length,
+      syncedCount,
+      failedCount,
+      elapsedMs: Date.now() - startedAt,
+    };
+  }
+
   async getByTemplateName(
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
     templateName: string,
+    language?: string,
   )
   : Promise<WabaTemplateDocument | null> 
   
@@ -333,6 +409,7 @@ export class WabaTemplateService {
         projectId,
         adminId,
         name: templateName,
+        ...(language ? { language: { $in: [language, language.replace('-', '_')] } } : {}),
       })
       .lean();
   }

@@ -9,6 +9,7 @@ import { ProgramModule } from 'src/whatsapp-program/program.module';
 import { AddonPurchaseModule } from 'src/addon-purchase/addon-purchase.module';
 import { ProfileModule } from 'src/profile/profile.module';
 import { ProjectsModule } from 'src/projects/projects.module';
+import { WabaTemplateModule } from 'src/whatsapp-embed/waba-template/waba-template.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ProjectsModule } from 'src/projects/projects.module';
     ProgramModule,
     ProfileModule,
     ProjectsModule,
+    WabaTemplateModule,
   ],
   providers: [CronService],
 })

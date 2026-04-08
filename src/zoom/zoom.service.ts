@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotAcceptableException,
+  NotFoundException,
   BadRequestException,
   OnModuleInit,
 } from '@nestjs/common';
@@ -35,8 +36,23 @@ import axios from 'axios';
 import { BaseLoggerService } from 'src/logger/base-logger.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 
+/** Zoom REST errors are usually `{ code: number; message: string }` in the response body. */
+function zoomApiErrorMessage(payload: unknown, fallback: string): string {
+  if (typeof payload === 'string' && payload.trim()) {
+    return payload.trim();
+  }
+  if (payload && typeof payload === 'object') {
+    const msg = (payload as { message?: unknown }).message;
+    if (typeof msg === 'string' && msg.trim()) {
+      return msg.trim();
+    }
+  }
+  return fallback;
+}
+
 @Injectable()
 export class ZoomService extends BaseLoggerService implements OnModuleInit {
+  private static readonly WEBHOOK_V3_PROJECT_SENTINEL = '__v3__';
   // Simple in-memory rate limiter (consider using Redis for production)
   private readonly rateLimitMap = new Map<
     string,
@@ -72,8 +88,12 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
   onModuleInit() {
     // Set the processing worker for the queue
     this.webhookQueueService.setProcessingWorker(
-      (payload: any, projectId: string) =>
-        this.processWebhookPayloadV2(payload, projectId),
+      async (payload: any, projectId: string) => {
+        if (projectId === ZoomService.WEBHOOK_V3_PROJECT_SENTINEL) {
+          return this.processWebhookPayloadV3(payload);
+        }
+        return this.processWebhookPayloadV2(payload, projectId);
+      },
     );
     this.logger.log('Service initialized', {
       service: 'ZoomService',
@@ -474,7 +494,10 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       // Log full error for diagnostics
       console.error('Zoom token exchange failed:', { status, payload });
       throw new NotAcceptableException(
-        'Failed to exchange authorization code with Zoom',
+        zoomApiErrorMessage(
+          payload,
+          'Failed to exchange authorization code with Zoom',
+        ),
       );
     }
 
@@ -578,7 +601,9 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom user profile failed:', { status, payload });
-      throw new NotAcceptableException('Failed to fetch Zoom profile');
+      throw new NotAcceptableException(
+        zoomApiErrorMessage(payload, 'Failed to fetch Zoom profile'),
+      );
     }
   }
 
@@ -612,7 +637,9 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom list meetings failed:', { status, payload });
-      throw new NotAcceptableException('Failed to fetch meetings from Zoom');
+      throw new NotAcceptableException(
+        zoomApiErrorMessage(payload, 'Failed to fetch meetings from Zoom'),
+      );
     }
 
     // Map to a light-weight shape expected by frontend
@@ -678,7 +705,9 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom list webinars failed:', { status, payload });
-      throw new NotAcceptableException('Failed to fetch webinars from Zoom');
+      throw new NotAcceptableException(
+        zoomApiErrorMessage(payload, 'Failed to fetch webinars from Zoom'),
+      );
     }
 
     let webinars = (data?.webinars ?? []).map((w: any) => ({
@@ -744,7 +773,10 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom webinar details failed:', { status, payload });
       throw new NotAcceptableException(
-        'Failed to fetch webinar details from Zoom',
+        zoomApiErrorMessage(
+          payload,
+          'Failed to fetch webinar details from Zoom',
+        ),
       );
     }
   }
@@ -853,7 +885,10 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom webinar registrants failed:', { status, payload });
       throw new NotAcceptableException(
-        'Failed to fetch webinar registrants from Zoom',
+        zoomApiErrorMessage(
+          payload,
+          'Failed to fetch webinar registrants from Zoom',
+        ),
       );
     }
   }
@@ -892,6 +927,99 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     };
 
     return response;
+  }
+
+  /**
+   * v3 webhook validation: does not accept projectId; uses env secret only.
+   * Zoom sends payload `{ event: 'endpoint.url_validation', payload: { plainToken } }`.
+   */
+  async validateWebhookV3(payload: any) {
+    const { plainToken } = payload?.payload ?? {};
+
+    if (!plainToken) {
+      throw new Error('plainToken is missing in the validation payload.');
+    }
+
+    const secretToken = this.config.get<string>('ZOOM_CLIENT_SECRET_TOKEN');
+
+    if (!secretToken) {
+      throw new Error('Zoom webhook secret token is not configured.');
+    }
+
+    const hash = crypto
+      .createHmac('sha256', secretToken)
+      .update(plainToken)
+      .digest('hex');
+
+    return {
+      plainToken: plainToken,
+      encryptedToken: hash,
+    };
+  }
+
+  /**
+   * v3 webhook processor: resolves project internally (no query param).
+   * Resolution order:
+   * - account_id -> ZoomProject.accountId
+   * - meeting/webinar id -> ZoomMeeting.projectId
+   */
+  async processWebhookPayloadV3(payload: any) {
+    const correlationId = this.generateCorrelationId();
+    try {
+      const accountId: string | undefined = this.safeExtract(payload, [
+        'account_id',
+        'payload.account_id',
+      ]);
+
+      if (accountId) {
+        const project = await this.zoomProjectModel
+          .findOne({ accountId })
+          .select('_id')
+          .lean();
+
+        if (project?._id) {
+          return this.processWebhookPayloadV2(payload, project._id.toString());
+        }
+      }
+
+      // Fallback: resolve by meeting/webinar id using ZoomMeeting collection
+      const object = this.safeExtract(payload, ['payload.object', 'object'], {});
+      const meetingId = this.validateAndExtractMeetingId(object);
+      if (!meetingId) {
+        this.logWebhookProcessing(
+          correlationId,
+          'warn',
+          'v3 webhook: missing meeting/webinar id; cannot resolve project',
+          { event: payload?.event, accountId },
+        );
+        return;
+      }
+
+      const meeting = await this.zoomMeetingService.findAnyByMeetingId(
+        meetingId,
+      );
+
+      const resolvedProjectId = meeting?.projectId?.toString?.();
+      if (!resolvedProjectId || !mongoose.isValidObjectId(resolvedProjectId)) {
+        this.logWebhookProcessing(
+          correlationId,
+          'warn',
+          'v3 webhook: cannot resolve project from meeting/webinar id',
+          { event: payload?.event, accountId, meetingId },
+        );
+        return;
+      }
+
+      return this.processWebhookPayloadV2(payload, resolvedProjectId);
+    } catch (error: any) {
+      this.logWebhookProcessing(
+        correlationId,
+        'error',
+        'v3 webhook processing failed',
+        { error: error?.message, stack: error?.stack },
+      );
+      throw error;
+    }
   }
 
   /**
@@ -2703,7 +2831,10 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom meeting details failed:', { status, payload });
       throw new NotAcceptableException(
-        'Failed to fetch meeting details from Zoom',
+        zoomApiErrorMessage(
+          payload,
+          'Failed to fetch meeting details from Zoom',
+        ),
       );
     }
   }
@@ -2807,7 +2938,10 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         { status, payload },
       );
       throw new NotAcceptableException(
-        `Failed to fetch ${isWebinar ? 'webinar' : 'meeting'} registrants from Zoom`,
+        zoomApiErrorMessage(
+          payload,
+          `Failed to fetch ${isWebinar ? 'webinar' : 'meeting'} registrants from Zoom`,
+        ),
       );
     }
   }
@@ -2979,7 +3113,10 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         { status, payload },
       );
       throw new NotAcceptableException(
-        `Failed to fetch all ${isWebinar ? 'webinar' : 'meeting'} registrants from Zoom`,
+        zoomApiErrorMessage(
+          payload,
+          `Failed to fetch all ${isWebinar ? 'webinar' : 'meeting'} registrants from Zoom`,
+        ),
       );
     }
   }
@@ -3085,7 +3222,10 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         { status, payload },
       );
       throw new NotAcceptableException(
-        `Failed to fetch all ${isWebinar ? 'webinar' : 'meeting'} registrants from Zoom`,
+        zoomApiErrorMessage(
+          payload,
+          `Failed to fetch all ${isWebinar ? 'webinar' : 'meeting'} registrants from Zoom`,
+        ),
       );
     }
   }
@@ -3122,7 +3262,9 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
       console.error('Zoom add registrant failed:', { status, payload });
-      throw new NotAcceptableException('Failed to add meeting registrant');
+      throw new NotAcceptableException(
+        zoomApiErrorMessage(payload, 'Failed to add meeting registrant'),
+      );
     }
   }
 
@@ -3233,6 +3375,131 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       .findOne({ adminId, accountId })
       .select('-accessToken') // Exclude sensitive data
       .lean();
+  }
+
+  /**
+   * Best-effort revoke a single token at Zoom (access or refresh).
+   */
+  private async revokeZoomOAuthToken(
+    token: string,
+    tokenTypeHint: 'access_token' | 'refresh_token',
+  ): Promise<void> {
+    const clientId = this.config.get<string>('ZOOM_CLIENT_ID');
+    const clientSecret = this.config.get<string>('ZOOM_CLIENT_SECRET');
+    if (!clientId || !clientSecret || !token) return;
+
+    const tokenEndpoint = 'https://zoom.us/oauth/revoke';
+    const authHeader = Buffer.from(`${clientId}:${clientSecret}`).toString(
+      'base64',
+    );
+    const params = new URLSearchParams({
+      token,
+      token_type_hint: tokenTypeHint,
+    });
+
+    try {
+      await firstValueFrom(
+        this.http.post(tokenEndpoint, params.toString(), {
+          headers: {
+            Authorization: `Basic ${authHeader}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }),
+      );
+    } catch (error: any) {
+      this.logger.warn('Zoom OAuth revoke failed (non-fatal)', {
+        tokenTypeHint,
+        status: error?.response?.status,
+        data: error?.response?.data,
+      });
+    }
+  }
+
+  /**
+   * User-initiated disconnect: revoke tokens at Zoom when possible, clear stored credentials, keep project row.
+   */
+  async disconnectOAuthProject(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+  ) {
+    const project = await this.zoomProjectModel.findOne({
+      _id: projectId,
+      adminId,
+    });
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.accessToken) {
+      await this.revokeZoomOAuthToken(project.accessToken, 'access_token');
+    }
+    if (project.refreshToken) {
+      await this.revokeZoomOAuthToken(project.refreshToken, 'refresh_token');
+    }
+
+    await this.zoomProjectModel.updateOne(
+      { _id: projectId, adminId },
+      {
+        $set: {
+          isConfigured: false,
+        },
+        $unset: {
+          accessToken: 1,
+          refreshToken: 1,
+          accessTokenExpiresAt: 1,
+          accountId: 1,
+        },
+      },
+    );
+
+    return this.zoomProjectModel
+      .findById(projectId)
+      .select('-accessToken -refreshToken -clientSecret')
+      .lean();
+  }
+
+  /**
+   * Zoom Marketplace: user uninstalled / revoked the app — clear tokens for all projects on that Zoom account.
+   */
+  async handleAppDeauthorized(body: Record<string, unknown>): Promise<void> {
+    const payloadRaw = body.payload;
+    const payload =
+      payloadRaw &&
+      typeof payloadRaw === 'object' &&
+      !Array.isArray(payloadRaw)
+        ? (payloadRaw as Record<string, unknown>)
+        : body;
+
+    const accountId =
+      (typeof payload.account_id === 'string' && payload.account_id) ||
+      (typeof payload.accountId === 'string' && payload.accountId) ||
+      (typeof body.account_id === 'string' && body.account_id) ||
+      '';
+
+    if (!accountId) {
+      this.logger.warn('app_deauthorized: missing account_id, cannot map projects', {
+        event: body.event,
+      });
+      return;
+    }
+
+    const result = await this.zoomProjectModel.updateMany(
+      { accountId },
+      {
+        $set: { isConfigured: false },
+        $unset: {
+          accessToken: 1,
+          refreshToken: 1,
+          accessTokenExpiresAt: 1,
+          accountId: 1,
+        },
+      },
+    );
+
+    this.logger.log('app_deauthorized: cleared Zoom OAuth state', {
+      accountId,
+      modifiedCount: result.modifiedCount,
+    });
   }
 
   /**
