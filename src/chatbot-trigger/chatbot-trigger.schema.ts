@@ -26,6 +26,7 @@ export class ChatbotTrigger {
   enabled: boolean;
 }
 
-export const ChatbotTriggerSchema = SchemaFactory.createForClass(ChatbotTrigger);
+export const ChatbotTriggerSchema =
+  SchemaFactory.createForClass(ChatbotTrigger);
 
 ChatbotTriggerSchema.index({ projectId: 1, keyword: 1 }, { unique: true });

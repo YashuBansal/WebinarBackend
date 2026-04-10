@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { ConfiguredTemplate, ConfiguredTemplateDocument } from 'src/configured-templates/schema/configured-template.schema';
+import {
+  ConfiguredTemplate,
+  ConfiguredTemplateDocument,
+} from 'src/configured-templates/schema/configured-template.schema';
 import {
   CreateConfiguredTemplateDto,
   UpdateConfiguredTemplateDto,
@@ -22,7 +25,7 @@ export class ConfiguredTemplatesService {
     @InjectModel(ConfiguredTemplate.name)
     private readonly configuredTemplateModel: Model<ConfiguredTemplateDocument>,
     private readonly whatsappService: WhatsappService,
-  ) { }
+  ) {}
 
   async getConfiguredTemplates(
     adminId: Types.ObjectId,
@@ -78,8 +81,13 @@ export class ConfiguredTemplatesService {
         },
       };
     } catch (error) {
-      this.logger.error(`Failed to fetch configured templates: ${error.message}`, error.stack);
-      throw new InternalServerErrorException('A server error occurred while fetching configured templates.');
+      this.logger.error(
+        `Failed to fetch configured templates: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        'A server error occurred while fetching configured templates.',
+      );
     }
   }
 
@@ -94,12 +102,15 @@ export class ConfiguredTemplatesService {
       );
 
       // Check if a configured template with the same name already exists
-      const existingTemplate = await this.configuredTemplateModel.findOne({
-        adminId,
-        project: projectId,
-        configuredTemplateName: createConfiguredTemplateDto.configuredTemplateName,
-        isDeleted: false,
-      }).exec();
+      const existingTemplate = await this.configuredTemplateModel
+        .findOne({
+          adminId,
+          project: projectId,
+          configuredTemplateName:
+            createConfiguredTemplateDto.configuredTemplateName,
+          isDeleted: false,
+        })
+        .exec();
 
       if (existingTemplate) {
         throw new BadRequestException(
@@ -111,9 +122,11 @@ export class ConfiguredTemplatesService {
         adminId: adminId.toString(),
         projectId: projectId.toString(),
         templateName: createConfiguredTemplateDto.templateName,
-        givenVariableLength: createConfiguredTemplateDto?.variableMappings?.length ?? 0,
-        headerMediaAssetId: createConfiguredTemplateDto?.headerMediaAssetId?.toString() ?? null,
-      })
+        givenVariableLength:
+          createConfiguredTemplateDto?.variableMappings?.length ?? 0,
+        headerMediaAssetId:
+          createConfiguredTemplateDto?.headerMediaAssetId?.toString() ?? null,
+      });
 
       const configuredTemplate = new this.configuredTemplateModel({
         ...createConfiguredTemplateDto,
@@ -123,15 +136,22 @@ export class ConfiguredTemplatesService {
       });
 
       const savedTemplate = await configuredTemplate.save();
-      this.logger.log(`Configured template created successfully: ${savedTemplate._id}`);
+      this.logger.log(
+        `Configured template created successfully: ${savedTemplate._id}`,
+      );
 
       return savedTemplate;
     } catch (error) {
-      this.logger.error(`Failed to create configured template: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to create configured template: ${error.message}`,
+        error.stack,
+      );
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new InternalServerErrorException('A server error occurred while creating the configured template.');
+      throw new InternalServerErrorException(
+        'A server error occurred while creating the configured template.',
+      );
     }
   }
 
@@ -147,12 +167,14 @@ export class ConfiguredTemplatesService {
       );
 
       // Check if template exists
-      const existingTemplate = await this.configuredTemplateModel.findOne({
-        _id: configuredTemplateId,
-        adminId,
-        project: projectId,
-        isDeleted: false,
-      }).exec();
+      const existingTemplate = await this.configuredTemplateModel
+        .findOne({
+          _id: configuredTemplateId,
+          adminId,
+          project: projectId,
+          isDeleted: false,
+        })
+        .exec();
 
       if (!existingTemplate) {
         throw new NotFoundException('Configured template not found');
@@ -160,13 +182,16 @@ export class ConfiguredTemplatesService {
 
       // Check if another template with the same name exists (if name is being updated)
       if (updateConfiguredTemplateDto.configuredTemplateName) {
-        const duplicateTemplate = await this.configuredTemplateModel.findOne({
-          _id: { $ne: configuredTemplateId },
-          adminId,
-          project: projectId,
-          configuredTemplateName: updateConfiguredTemplateDto.configuredTemplateName,
-          isDeleted: false,
-        }).exec();
+        const duplicateTemplate = await this.configuredTemplateModel
+          .findOne({
+            _id: { $ne: configuredTemplateId },
+            adminId,
+            project: projectId,
+            configuredTemplateName:
+              updateConfiguredTemplateDto.configuredTemplateName,
+            isDeleted: false,
+          })
+          .exec();
 
         if (duplicateTemplate) {
           throw new BadRequestException(
@@ -184,7 +209,7 @@ export class ConfiguredTemplatesService {
             isDeleted: false,
           },
           updateConfiguredTemplateDto,
-          { new: true }
+          { new: true },
         )
         .exec();
 
@@ -192,14 +217,24 @@ export class ConfiguredTemplatesService {
         throw new NotFoundException('Configured template not found');
       }
 
-      this.logger.log(`Configured template updated successfully: ${configuredTemplateId}`);
+      this.logger.log(
+        `Configured template updated successfully: ${configuredTemplateId}`,
+      );
       return updatedTemplate;
     } catch (error) {
-      this.logger.error(`Failed to update configured template: ${error.message}`, error.stack);
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+      this.logger.error(
+        `Failed to update configured template: ${error.message}`,
+        error.stack,
+      );
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
         throw error;
       }
-      throw new InternalServerErrorException('A server error occurred while updating the configured template.');
+      throw new InternalServerErrorException(
+        'A server error occurred while updating the configured template.',
+      );
     }
   }
 
@@ -222,7 +257,7 @@ export class ConfiguredTemplatesService {
             isDeleted: false,
           },
           { isDeleted: true },
-          { new: true }
+          { new: true },
         )
         .exec();
 
@@ -230,14 +265,21 @@ export class ConfiguredTemplatesService {
         throw new NotFoundException('Configured template not found');
       }
 
-      this.logger.log(`Configured template deleted successfully: ${configuredTemplateId}`);
+      this.logger.log(
+        `Configured template deleted successfully: ${configuredTemplateId}`,
+      );
       return deletedTemplate;
     } catch (error) {
-      this.logger.error(`Failed to delete configured template: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to delete configured template: ${error.message}`,
+        error.stack,
+      );
       if (error instanceof NotFoundException) {
         throw error;
       }
-      throw new InternalServerErrorException('A server error occurred while deleting the configured template.');
+      throw new InternalServerErrorException(
+        'A server error occurred while deleting the configured template.',
+      );
     }
   }
 
@@ -266,22 +308,36 @@ export class ConfiguredTemplatesService {
 
       return configuredTemplate;
     } catch (error) {
-      this.logger.error(`Failed to fetch configured template: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to fetch configured template: ${error.message}`,
+        error.stack,
+      );
       if (error instanceof NotFoundException) {
         throw error;
       }
-      throw new InternalServerErrorException('A server error occurred while fetching the configured template.');
+      throw new InternalServerErrorException(
+        'A server error occurred while fetching the configured template.',
+      );
     }
   }
 
-  async getConfiguredTemplate(configuredTemplateId: Types.ObjectId): Promise<ConfiguredTemplate | null> {
+  async getConfiguredTemplate(
+    configuredTemplateId: Types.ObjectId,
+  ): Promise<ConfiguredTemplate | null> {
     try {
       this.logger.log(`Fetching configured template ${configuredTemplateId}`);
-      const configuredTemplate = await this.configuredTemplateModel.findOne({ _id: configuredTemplateId, isDeleted: false }).exec();
+      const configuredTemplate = await this.configuredTemplateModel
+        .findOne({ _id: configuredTemplateId, isDeleted: false })
+        .exec();
       return configuredTemplate;
     } catch (error) {
-      this.logger.error(`Failed to fetch configured template: ${error.message}`, error.stack);
-      throw new InternalServerErrorException('A server error occurred while fetching the configured template.');
+      this.logger.error(
+        `Failed to fetch configured template: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException(
+        'A server error occurred while fetching the configured template.',
+      );
     }
   }
 }

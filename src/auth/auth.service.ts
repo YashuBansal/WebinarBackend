@@ -230,7 +230,10 @@ export class AuthService {
     if (!user) return;
 
     // Only invalidate if the provided token is the active one.
-    if (user.refreshToken && String(user.refreshToken) === String(refreshToken)) {
+    if (
+      user.refreshToken &&
+      String(user.refreshToken) === String(refreshToken)
+    ) {
       user.refreshToken = '';
       await user.save({ validateBeforeSave: false });
     }

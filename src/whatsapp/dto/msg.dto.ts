@@ -7,7 +7,7 @@ import {
   IsOptional,
   IsMongoId,
   ValidateNested,
-} from 'class-validator'; 
+} from 'class-validator';
 import { VariableMappingDto } from 'src/webinar-auto-message/dto';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
@@ -115,7 +115,6 @@ export class SendBulkTemplateMessageDto {
   @IsMongoId()
   headerMediaAssetId?: string; // ID of the media asset to use for header
 }
-
 
 export interface IFormattedPhoneData {
   phoneNumber: string;

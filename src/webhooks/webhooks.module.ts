@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 import { WebhooksController } from './webhooks.controller';
 import { AutomationsModule } from 'src/automations/automations.module';
 import { MongooseModule } from '@nestjs/mongoose';
-import { AutomationFlow, AutomationFlowSchema } from 'src/automations/schemas/automation-flow.schema';
+import {
+  AutomationFlow,
+  AutomationFlowSchema,
+} from 'src/automations/schemas/automation-flow.schema';
 
 @Module({
   imports: [
@@ -14,5 +17,3 @@ import { AutomationFlow, AutomationFlowSchema } from 'src/automations/schemas/au
   controllers: [WebhooksController],
 })
 export class WebhooksModule {}
-
-

@@ -1,7 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { ChatbotTrigger, ChatbotTriggerDocument } from './chatbot-trigger.schema';
+import {
+  ChatbotTrigger,
+  ChatbotTriggerDocument,
+} from './chatbot-trigger.schema';
 import { CreateChatbotTriggerDto } from './dto/create-chatbot-trigger.dto';
 import { UpdateChatbotTriggerDto } from './dto/update-chatbot-trigger.dto';
 
@@ -26,7 +33,9 @@ export class ChatbotTriggerService {
       keyword,
     });
     if (existing) {
-      throw new BadRequestException(`Trigger for keyword "${dto.keyword.trim()}" already exists`);
+      throw new BadRequestException(
+        `Trigger for keyword "${dto.keyword.trim()}" already exists`,
+      );
     }
     const doc = await this.chatbotTriggerModel.create({
       adminId,
@@ -75,7 +84,8 @@ export class ChatbotTriggerService {
       }
     }
     if (dto.responseType !== undefined) update.responseType = dto.responseType;
-    if (dto.responseValue !== undefined) update.responseValue = (dto.responseValue || '').trim();
+    if (dto.responseValue !== undefined)
+      update.responseValue = (dto.responseValue || '').trim();
     if (dto.enabled !== undefined) update.enabled = dto.enabled;
 
     const updated = await this.chatbotTriggerModel

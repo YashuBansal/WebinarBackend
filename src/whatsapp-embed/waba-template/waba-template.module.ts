@@ -16,7 +16,7 @@ import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
     forwardRef(() => UsersModule),
     forwardRef(() => ProjectsModule),
 
-    forwardRef(() => WhatsappModule)
+    forwardRef(() => WhatsappModule),
   ],
   controllers: [WabaTemplateController],
   providers: [WabaTemplateService],
@@ -24,8 +24,6 @@ import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 })
 export class WabaTemplateModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(AuthAdminTokenMiddleware)
-      .forRoutes(WabaTemplateController);
+    consumer.apply(AuthAdminTokenMiddleware).forRoutes(WabaTemplateController);
   }
 }

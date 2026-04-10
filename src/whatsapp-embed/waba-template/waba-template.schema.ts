@@ -168,7 +168,10 @@ WabaTemplateSchema.pre('save', function (next) {
 });
 
 // Uniqueness per project + language to avoid duplicates locally
-WabaTemplateSchema.index({ projectId: 1, name: 1, language: 1 }, { unique: true });
+WabaTemplateSchema.index(
+  { projectId: 1, name: 1, language: 1 },
+  { unique: true },
+);
 
 // Map field names for backward compatibility and to match Meta API
 WabaTemplateSchema.set('toJSON', {

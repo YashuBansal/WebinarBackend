@@ -11,5 +11,3 @@ export class UpdateAutomationFlowDto {
   webinarId?: string;
   graph?: any;
 }
-
-

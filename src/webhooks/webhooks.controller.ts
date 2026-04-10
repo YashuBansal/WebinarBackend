@@ -2,13 +2,17 @@ import { Body, Controller, Param, Post, Query } from '@nestjs/common';
 import { AutomationsService } from 'src/automations/automations.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { AutomationFlow, AutomationFlowDocument } from 'src/automations/schemas/automation-flow.schema';
+import {
+  AutomationFlow,
+  AutomationFlowDocument,
+} from 'src/automations/schemas/automation-flow.schema';
 
 @Controller('webhooks')
 export class WebhooksController {
   constructor(
     private readonly automationsService: AutomationsService,
-    @InjectModel(AutomationFlow.name) private flowModel: Model<AutomationFlowDocument>,
+    @InjectModel(AutomationFlow.name)
+    private flowModel: Model<AutomationFlowDocument>,
   ) {}
 
   // Public endpoint triggered by webinar registration tool (e.g., Pabbly)
@@ -32,15 +36,18 @@ export class WebhooksController {
       return { success: true, queued: false };
     }
 
-    const exec = await this.automationsService.createExecution(adminId, projectId, `${flow._id}`, {
-      type: 'webinar-registration',
-      webinarId,
-      payload: body,
-    });
+    const exec = await this.automationsService.createExecution(
+      adminId,
+      projectId,
+      `${flow._id}`,
+      {
+        type: 'webinar-registration',
+        webinarId,
+        payload: body,
+      },
+    );
 
     // In a later step, we'll push the job to a queue for processing
     return { success: true, queued: true, executionId: `${exec._id}` };
   }
 }
-
-

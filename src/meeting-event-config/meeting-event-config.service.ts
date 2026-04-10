@@ -51,16 +51,17 @@ export class MeetingEventConfigService implements OnModuleInit {
       const filter: Record<string, any> = { meetingId };
       if (occurrenceId) {
         filter.occurrenceId = occurrenceId;
-      }
-      else{
-        
+      } else {
         filter.$or = [
           { occurrenceId: { $exists: false } },
           { occurrenceId: null },
         ];
       }
 
-      const config = await this.meetingEventConfigModel.findOne(filter).lean().exec();
+      const config = await this.meetingEventConfigModel
+        .findOne(filter)
+        .lean()
+        .exec();
 
       return config;
     } catch (error) {
@@ -81,7 +82,9 @@ export class MeetingEventConfigService implements OnModuleInit {
     try {
       this.logger.log(
         `Creating meeting event configuration for meeting ${createDto.meetingId}${
-          createDto.occurrenceId ? `, occurrenceId=${createDto.occurrenceId}` : ''
+          createDto.occurrenceId
+            ? `, occurrenceId=${createDto.occurrenceId}`
+            : ''
         }`,
       );
 
@@ -144,7 +147,9 @@ export class MeetingEventConfigService implements OnModuleInit {
     try {
       this.logger.log(
         `Updating meeting event configuration for meeting ${meetingId}${
-          (updateDto as any).occurrenceId ? `, occurrenceId=${(updateDto as any).occurrenceId}` : ''
+          (updateDto as any).occurrenceId
+            ? `, occurrenceId=${(updateDto as any).occurrenceId}`
+            : ''
         }`,
         updateDto,
       );
@@ -303,7 +308,9 @@ export class MeetingEventConfigService implements OnModuleInit {
         .findOne(filter)
         .exec();
       if (!existing) {
-        this.logger.log(`No meeting event config found for meetingId=${meetingId}. Skipping webinarId update.`);
+        this.logger.log(
+          `No meeting event config found for meetingId=${meetingId}. Skipping webinarId update.`,
+        );
         return null;
       }
 
@@ -315,7 +322,9 @@ export class MeetingEventConfigService implements OnModuleInit {
       }
       const updated = await existing.save();
 
-      this.logger.log(`Meeting event config webinarId updated for meetingId=${meetingId}`);
+      this.logger.log(
+        `Meeting event config webinarId updated for meetingId=${meetingId}`,
+      );
       return updated;
     } catch (error) {
       this.logger.error(
@@ -334,7 +343,10 @@ export class MeetingEventConfigService implements OnModuleInit {
    */
   async updateEventExecutedFlag(
     meetingId: string,
-    eventType: 'meetingStarted' | 'meetingEndedAttendees' | 'meetingEndedNonAttendees',
+    eventType:
+      | 'meetingStarted'
+      | 'meetingEndedAttendees'
+      | 'meetingEndedNonAttendees',
     occurrenceId?: string,
   ): Promise<MeetingEventConfiguration | null> {
     try {
@@ -351,7 +363,11 @@ export class MeetingEventConfigService implements OnModuleInit {
       }
 
       const updatedConfig = await this.meetingEventConfigModel
-        .findOneAndUpdate(filter, { $set: { [updateField]: true } }, { new: true })
+        .findOneAndUpdate(
+          filter,
+          { $set: { [updateField]: true } },
+          { new: true },
+        )
         .exec();
 
       if (!updatedConfig) {

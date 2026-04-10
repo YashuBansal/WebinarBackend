@@ -17,9 +17,7 @@ import { Types } from 'mongoose';
 
 @Controller('webinar-webhook')
 export class WebinarWebhookController {
-  constructor(
-    private readonly webinarWebhookService: WebinarWebhookService,
-  ) {}
+  constructor(private readonly webinarWebhookService: WebinarWebhookService) {}
 
   @Post()
   async create(

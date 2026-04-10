@@ -17,12 +17,14 @@ import { REDIS_CONNECTION } from 'src/redis/redis.module';
 export interface AutoAssignJobPayload {
   adminId: string;
   type: 'BULK_ASSIGN';
-  programId?: string;        // Present if type === 'BULK_ASSIGN'
+  programId?: string; // Present if type === 'BULK_ASSIGN'
   eligibleAttendeeIds?: string[]; // Present if type === 'BULK_ASSIGN'
 }
 
 @Injectable()
-export class ProgramAutoAssignProcessor implements OnModuleInit, OnModuleDestroy {
+export class ProgramAutoAssignProcessor
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(ProgramAutoAssignProcessor.name);
   private worker: Worker | null = null;
 
@@ -34,7 +36,8 @@ export class ProgramAutoAssignProcessor implements OnModuleInit, OnModuleDestroy
   ) {}
 
   onModuleInit() {
-    const concurrency = this.configService.get<number>('PROGRAM_AUTO_ASSIGN_CONCURRENCY') || 5;
+    const concurrency =
+      this.configService.get<number>('PROGRAM_AUTO_ASSIGN_CONCURRENCY') || 5;
 
     const workerConnection = this.connection.duplicate();
     const queueName = getProgramAutoAssignQueueName(this.configService);
@@ -44,7 +47,7 @@ export class ProgramAutoAssignProcessor implements OnModuleInit, OnModuleDestroy
       queueName,
       async (job) => {
         const payload: AutoAssignJobPayload = job.data;
-        
+
         if (payload.type === 'BULK_ASSIGN') {
           await this.programService.processBulkAutoAssignJob(payload);
         }

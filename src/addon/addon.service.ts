@@ -24,7 +24,10 @@ export class AddOnService {
 
   async createAddOn(createAddOnDto: CreateAddOnDto): Promise<AddOn> {
     const addonName = String(createAddOnDto?.addonName || '').trim();
-    const existing = await this.addOnModel.findOne({ addonName }).select('_id').lean();
+    const existing = await this.addOnModel
+      .findOne({ addonName })
+      .select('_id')
+      .lean();
     if (existing) {
       throw new ConflictException('Addon name already exists');
     }

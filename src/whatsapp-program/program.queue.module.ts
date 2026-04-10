@@ -15,11 +15,15 @@ function resolveProgramQueueNamespace(configService?: ConfigService): string {
   return fromConfig || DEFAULT_PROGRAM_QUEUE_NAMESPACE;
 }
 
-export function getProgramQueueNamespace(configService?: ConfigService): string {
+export function getProgramQueueNamespace(
+  configService?: ConfigService,
+): string {
   return resolveProgramQueueNamespace(configService);
 }
 
-export function getProgramAutoAssignQueueName(configService?: ConfigService): string {
+export function getProgramAutoAssignQueueName(
+  configService?: ConfigService,
+): string {
   const namespace = resolveProgramQueueNamespace(configService);
   return `${PROGRAM_AUTO_ASSIGN_QUEUE_BASE_NAME}_${namespace}`;
 }

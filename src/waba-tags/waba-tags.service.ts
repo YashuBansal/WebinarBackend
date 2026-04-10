@@ -241,7 +241,9 @@ export class WabaTagsService {
       .lean();
 
     const existingNames = new Set(existing.map((tag) => tag.name));
-    const missingNames = candidateNames.filter((name) => !existingNames.has(name));
+    const missingNames = candidateNames.filter(
+      (name) => !existingNames.has(name),
+    );
 
     if (missingNames.length === 0) return;
 

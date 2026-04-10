@@ -13,4 +13,3 @@ export class PaginatedApiCampaignsResponseDto {
   campaigns: ApiCampaign[];
   pagination: PaginationDto;
 }
-

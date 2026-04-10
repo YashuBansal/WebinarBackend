@@ -10,9 +10,12 @@ export class OtelWinstonTransport extends Transport {
   private serviceName: string;
   private isOtelEnabled: boolean;
 
-  constructor(opts?: Transport.TransportStreamOptions & { serviceName?: string }) {
+  constructor(
+    opts?: Transport.TransportStreamOptions & { serviceName?: string },
+  ) {
     super(opts);
-    this.serviceName = opts?.serviceName || process.env.OTEL_SERVICE_NAME || 'webinar-leads-hub';
+    this.serviceName =
+      opts?.serviceName || process.env.OTEL_SERVICE_NAME || 'webinar-leads-hub';
     // Check if OTEL is enabled by verifying environment variables
     this.isOtelEnabled = !!(
       process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_SERVICE_NAME
@@ -30,7 +33,10 @@ export class OtelWinstonTransport extends Transport {
     const severityText = info.level.toUpperCase();
 
     // Extract message and context
-    const message = typeof info.message === 'string' ? info.message : JSON.stringify(info.message);
+    const message =
+      typeof info.message === 'string'
+        ? info.message
+        : JSON.stringify(info.message);
     const context = info.context || 'Application';
 
     // Build attributes from Winston metadata
@@ -53,7 +59,12 @@ export class OtelWinstonTransport extends Transport {
     // Add any additional metadata as attributes
     if (info.metadata && typeof info.metadata === 'object') {
       Object.keys(info.metadata).forEach((key) => {
-        if (key !== 'message' && key !== 'level' && key !== 'context' && key !== 'timestamp') {
+        if (
+          key !== 'message' &&
+          key !== 'level' &&
+          key !== 'context' &&
+          key !== 'timestamp'
+        ) {
           attributes[`log.${key}`] = info.metadata[key];
         }
       });
@@ -111,5 +122,5 @@ export class OtelWinstonTransport extends Transport {
       default:
         return SeverityNumber.INFO;
     }
-  } 
+  }
 }

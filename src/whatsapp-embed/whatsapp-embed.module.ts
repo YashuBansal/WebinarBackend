@@ -5,7 +5,17 @@ import { ApiCampaignModule } from './api-campaign/api-campaign.module';
 import { WabaTemplateModule } from './waba-template/waba-template.module';
 
 @Module({
-  imports: [CampaignModule, WabaMessageModule, ApiCampaignModule, WabaTemplateModule],
-  exports: [CampaignModule, WabaMessageModule, ApiCampaignModule, WabaTemplateModule],
+  imports: [
+    CampaignModule,
+    WabaMessageModule,
+    ApiCampaignModule,
+    WabaTemplateModule,
+  ],
+  exports: [
+    CampaignModule,
+    WabaMessageModule,
+    ApiCampaignModule,
+    WabaTemplateModule,
+  ],
 })
 export class WhatsappEmbedModule {}

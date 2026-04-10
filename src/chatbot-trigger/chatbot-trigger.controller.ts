@@ -25,7 +25,10 @@ export class ChatbotTriggerController {
   @Get('triggers')
   @UsePipes(new ValidationPipe({ transform: true }))
   async list(@Query('projectId') projectId: string, @Id() adminId: string) {
-    if (!mongoose.isValidObjectId(projectId) || !mongoose.isValidObjectId(adminId)) {
+    if (
+      !mongoose.isValidObjectId(projectId) ||
+      !mongoose.isValidObjectId(adminId)
+    ) {
       throw new BadRequestException('Invalid projectId or adminId');
     }
     const data = await this.chatbotTriggerService.findAllByProject(
@@ -38,7 +41,10 @@ export class ChatbotTriggerController {
   @Post('triggers')
   @UsePipes(new ValidationPipe({ transform: true }))
   async create(@Body() dto: CreateChatbotTriggerDto, @Id() adminId: string) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(dto.projectId)) {
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(dto.projectId)
+    ) {
       throw new BadRequestException('Invalid adminId or projectId');
     }
     const data = await this.chatbotTriggerService.create(
@@ -57,7 +63,10 @@ export class ChatbotTriggerController {
     @Id() adminId: string,
     @Query('projectId') projectId: string,
   ) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(projectId)) {
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(projectId)
+    ) {
       throw new BadRequestException('Invalid adminId or projectId');
     }
     const data = await this.chatbotTriggerService.update(
@@ -75,7 +84,10 @@ export class ChatbotTriggerController {
     @Id() adminId: string,
     @Query('projectId') projectId: string,
   ) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(projectId)) {
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(projectId)
+    ) {
       throw new BadRequestException('Invalid adminId or projectId');
     }
     await this.chatbotTriggerService.delete(

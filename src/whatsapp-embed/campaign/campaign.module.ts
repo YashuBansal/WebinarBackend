@@ -3,10 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { HttpModule } from '@nestjs/axios';
 import { CampaignController } from './campaign.controller';
 import { CampaignService } from './campaign.service';
-import {
-  Campaign,
-  CampaignSchema,
-} from './campaign.schema';
+import { Campaign, CampaignSchema } from './campaign.schema';
 import { WabaMessageModule } from '../waba-message/waba-message.module';
 import { ProjectsModule } from '../../projects/projects.module';
 import { AuthAdminTokenMiddleware } from '../../middlewares/authAdmin.Middleware';
@@ -24,10 +21,10 @@ import { ContactsModule } from 'src/contacts/contacts.module';
     HttpModule,
     WabaMessageModule,
     ProjectsModule,
-     forwardRef(() => UsersModule),
-     WhatsappModule,
-     AttendeesModule,
-     ContactsModule
+    forwardRef(() => UsersModule),
+    WhatsappModule,
+    AttendeesModule,
+    ContactsModule,
   ],
   controllers: [CampaignController],
   providers: [CampaignService],

@@ -83,7 +83,6 @@ export class MeetingEventConfiguration {
   })
   zoomProjectId: Types.ObjectId;
 
-
   @Prop({
     type: MeetingEventConfig,
     required: true,
@@ -115,8 +114,11 @@ export class MeetingEventConfiguration {
   meetingEndedNonAttendees: MeetingEventConfig;
 }
 
-export type MeetingEventConfigurationDocument = HydratedDocument<MeetingEventConfiguration>;
-export const MeetingEventConfigurationSchema = SchemaFactory.createForClass(MeetingEventConfiguration);
+export type MeetingEventConfigurationDocument =
+  HydratedDocument<MeetingEventConfiguration>;
+export const MeetingEventConfigurationSchema = SchemaFactory.createForClass(
+  MeetingEventConfiguration,
+);
 
 // Ensure uniqueness per meetingId + occurrenceId pair (occurrenceId optional)
 MeetingEventConfigurationSchema.index(

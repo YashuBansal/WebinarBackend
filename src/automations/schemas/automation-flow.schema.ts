@@ -14,7 +14,12 @@ export class AutomationFlow {
   @Prop({ type: String, required: true })
   name: string;
 
-  @Prop({ type: String, enum: ['active', 'inactive'], default: 'inactive', index: true })
+  @Prop({
+    type: String,
+    enum: ['active', 'inactive'],
+    default: 'inactive',
+    index: true,
+  })
   status: 'active' | 'inactive';
 
   @Prop({ type: Types.ObjectId, ref: 'Webinar', index: true })
@@ -24,6 +29,5 @@ export class AutomationFlow {
   graph: any; // React Flow JSON { nodes, edges }
 }
 
-export const AutomationFlowSchema = SchemaFactory.createForClass(AutomationFlow);
-
-
+export const AutomationFlowSchema =
+  SchemaFactory.createForClass(AutomationFlow);

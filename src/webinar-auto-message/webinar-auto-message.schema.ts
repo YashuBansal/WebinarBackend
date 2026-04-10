@@ -28,10 +28,20 @@ export class WebinarAutoMessage extends Document {
   @Prop({ type: Types.ObjectId, ref: User.name, required: true, index: true })
   adminId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: Project.name, required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: Project.name,
+    required: true,
+    index: true,
+  })
   projectId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: Webinar.name, required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: Webinar.name,
+    required: true,
+    index: true,
+  })
   webinarId: Types.ObjectId;
 
   @Prop({ type: Boolean, default: false })
@@ -62,5 +72,6 @@ export class WebinarAutoMessage extends Document {
   lastError?: string;
 }
 
-export const WebinarAutoMessageSchema = SchemaFactory.createForClass(WebinarAutoMessage);
+export const WebinarAutoMessageSchema =
+  SchemaFactory.createForClass(WebinarAutoMessage);
 WebinarAutoMessageSchema.index({ adminId: 1, webinarId: 1 }, { unique: true });

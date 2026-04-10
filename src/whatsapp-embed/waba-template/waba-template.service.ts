@@ -69,7 +69,7 @@ export class WabaTemplateService {
         );
         continue;
       }
-      
+
       metaTemplateIds.push(tpl.id);
 
       const key = `${name}::${language}`;
@@ -103,7 +103,7 @@ export class WabaTemplateService {
 
     let upsertedCount = 0;
     let modifiedCount = 0;
-    
+
     if (bulkOps.length > 0) {
       try {
         const bulkResult = await this.wabaTemplateModel.bulkWrite(bulkOps, {
@@ -127,7 +127,9 @@ export class WabaTemplateService {
       });
       deletedCount = deleteResult.deletedCount || 0;
       if (deletedCount > 0) {
-        this.logger.log(`Cleaned up ${deletedCount} orphaned templates for project ${projectId}`);
+        this.logger.log(
+          `Cleaned up ${deletedCount} orphaned templates for project ${projectId}`,
+        );
       }
     } catch (error: any) {
       this.logger.error(
@@ -400,16 +402,15 @@ export class WabaTemplateService {
     projectId: Types.ObjectId,
     templateName: string,
     language?: string,
-  )
-  : Promise<WabaTemplateDocument | null> 
-  
-  {
+  ): Promise<WabaTemplateDocument | null> {
     return this.wabaTemplateModel
       .findOne({
         projectId,
         adminId,
         name: templateName,
-        ...(language ? { language: { $in: [language, language.replace('-', '_')] } } : {}),
+        ...(language
+          ? { language: { $in: [language, language.replace('-', '_')] } }
+          : {}),
       })
       .lean();
   }

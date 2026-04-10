@@ -10,4 +10,3 @@ import { PabblyTokenBlacklistService } from './pabbly-token-blacklist.service';
   exports: [PabblyTokenBlacklistService],
 })
 export class PabblyTokenBlacklistModule {}
-

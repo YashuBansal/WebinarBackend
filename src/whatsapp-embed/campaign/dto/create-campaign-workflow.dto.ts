@@ -30,7 +30,6 @@ export class MessageTemplateDto {
   body: string;
 }
 
-
 export class ContactSelectionDto {
   @IsString()
   @IsNotEmpty()

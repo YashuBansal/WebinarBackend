@@ -1,5 +1,14 @@
-import { BadRequestException, Controller, Get, Param, Query } from '@nestjs/common';
-import { MeetingStatusResponseDto, ZoomEventService } from './zoom-event.service';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Param,
+  Query,
+} from '@nestjs/common';
+import {
+  MeetingStatusResponseDto,
+  ZoomEventService,
+} from './zoom-event.service';
 import { Id } from 'src/decorators/custom.decorator';
 import mongoose, { Types } from 'mongoose';
 
@@ -16,11 +25,14 @@ export class ZoomEventController {
     @Query('accountId') accountId?: string,
     @Query('occurrenceId') occurrenceId?: string,
   ): Promise<MeetingStatusResponseDto> {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(zoomProjectId)) {
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(zoomProjectId)
+    ) {
       throw new BadRequestException('Invalid adminId or zoomProjectId');
     }
     return this.zoomEventService.getMeetingStatus({
-      adminId : new Types.ObjectId(`${adminId}`),
+      adminId: new Types.ObjectId(`${adminId}`),
       zoomProjectId: new Types.ObjectId(`${zoomProjectId}`),
       meetingId,
       accountId,

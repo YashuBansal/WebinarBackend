@@ -130,7 +130,10 @@ const BillingHistorySchema = SchemaFactory.createForClass(BillingHistory);
 BillingHistorySchema.index({ date: 1 });
 BillingHistorySchema.index({ admin: 1, date: 1 });
 BillingHistorySchema.index({ invoiceNumber: 1 }, { unique: true });
-BillingHistorySchema.index({ addonPurchase: 1 }, { unique: true, sparse: true });
+BillingHistorySchema.index(
+  { addonPurchase: 1 },
+  { unique: true, sparse: true },
+);
 
 // Add pre-save middleware to transform `admin` and `plan` to ObjectId
 BillingHistorySchema.pre('save', function (next) {

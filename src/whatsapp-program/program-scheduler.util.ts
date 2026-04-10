@@ -18,9 +18,14 @@ export function getScheduledAtUTC(
   });
   const parts = dateFormatter.formatToParts(baseDateUTC);
   const year = parseInt(parts.find((p) => p.type === 'year')?.value ?? '0', 10);
-  const month = parseInt(parts.find((p) => p.type === 'month')?.value ?? '0', 10);
+  const month = parseInt(
+    parts.find((p) => p.type === 'month')?.value ?? '0',
+    10,
+  );
   const day = parseInt(parts.find((p) => p.type === 'day')?.value ?? '0', 10);
-  let candidate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0, 0));
+  let candidate = new Date(
+    Date.UTC(year, month - 1, day, hours, minutes, 0, 0),
+  );
   const formatter = new Intl.DateTimeFormat('en', {
     timeZone: timezone,
     year: 'numeric',
@@ -33,9 +38,20 @@ export function getScheduledAtUTC(
   });
   for (let i = 0; i < 5; i++) {
     const p = formatter.formatToParts(candidate);
-    const get = (t: string) => parseInt(p.find((x) => x.type === t)?.value ?? '0', 10);
-    const fy = get('year'), fm = get('month'), fd = get('day'), fh = get('hour'), fmin = get('minute');
-    if (fy === year && fm === month && fd === day && fh === hours && fmin === minutes) {
+    const get = (t: string) =>
+      parseInt(p.find((x) => x.type === t)?.value ?? '0', 10);
+    const fy = get('year'),
+      fm = get('month'),
+      fd = get('day'),
+      fh = get('hour'),
+      fmin = get('minute');
+    if (
+      fy === year &&
+      fm === month &&
+      fd === day &&
+      fh === hours &&
+      fmin === minutes
+    ) {
       return candidate;
     }
     const diffMs =
@@ -78,13 +94,18 @@ export function getBaseDateForOccurrence(
   intervalValue: number,
 ): Date {
   if (intervalUnit === 'day') {
-    return addInterval(startAt, (occurrenceIndex - 1) * (intervalValue || 1), 'day');
+    return addInterval(
+      startAt,
+      (occurrenceIndex - 1) * (intervalValue || 1),
+      'day',
+    );
   }
   // week: intervalValue 1-7 = Monday .. Sunday (ISO-like: 7 = Sunday)
-  const dayOfWeek = intervalValue >= 1 && intervalValue <= 7 ? intervalValue : 1;
+  const dayOfWeek =
+    intervalValue >= 1 && intervalValue <= 7 ? intervalValue : 1;
   const jsDay = dayOfWeek === 7 ? 0 : dayOfWeek; // JS getUTCDay(): 0=Sun, 1=Mon, .. 6=Sat
   const oneDayMs = 24 * 60 * 60 * 1000;
-  let first = new Date(startAt.getTime());
+  const first = new Date(startAt.getTime());
   first.setUTCHours(0, 0, 0, 0);
   while (first.getUTCDay() !== jsDay) {
     first.setTime(first.getTime() + oneDayMs);

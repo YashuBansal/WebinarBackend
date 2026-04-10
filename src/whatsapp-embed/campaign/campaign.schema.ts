@@ -86,28 +86,28 @@ export class AnalyticsSummary {
 // Stored Campaign Data sub-schema for scheduled campaigns
 @Schema({ _id: false })
 export class StoredCampaignData {
-  @Prop({ 
-    type: [Object], 
+  @Prop({
+    type: [Object],
     required: false,
-    default: []
+    default: [],
   })
   contacts: any[]; // Store contact selection data
 
-  @Prop({ 
-    type: String, 
-    default: 'en_US' 
+  @Prop({
+    type: String,
+    default: 'en_US',
   })
   language: string;
 
-  @Prop({ 
-    type: [VariableMapping], 
-    default: [] 
+  @Prop({
+    type: [VariableMapping],
+    default: [],
   })
   variableMappings: VariableMapping[];
 
-  @Prop({ 
-    type: String, 
-    required: false 
+  @Prop({
+    type: String,
+    required: false,
   })
   headerMediaAssetId: string;
 }
@@ -128,7 +128,6 @@ export class Campaign extends Document {
     default: CampaignContactType.WHATSAPP,
   })
   contactType: CampaignContactType;
-
 
   @Prop({
     type: Object,

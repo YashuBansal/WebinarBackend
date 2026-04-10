@@ -1246,8 +1246,7 @@ export class AssignmentService {
 
     // Check subscription validity and attendee limits
     const effectiveContactLimit =
-      (subscription.contactLimit || 0) +
-      (subscription.contactLimitAddon || 0);
+      (subscription.contactLimit || 0) + (subscription.contactLimitAddon || 0);
 
     if (
       subscription.expiryDate < new Date() || // Subscription expired

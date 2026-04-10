@@ -15,4 +15,3 @@ export interface CachedHealthResult {
   result: HealthCheckResult;
   cachedAt: number;
 }
-

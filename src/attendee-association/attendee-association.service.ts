@@ -107,7 +107,9 @@ export class AttendeeAssociationService {
     tags: string[];
   }): Promise<AttendeeAssociation | null> {
     try {
-      this.logger.log(`addFullNamesAndPhonesToAssociation -> ${JSON.stringify(payload)}`);
+      this.logger.log(
+        `addFullNamesAndPhonesToAssociation -> ${JSON.stringify(payload)}`,
+      );
       const { fullName = '', phone = '', adminId, email, tags } = payload;
 
       // Normalize fullName: filter out "undefined" strings and clean up
@@ -390,8 +392,13 @@ export class AttendeeAssociationService {
             phones: [],
           });
 
-
-          await this.createAttendeeLogForTagUpdate(email, adminId, userId, normalizedTag, action);
+          await this.createAttendeeLogForTagUpdate(
+            email,
+            adminId,
+            userId,
+            normalizedTag,
+            action,
+          );
           return newAssociation;
         }
         // If action is 'remove' and association doesn't exist, return null
@@ -414,7 +421,13 @@ export class AttendeeAssociationService {
               },
               { new: true },
             );
-          await this.createAttendeeLogForTagUpdate(email, adminId, userId, normalizedTag, action);
+          await this.createAttendeeLogForTagUpdate(
+            email,
+            adminId,
+            userId,
+            normalizedTag,
+            action,
+          );
           return updatedAssociation;
         }
         // Tag already exists, return current association
@@ -432,7 +445,13 @@ export class AttendeeAssociationService {
             },
             { new: true },
           );
-        await this.createAttendeeLogForTagUpdate(email, adminId, userId, normalizedTag, action);
+        await this.createAttendeeLogForTagUpdate(
+          email,
+          adminId,
+          userId,
+          normalizedTag,
+          action,
+        );
         return updatedAssociation;
       }
 

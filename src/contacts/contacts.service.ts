@@ -3,20 +3,28 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  Inject,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { Queue } from 'bullmq';
 import { Contact, ContactDocument } from './Contact.schema';
 import {
   CreateContactDto,
   UpdateContactDto,
   BulkCreateContactsDto,
   BulkUpdateContactTagsDto,
-  CSVImportDto,
   PaginationQueryDto,
   ContactFiltersDto,
+  ImportHistoryQueryDto,
 } from './dto/contacts.dto';
 import { WabaTagsService } from 'src/waba-tags/waba-tags.service';
+import {
+  ContactImportHistory,
+  ContactImportHistoryDocument,
+  ContactImportStatus,
+} from './ContactImportHistory.schema';
+import { CONTACTS_IMPORT_QUEUE } from './contacts-import.queue.module';
 
 @Injectable()
 export class ContactsService {
@@ -25,6 +33,10 @@ export class ContactsService {
   constructor(
     @InjectModel(Contact.name)
     private readonly contactModel: Model<ContactDocument>,
+    @InjectModel(ContactImportHistory.name)
+    private readonly contactImportHistoryModel: Model<ContactImportHistoryDocument>,
+    @Inject(CONTACTS_IMPORT_QUEUE)
+    private readonly contactsImportQueue: Queue,
     private readonly wabaTagsService: WabaTagsService,
   ) {}
 
@@ -43,9 +55,7 @@ export class ContactsService {
     });
 
     if (existingContact) {
-      throw new ConflictException(
-        'Contact with this phone already exists',
-      );
+      throw new ConflictException('Contact with this phone already exists');
     }
 
     const newContact = await this.contactModel.create({
@@ -68,106 +78,377 @@ export class ContactsService {
     bulkCreateContactsDto: BulkCreateContactsDto,
     adminId: Types.ObjectId,
   ) {
-    const { contacts, defaultCountryCode, replaceTags } = bulkCreateContactsDto;
+    const { contacts, sourceType, fileName } = bulkCreateContactsDto;
+    const declaredTotalRows =
+      typeof bulkCreateContactsDto.totalRows === 'number'
+        ? bulkCreateContactsDto.totalRows
+        : contacts?.length || 0;
+
+    if (!contacts || contacts.length === 0) {
+      throw new ConflictException('No contacts provided for import');
+    }
+
+    const firstProjectId = contacts[0]?.projectId;
+    if (!firstProjectId) {
+      throw new ConflictException('Project is required for import');
+    }
+
+    const mixedProject = contacts.some((contact) => contact.projectId !== firstProjectId);
+    if (mixedProject) {
+      throw new ConflictException('All imported rows must belong to same project');
+    }
+
+    const historyRecord = await this.contactImportHistoryModel.create({
+      adminId,
+      projectId: new Types.ObjectId(firstProjectId),
+      sourceType: sourceType || 'unknown',
+      fileName: fileName || '',
+      status: 'queued',
+      totalRows: declaredTotalRows,
+      startedAt: new Date(),
+      importPayload: {
+        ...bulkCreateContactsDto,
+        contacts,
+      },
+    });
+
+    const queuedJob = await this.contactsImportQueue.add('contacts-bulk-import', {
+      importHistoryId: historyRecord._id.toString(),
+    });
+
+    await this.contactImportHistoryModel.findByIdAndUpdate(historyRecord._id, {
+      $set: {
+        queueJobId: queuedJob.id?.toString() || '',
+      },
+    });
+
+    return {
+      importHistoryId: historyRecord._id,
+      jobId: queuedJob.id,
+      status: 'queued',
+      message: 'Import queued successfully',
+    };
+  }
+
+  async processBulkImportJob(importHistoryId: string): Promise<void> {
+    const historyRecord = await this.contactImportHistoryModel.findById(importHistoryId);
+    if (!historyRecord) {
+      this.logger.warn(`Import history ${importHistoryId} not found`);
+      return;
+    }
+    if (!historyRecord.importPayload?.contacts?.length) {
+      await this.finalizeImportHistory(
+        historyRecord._id as Types.ObjectId,
+        'failed',
+        {
+          totalRows: historyRecord.totalRows || 0,
+          validRows: 0,
+          invalidRows: historyRecord.totalRows || 0,
+          duplicates: 0,
+          newCount: 0,
+          updatedCount: 0,
+          failedCount: historyRecord.totalRows || 0,
+          failureReason: 'Missing import payload',
+        },
+      );
+      return;
+    }
+
+    await this.contactImportHistoryModel.findByIdAndUpdate(historyRecord._id, {
+      $set: { status: 'processing' },
+    });
+
+    const payload = historyRecord.importPayload;
+    const contacts = payload.contacts || [];
+    const totalRows = payload.totalRows || contacts.length;
+    const projectId = new Types.ObjectId(`${historyRecord.projectId}`);
+    const adminId = new Types.ObjectId(`${historyRecord.adminId}`);
+
+    const chunkSize = Number(process.env.CONTACTS_IMPORT_CHUNK_SIZE || 1000);
+    let validRows = 0;
+    let invalidRows = payload.clientInvalidRows || 0;
+    let duplicates = 0;
+    let newCount = 0;
+    let updatedCount = 0;
+    let failedCount = 0;
+    let processedRows = payload.clientInvalidRows || 0;
+    const invalidRecordsSample: Array<{
+      rowNumber: number;
+      phoneRaw?: string;
+      reason: string;
+      sourceRow?: Record<string, unknown>;
+    }> = (payload.clientInvalidRecordsSample || []).slice(0, 100);
+    const seenPhones = new Set<string>();
 
     try {
-      // Normalize phone numbers with country code if provided
-      const normalizedContacts = contacts.map(contact => ({
-        ...contact,
-        phone: this.normalizePhoneNumber(contact.phone, defaultCountryCode),
-        tags: this.normalizeTags(contact.tags),
-      }));
+      for (let start = 0; start < contacts.length; start += chunkSize) {
+      const chunk = contacts.slice(start, start + chunkSize);
+      const chunkPrepared: Array<{ rowNumber: number; data: any }> = [];
+      const chunkPhones: string[] = [];
 
-      // Get all phone numbers for duplicate checking (phone is unique per project)
-      const phones = normalizedContacts.map((c) => c.phone);
-      const projectId = new Types.ObjectId(normalizedContacts[0]?.projectId);
-      const importTags = normalizedContacts.flatMap((c) => c.tags || []);
-      await this.wabaTagsService.ensureTagsExist(projectId, adminId, importTags);
+      for (let i = 0; i < chunk.length; i++) {
+        const rowNumber = start + i + 1;
+        const row = chunk[i];
+        const normalizedPhone = this.normalizePhoneNumber(
+          row.phone,
+          payload.defaultCountryCode,
+        );
 
-      // Find existing contacts by phone (phone is unique per project)
+        if (!normalizedPhone) {
+          invalidRows++;
+          if (invalidRecordsSample.length < 100) {
+            invalidRecordsSample.push({
+              rowNumber,
+              phoneRaw: row.phone,
+              reason: 'Invalid or empty phone',
+              sourceRow: this.sanitizeSourceRow(row),
+            });
+          }
+          continue;
+        }
+
+        if (seenPhones.has(normalizedPhone)) {
+          duplicates++;
+        }
+        seenPhones.add(normalizedPhone);
+        validRows++;
+        const prepared = {
+          ...row,
+          phone: normalizedPhone,
+          tags: this.normalizeTags(row.tags),
+        };
+        chunkPrepared.push({ rowNumber, data: prepared });
+        chunkPhones.push(normalizedPhone);
+      }
+
       const existingContacts = await this.contactModel
         .find({
           adminId,
           projectId,
-          phone: { $in: phones },
+          phone: { $in: chunkPhones },
           isDeleted: false,
         })
         .exec();
+      const existingMap = new Map(existingContacts.map((c) => [c.phone, c]));
 
-      const existingPhonesMap = new Map(
-        existingContacts.map((c) => [c.phone, c])
-      );
+      const importTags = chunkPrepared.flatMap((item) => item.data.tags || []);
+      await this.wabaTagsService.ensureTagsExist(projectId, adminId, importTags);
 
-      const results = {
-        created: [],
-        updated: [],
-        failed: [],
-        skipped: [],
-      };
+      const operations = chunkPrepared.map(({ data }) => {
+        const existing = existingMap.get(data.phone);
+        if (!existing) {
+          newCount++;
+          return {
+            updateOne: {
+              filter: {
+                adminId,
+                projectId,
+                phone: data.phone,
+                isDeleted: false,
+              },
+              update: {
+                $setOnInsert: {
+                  ...data,
+                  adminId,
+                  projectId,
+                  isActive: true,
+                  isDeleted: false,
+                },
+              },
+              upsert: true,
+            },
+          };
+        }
 
-      for (const contactData of normalizedContacts) {
-        try {
-          const existingContact = existingPhonesMap.get(contactData.phone);
-
-          if (existingContact) {
-            // Contact exists - update it
-            const updateData: any = {};
-
-            // Update firstName, lastName, email if provided
-            if (contactData.firstName) updateData.firstName = contactData.firstName;
-            if (contactData.lastName) updateData.lastName = contactData.lastName;
-            if (contactData.email) updateData.email = contactData.email;
-
-            // Handle tags based on replaceTags flag
-            if (contactData.tags && contactData.tags.length > 0) {
-              if (replaceTags) {
-                updateData.tags = this.normalizeTags(contactData.tags);
-              } else {
-                // Merge tags, removing duplicates
-                const existingTags = this.normalizeTags(existingContact.tags || []);
-                const newTags = this.normalizeTags(contactData.tags || []);
-                const mergedTags = [...new Set([...existingTags, ...newTags])];
-                updateData.tags = mergedTags;
-              }
-            }
-
-            const updatedContact = await this.contactModel
-              .findByIdAndUpdate(
-                existingContact._id,
-                { $set: updateData },
-                { new: true }
-              )
-              .exec();
-
-            results.updated.push(updatedContact);
+        const updateData: any = {};
+        if (data.firstName) updateData.firstName = data.firstName;
+        if (data.lastName) updateData.lastName = data.lastName;
+        if (data.email) updateData.email = data.email;
+        if (data.tags && data.tags.length > 0) {
+          if (payload.replaceTags) {
+            updateData.tags = data.tags;
           } else {
-            // New contact - create it
-            const newContact = await this.contactModel.create({
-              ...contactData,
-              projectId: new Types.ObjectId(contactData.projectId),
-              adminId,
-              isActive: true,
-              isDeleted: false,
-            });
-
-            results.created.push(newContact);
+            const existingTags = this.normalizeTags(existing.tags || []);
+            updateData.tags = [...new Set([...existingTags, ...data.tags])];
           }
-        } catch (error) {
-          results.failed.push({
-            contact: contactData,
-            error: error.message,
-          });
+        }
+        if (Object.keys(updateData).length === 0) {
+          return null;
+        }
+        updatedCount++;
+        return {
+          updateOne: {
+            filter: { _id: existing._id },
+            update: { $set: updateData },
+          },
+        };
+      }).filter(Boolean);
+
+      if (operations.length > 0) {
+        try {
+          await this.contactModel.bulkWrite(operations as any[], { ordered: false });
+        } catch (bulkError) {
+          failedCount += operations.length;
+          this.logger.error(
+            `Bulk write chunk failed for import ${importHistoryId}: ${bulkError.message}`,
+          );
+          if (invalidRecordsSample.length < 100) {
+            invalidRecordsSample.push({
+              rowNumber: start + 1,
+              reason: `Chunk write failure: ${bulkError.message}`,
+            });
+          }
         }
       }
 
-      return results;
+      processedRows = Math.min(
+        (payload.clientInvalidRows || 0) + start + chunk.length,
+        totalRows,
+      );
+      await this.contactImportHistoryModel.findByIdAndUpdate(historyRecord._id, {
+        $set: {
+          processedRows,
+          validRows,
+          invalidRows,
+          duplicates,
+          newCount,
+          updatedCount,
+          failedCount,
+          invalidRecordsSample,
+        },
+      });
+      }
+
+      const summary = this.buildImportSummary({
+        totalRows,
+        validRows,
+        invalidRows,
+        duplicates,
+        newCount,
+        updatedCount,
+        failedCount,
+      });
+
+      await this.finalizeImportHistory(
+        historyRecord._id as Types.ObjectId,
+        summary.status,
+        {
+          ...summary,
+          failureReason: summary.failureReason,
+        },
+      );
     } catch (error) {
-      this.logger.error('Bulk create failed:', error);
+      this.logger.error(
+        `Import job ${importHistoryId} crashed: ${error.message}`,
+        error.stack,
+      );
+      await this.finalizeImportHistory(historyRecord._id as Types.ObjectId, 'failed', {
+        totalRows,
+        validRows,
+        invalidRows: Math.max(invalidRows, totalRows - validRows),
+        duplicates,
+        newCount,
+        updatedCount,
+        failedCount: Math.max(failedCount, 1),
+        failureReason: error.message || 'Import processor failed unexpectedly',
+      });
       throw error;
     }
   }
 
+  private buildImportSummary(input: {
+    totalRows: number;
+    validRows: number;
+    invalidRows: number;
+    duplicates: number;
+    newCount: number;
+    updatedCount: number;
+    failedCount: number;
+  }): {
+    totalRows: number;
+    validRows: number;
+    invalidRows: number;
+    duplicates: number;
+    newCount: number;
+    updatedCount: number;
+    failedCount: number;
+    status: ContactImportStatus;
+    failureReason: string;
+  } {
+    const summary = {
+      ...input,
+      status: 'success' as ContactImportStatus,
+      failureReason: '',
+    };
 
+    const processedCount = input.newCount + input.updatedCount;
+    if (processedCount === 0 && input.totalRows > 0) {
+      summary.status = 'failed';
+      summary.failureReason = 'No rows were processed';
+      return summary;
+    }
+
+    if (input.failedCount > 0 || input.invalidRows > 0) {
+      summary.status = 'partial_success';
+      summary.failureReason = this.buildPartialFailureReason(input);
+    }
+
+    return summary;
+  }
+
+  private buildPartialFailureReason(input: {
+    invalidRows: number;
+    failedCount: number;
+  }): string {
+    const reasonParts: string[] = [];
+    if (input.invalidRows > 0) {
+      reasonParts.push(`${input.invalidRows} invalid row(s)`);
+    }
+    if (input.failedCount > 0) {
+      reasonParts.push(`${input.failedCount} row(s) failed while writing`);
+    }
+    return reasonParts.join('; ');
+  }
+
+  private async finalizeImportHistory(
+    historyId: Types.ObjectId,
+    status: ContactImportStatus,
+    summary: {
+      totalRows: number;
+      validRows: number;
+      invalidRows: number;
+      duplicates: number;
+      newCount: number;
+      updatedCount: number;
+      failedCount: number;
+      failureReason?: string;
+    },
+  ): Promise<void> {
+    try {
+      await this.contactImportHistoryModel.findByIdAndUpdate(historyId, {
+        $set: {
+          status,
+          totalRows: summary.totalRows,
+          validRows: summary.validRows,
+          invalidRows: summary.invalidRows,
+          duplicates: summary.duplicates,
+          newCount: summary.newCount,
+          updatedCount: summary.updatedCount,
+          failedCount: summary.failedCount,
+          processedRows: summary.totalRows,
+          completedAt: new Date(),
+          failureReason: summary.failureReason || '',
+        },
+        $unset: {
+          importPayload: 1,
+        },
+      });
+    } catch (historyError) {
+      this.logger.error(
+        `Failed to finalize import history ${historyId.toString()}: ${historyError.message}`,
+      );
+    }
+  }
 
   /**
    * Normalize phone number based on country code
@@ -305,11 +586,97 @@ export class ContactsService {
     return String(tag).trim().toLowerCase().replace(/\s+/g, '_');
   }
 
+  private sanitizeSourceRow(row: Record<string, unknown>): Record<string, unknown> {
+    const safeRow: Record<string, unknown> = {};
+    const entries = Object.entries(row || {}).slice(0, 20);
+    for (const [key, value] of entries) {
+      const safeKey = String(key).slice(0, 80);
+      const safeValue =
+        typeof value === 'string'
+          ? value.slice(0, 300)
+          : typeof value === 'number' || typeof value === 'boolean'
+            ? value
+            : value === null || value === undefined
+              ? value
+              : String(value).slice(0, 300);
+      safeRow[safeKey] = safeValue;
+    }
+    return safeRow;
+  }
+
   private normalizeTags(tags?: string[]): string[] {
     if (!Array.isArray(tags)) return [];
-    return tags
-      .map((tag) => this.normalizeTag(tag))
-      .filter(Boolean);
+    return tags.map((tag) => this.normalizeTag(tag)).filter(Boolean);
+  }
+
+  async getImportHistory(
+    adminId: Types.ObjectId,
+    query: ImportHistoryQueryDto,
+  ): Promise<{
+    imports: ContactImportHistory[];
+    pagination: {
+      page: number;
+      limit: number;
+      totalCount: number;
+      totalPages: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const filter: any = { adminId };
+    if (query.projectId) {
+      filter.projectId = new Types.ObjectId(query.projectId);
+    }
+    if (query.status) {
+      filter.status = query.status;
+    }
+
+    const totalCount =
+      await this.contactImportHistoryModel.countDocuments(filter);
+    const imports = await this.contactImportHistoryModel
+      .find(filter)
+      .select('-importPayload')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean()
+      .exec();
+
+    const totalPages = Math.ceil(totalCount / limit);
+    return {
+      imports: imports as ContactImportHistory[],
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
+  }
+
+  async getImportHistoryById(
+    adminId: Types.ObjectId,
+    importHistoryId: Types.ObjectId,
+  ): Promise<ContactImportHistory> {
+    const item = await this.contactImportHistoryModel
+      .findOne({
+        _id: importHistoryId,
+        adminId,
+      })
+      .select('-importPayload')
+      .lean()
+      .exec();
+
+    if (!item) {
+      throw new NotFoundException('Import history not found');
+    }
+    return item as ContactImportHistory;
   }
 
   async findAll(
@@ -359,7 +726,11 @@ export class ContactsService {
       }
 
       if (filters.tags && filters.tags.length > 0) {
-        filter.tags = { $in: filters.tags };
+        if (filters.tagFilterMode === 'not_has_any') {
+          filter.tags = { $nin: filters.tags };
+        } else {
+          filter.tags = { $in: filters.tags };
+        }
       }
 
       if (filters.isActive !== undefined) {
@@ -400,11 +771,14 @@ export class ContactsService {
   }
 
   async getContactByIds(adminId: Types.ObjectId, contactIds: Types.ObjectId[]) {
-    const contacts = await this.contactModel.find({
-      _id: { $in: contactIds },
-      adminId,
-      isDeleted: false,
-    }).lean().exec();
+    const contacts = await this.contactModel
+      .find({
+        _id: { $in: contactIds },
+        adminId,
+        isDeleted: false,
+      })
+      .lean()
+      .exec();
 
     return contacts;
   }
@@ -530,7 +904,11 @@ export class ContactsService {
     }
 
     if (bulkUpdateContactTagsDto.operation === 'add') {
-      await this.wabaTagsService.ensureTagsExist(projectId, adminId, normalizedTags);
+      await this.wabaTagsService.ensureTagsExist(
+        projectId,
+        adminId,
+        normalizedTags,
+      );
     }
 
     const query = {
@@ -647,7 +1025,10 @@ export class ContactsService {
     };
   }
 
-  async getContactsByIds(adminId: Types.ObjectId, contactIds: Types.ObjectId[]) {
+  async getContactsByIds(
+    adminId: Types.ObjectId,
+    contactIds: Types.ObjectId[],
+  ) {
     return this.contactModel.find({
       _id: { $in: contactIds },
       adminId,

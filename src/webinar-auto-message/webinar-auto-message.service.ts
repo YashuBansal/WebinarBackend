@@ -151,7 +151,7 @@ export class WebinarAutoMessageService {
   private resolveVariables(
     mappings: VariableMappingDto[],
     contact: any,
-  ): { values: string[]; } {
+  ): { values: string[] } {
     const values: string[] = [];
     const dynamic: boolean[] = [];
     for (const m of mappings) {
@@ -183,13 +183,10 @@ export class WebinarAutoMessageService {
       throw new BadRequestException('Project is deleted or not accessible');
     }
 
-    const { values } = this.resolveVariables(
-      dto.variableMappings || [],
-      {},
-    );
+    const { values } = this.resolveVariables(dto.variableMappings || [], {});
 
     // Fetch template data from Meta to get the language
-    let templateLanguage = dto.language || 'en_US'; // Default fallback
+    const templateLanguage = dto.language || 'en_US'; // Default fallback
 
     const res = await this.whatsappService.sendTemplateMessagev2({
       adminId: adminId,
@@ -306,7 +303,7 @@ export class WebinarAutoMessageService {
     const result = await this.model.findOneAndUpdate(
       filter,
       { $set: { enabled } },
-      { new: true }
+      { new: true },
     );
 
     if (!result) {

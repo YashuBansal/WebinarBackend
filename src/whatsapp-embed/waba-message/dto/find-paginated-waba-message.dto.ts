@@ -1,5 +1,14 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsMongoId, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsMongoId,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 import { WabaMessageType } from '../waba-message.schema';
 
 export class FindPaginatedWabaMessageDto {
@@ -44,5 +53,3 @@ export class FindPaginatedWabaMessageDto {
   @IsString()
   occurrenceId?: string;
 }
-
-

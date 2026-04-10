@@ -32,7 +32,6 @@ import { WebhookQueueService } from './webhook-queue.service';
 import { WhatsAppGateway } from 'src/websocket/whatsapp.gateway';
 import { ZoomMeetingService } from './zoom-meeting/zoom-meeting.service';
 import { ZoomMeetingOccurrence } from './zoom-meeting/zoom-meeting.schema';
-import axios from 'axios';
 import { BaseLoggerService } from 'src/logger/base-logger.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 
@@ -825,7 +824,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         return resp.data;
       });
 
-      let registrants = Array.isArray(data?.registrants)
+      const registrants = Array.isArray(data?.registrants)
         ? data?.registrants
         : [];
 
@@ -982,7 +981,11 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       }
 
       // Fallback: resolve by meeting/webinar id using ZoomMeeting collection
-      const object = this.safeExtract(payload, ['payload.object', 'object'], {});
+      const object = this.safeExtract(
+        payload,
+        ['payload.object', 'object'],
+        {},
+      );
       const meetingId = this.validateAndExtractMeetingId(object);
       if (!meetingId) {
         this.logWebhookProcessing(
@@ -994,9 +997,8 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         return;
       }
 
-      const meeting = await this.zoomMeetingService.findAnyByMeetingId(
-        meetingId,
-      );
+      const meeting =
+        await this.zoomMeetingService.findAnyByMeetingId(meetingId);
 
       const resolvedProjectId = meeting?.projectId?.toString?.();
       if (!resolvedProjectId || !mongoose.isValidObjectId(resolvedProjectId)) {
@@ -2868,7 +2870,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         return resp.data;
       });
 
-      let registrants = Array.isArray(data?.registrants)
+      const registrants = Array.isArray(data?.registrants)
         ? data?.registrants
         : [];
 
@@ -3456,9 +3458,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
   async handleAppDeauthorized(body: Record<string, unknown>): Promise<void> {
     const payloadRaw = body.payload;
     const payload =
-      payloadRaw &&
-      typeof payloadRaw === 'object' &&
-      !Array.isArray(payloadRaw)
+      payloadRaw && typeof payloadRaw === 'object' && !Array.isArray(payloadRaw)
         ? (payloadRaw as Record<string, unknown>)
         : body;
 
@@ -3469,9 +3469,12 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       '';
 
     if (!accountId) {
-      this.logger.warn('app_deauthorized: missing account_id, cannot map projects', {
-        event: body.event,
-      });
+      this.logger.warn(
+        'app_deauthorized: missing account_id, cannot map projects',
+        {
+          event: body.event,
+        },
+      );
       return;
     }
 
@@ -3561,7 +3564,10 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       const status = error?.response?.status;
       const payload =
         error?.response?.data ?? error?.message ?? 'Unknown error';
-      this.logger.error('Zoom credential validation failed', { status, payload });
+      this.logger.error('Zoom credential validation failed', {
+        status,
+        payload,
+      });
       throw new NotAcceptableException('Invalid Zoom credentials or account');
     }
 

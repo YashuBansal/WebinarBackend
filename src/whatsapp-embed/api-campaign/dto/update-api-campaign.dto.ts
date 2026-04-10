@@ -7,4 +7,3 @@ export class UpdateApiCampaignDto extends PartialType(CreateApiCampaignDto) {
   @IsBoolean()
   isActive?: boolean;
 }
-

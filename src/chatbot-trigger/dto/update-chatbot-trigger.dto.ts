@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsEnum, IsBoolean, MinLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+  MinLength,
+} from 'class-validator';
 import { ResponseType } from '../chatbot-trigger.schema';
 
 export class UpdateChatbotTriggerDto {

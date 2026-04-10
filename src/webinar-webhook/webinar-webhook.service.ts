@@ -164,7 +164,7 @@ export class WebinarWebhookService {
           'Email cannot be set as a static value. Email must be mapped from webhook data.',
         );
       }
-      
+
       // Set isActive to true when staticValues is provided with values
       const hasStaticValues =
         updateWebinarWebhookDto.staticValues &&

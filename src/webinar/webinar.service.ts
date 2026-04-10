@@ -60,9 +60,8 @@ export class WebinarService {
       throw new BadRequestException('Invalid admin id');
     }
 
-    let subscription: any = await this.subscriptionService.getSubscription(
-      adminId,
-    );
+    let subscription: any =
+      await this.subscriptionService.getSubscription(adminId);
     if (!subscription) {
       throw new NotAcceptableException('Subscription not found');
     }
@@ -95,9 +94,14 @@ export class WebinarService {
 
     // Trim and check if a webinar with the same name already exists (case-insensitive)
     const trimmedWebinarName = createWebinarDto.webinarName.trim();
-    const escapedWebinarName = trimmedWebinarName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedWebinarName = trimmedWebinarName.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&',
+    );
     const existingWebinar = await this.webinarModel.findOne({
-      webinarName: { $regex: new RegExp(`^\\s*${escapedWebinarName}\\s*$`, 'i') },
+      webinarName: {
+        $regex: new RegExp(`^\\s*${escapedWebinarName}\\s*$`, 'i'),
+      },
       ...(createWebinarDto.adminId && {
         adminId: new Types.ObjectId(`${createWebinarDto.adminId}`),
       }),
@@ -142,8 +146,8 @@ export class WebinarService {
     const { webinarIds, conditions = [] } = filters;
     // Validate that all webinars exist and belong to the admin
     const webinars = await this.webinarModel.find({
-      _id: { $in: webinarIds.map(id => new Types.ObjectId(id)) },
-      adminId: new Types.ObjectId(adminId)
+      _id: { $in: webinarIds.map((id) => new Types.ObjectId(id)) },
+      adminId: new Types.ObjectId(adminId),
     });
 
     if (webinars.length !== webinarIds.length) {
@@ -151,7 +155,7 @@ export class WebinarService {
     }
 
     // Convert to ObjectIds for the query
-    const webinarObjectIds = webinarIds.map(id => new Types.ObjectId(id));
+    const webinarObjectIds = webinarIds.map((id) => new Types.ObjectId(id));
 
     // Get total count of attendees across all specified webinars
     const advancedQuery = this.buildAdvancedConditionsQuery(conditions);
@@ -162,13 +166,14 @@ export class WebinarService {
         new Types.ObjectId(`${adminId}`),
         advancedQuery,
       );
-    
+
     return attendees;
   }
 
-
   async getAllWebinars(adminId: string): Promise<any> {
-    return await this.webinarModel.find({ adminId: new Types.ObjectId(adminId) });
+    return await this.webinarModel.find({
+      adminId: new Types.ObjectId(adminId),
+    });
   }
 
   async updateWebinarSettings(
@@ -572,16 +577,23 @@ export class WebinarService {
     );
   }
 
-  async updateWebinarMeetingId(webinarId: string, meetingId: string, adminId: string, occurrenceId?: string): Promise<any> {
+  async updateWebinarMeetingId(
+    webinarId: string,
+    meetingId: string,
+    adminId: string,
+    occurrenceId?: string,
+  ): Promise<any> {
     const session = await this.webinarModel.startSession();
-    this.logger.log(`Updating webinar meetingId: ${meetingId}${occurrenceId ? `, occurrenceId: ${occurrenceId}` : ''} for webinarId: ${webinarId} and adminId: ${adminId}`);
+    this.logger.log(
+      `Updating webinar meetingId: ${meetingId}${occurrenceId ? `, occurrenceId: ${occurrenceId}` : ''} for webinarId: ${webinarId} and adminId: ${adminId}`,
+    );
     try {
       await session.withTransaction(async (currentSession) => {
         // Build query to find webinars with the same meetingId and occurrenceId (if provided)
         const query: any = {
           adminId: new Types.ObjectId(adminId),
           meetingId: meetingId,
-          _id: { $ne: new Types.ObjectId(webinarId) }
+          _id: { $ne: new Types.ObjectId(webinarId) },
         };
 
         // If occurrenceId is provided, match by both meetingId and occurrenceId
@@ -598,7 +610,7 @@ export class WebinarService {
         await this.webinarModel.updateMany(
           query,
           { $unset: unsetFields },
-          { session: currentSession }
+          { session: currentSession },
         );
 
         // Then update the target webinar with the meetingId and occurrenceId (if provided)
@@ -615,8 +627,10 @@ export class WebinarService {
             _id: new Types.ObjectId(webinarId),
             adminId: new Types.ObjectId(adminId),
           },
-          occurrenceId ? { $set: updateFields } : { $set: { meetingId }, $unset: { occurrenceId: 1 } },
-          { new: true, session: currentSession }
+          occurrenceId
+            ? { $set: updateFields }
+            : { $set: { meetingId }, $unset: { occurrenceId: 1 } },
+          { new: true, session: currentSession },
         );
 
         if (!result) {
@@ -636,9 +650,14 @@ export class WebinarService {
     }
   }
 
-  async removeWebinarMeetingId(webinarId: string, adminId: string): Promise<any> {
-    this.logger.log(`Removing webinar meetingId for webinarId: ${webinarId} and adminId: ${adminId}`);
-    
+  async removeWebinarMeetingId(
+    webinarId: string,
+    adminId: string,
+  ): Promise<any> {
+    this.logger.log(
+      `Removing webinar meetingId for webinarId: ${webinarId} and adminId: ${adminId}`,
+    );
+
     const webinar = await this.webinarModel.findById(webinarId);
     if (!webinar) {
       throw new NotFoundException('Webinar not found');
@@ -650,7 +669,7 @@ export class WebinarService {
         adminId: new Types.ObjectId(adminId),
       },
       { $unset: { meetingId: 1, occurrenceId: 1 } },
-      { new: true }
+      { new: true },
     );
 
     if (!result) {
@@ -659,7 +678,6 @@ export class WebinarService {
 
     // Clear the linked webinarId in meeting-event-config (if a config exists) without sending webinarId
     try {
-      
       if (previousMeetingId) {
         await this.meetingEventConfigService.setWebinarIdIfConfigExists(
           new Types.ObjectId(adminId),
@@ -667,7 +685,9 @@ export class WebinarService {
         );
       }
     } catch (e) {
-      this.logger.warn(`Failed to clear meeting-event-config webinarId on meetingId removal: ${e?.message || e}`);
+      this.logger.warn(
+        `Failed to clear meeting-event-config webinarId on meetingId removal: ${e?.message || e}`,
+      );
     }
 
     return result;
@@ -682,7 +702,7 @@ export class WebinarService {
       email: string;
       phone: string;
     },
-    occurrenceId?: string
+    occurrenceId?: string,
   ): Promise<any> {
     try {
       const normalizedEmail = (registrant.email || '').toLowerCase();
@@ -750,7 +770,10 @@ export class WebinarService {
 
       if (!webinars || webinars.length === 0) {
         this.logger.log(`No webinar found for meetingId: ${meetingId}`);
-        return { message: 'No webinar associated with this meeting', webinar: null };
+        return {
+          message: 'No webinar associated with this meeting',
+          webinar: null,
+        };
       }
 
       const results = [];
@@ -769,13 +792,29 @@ export class WebinarService {
         results,
       };
     } catch (error) {
-      this.logger.error(`Error handling meeting registration for meetingId: ${meetingId}`, error);
-      throw new BadRequestException(`Failed to handle meeting registration: ${error.message}`);
+      this.logger.error(
+        `Error handling meeting registration for meetingId: ${meetingId}`,
+        error,
+      );
+      throw new BadRequestException(
+        `Failed to handle meeting registration: ${error.message}`,
+      );
     }
   }
 
-  async getWebinarRegistrations(webinarId: Types.ObjectId, adminId: Types.ObjectId) {
-    return this.attendeesService.getAttendees(webinarId.toString(), adminId.toString(), false, 0,0,{filters: {}}, false);
+  async getWebinarRegistrations(
+    webinarId: Types.ObjectId,
+    adminId: Types.ObjectId,
+  ) {
+    return this.attendeesService.getAttendees(
+      webinarId.toString(),
+      adminId.toString(),
+      false,
+      0,
+      0,
+      { filters: {} },
+      false,
+    );
   }
 
   private buildAdvancedConditionsQuery(
@@ -793,7 +832,8 @@ export class WebinarService {
         }
         return {
           expression,
-          logicOperator: index === 0 ? 'AND' : condition.logicOperator ?? 'AND',
+          logicOperator:
+            index === 0 ? 'AND' : (condition.logicOperator ?? 'AND'),
         };
       })
       .filter(Boolean) as Array<{
@@ -866,7 +906,7 @@ export class WebinarService {
       const webinarObjectIds = values
         .filter((id) => Types.ObjectId.isValid(id))
         .map((id) => new Types.ObjectId(id));
-      
+
       if (webinarObjectIds.length === 0) {
         return null;
       }

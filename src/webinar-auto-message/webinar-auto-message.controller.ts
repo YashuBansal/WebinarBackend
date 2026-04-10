@@ -1,6 +1,22 @@
-import { Body, Controller, Delete, Get, Patch, Post, Query, UsePipes, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Patch,
+  Post,
+  Query,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { WebinarAutoMessageService } from './webinar-auto-message.service';
-import { UpsertAutoMessageDto, GetConfigQueryDto, TestSendDto, DeleteAutoMessageDto, ToggleAutoMessageDto } from './dto';
+import {
+  UpsertAutoMessageDto,
+  GetConfigQueryDto,
+  TestSendDto,
+  DeleteAutoMessageDto,
+  ToggleAutoMessageDto,
+} from './dto';
 import { Id } from '../decorators/custom.decorator';
 import mongoose from 'mongoose';
 
@@ -17,7 +33,10 @@ export class WebinarAutoMessageController {
 
   @Get('all')
   async list(@Query('projectId') projectId: string, @Id() adminId: string) {
-    if(!mongoose.isValidObjectId(projectId) || !mongoose.isValidObjectId(adminId)) {
+    if (
+      !mongoose.isValidObjectId(projectId) ||
+      !mongoose.isValidObjectId(adminId)
+    ) {
       return { statusCode: 400, message: 'Invalid projectId or adminId' };
     }
     const data = await this.svc.list(adminId, projectId);
@@ -52,5 +71,3 @@ export class WebinarAutoMessageController {
     return { statusCode: 200, message: 'toggled', data };
   }
 }
-
-

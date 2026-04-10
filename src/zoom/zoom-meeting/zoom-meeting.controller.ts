@@ -1,4 +1,12 @@
-import { BadRequestException, Controller, Get, Param, Post, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Param,
+  Post,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { ZoomMeetingService } from './zoom-meeting.service';
 import { ZoomMeeting } from './zoom-meeting.schema';
 import mongoose, { Types } from 'mongoose';
@@ -26,7 +34,6 @@ export class ZoomMeetingController {
       id,
     );
   }
-
 
   @Get('projects/:projectId/webinars/:id')
   async getZoomWebinar(

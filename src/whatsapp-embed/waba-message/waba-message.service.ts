@@ -76,7 +76,9 @@ export class WabaMessageService {
       programId: mongoose.isValidObjectId(wabaMessageData.programId)
         ? new Types.ObjectId(wabaMessageData.programId)
         : undefined,
-      programAssignmentId: mongoose.isValidObjectId(wabaMessageData.programAssignmentId)
+      programAssignmentId: mongoose.isValidObjectId(
+        wabaMessageData.programAssignmentId,
+      )
         ? new Types.ObjectId(wabaMessageData.programAssignmentId)
         : undefined,
       programSlotId: mongoose.isValidObjectId(wabaMessageData.programSlotId)
@@ -442,9 +444,8 @@ export class WabaMessageService {
       },
     ];
 
-    const unreadCountsResult = await this.wabaMessageModel.aggregate(
-      unreadCountsPipeline,
-    );
+    const unreadCountsResult =
+      await this.wabaMessageModel.aggregate(unreadCountsPipeline);
 
     const unreadCountMap = new Map<string, number>();
     unreadCountsResult.forEach((item) => {
@@ -498,7 +499,8 @@ export class WabaMessageService {
             lastMessagePreview = 'Media';
           }
         } else if (lastMessage.messageFormat === 'template') {
-          lastMessagePreview = lastMessage.displayText || lastMessage.textBody || '[Template]';
+          lastMessagePreview =
+            lastMessage.displayText || lastMessage.textBody || '[Template]';
         } else {
           lastMessagePreview = lastMessage.textBody || lastMessage.displayText;
         }
@@ -528,7 +530,10 @@ export class WabaMessageService {
       if (!a.lastMessageAt && !b.lastMessageAt) return 0;
       if (!a.lastMessageAt) return 1;
       if (!b.lastMessageAt) return -1;
-      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+      return (
+        new Date(b.lastMessageAt).getTime() -
+        new Date(a.lastMessageAt).getTime()
+      );
     });
 
     return result;
@@ -707,7 +712,8 @@ export class WabaMessageService {
             lastMessagePreview = 'Media';
           }
         } else if (lastMessage.messageFormat === 'template') {
-          lastMessagePreview = lastMessage.displayText || lastMessage.textBody || '[Template]';
+          lastMessagePreview =
+            lastMessage.displayText || lastMessage.textBody || '[Template]';
         } else {
           lastMessagePreview = lastMessage.textBody || lastMessage.displayText;
         }
@@ -741,7 +747,10 @@ export class WabaMessageService {
       if (!a.lastMessageAt && !b.lastMessageAt) return 0;
       if (!a.lastMessageAt) return 1;
       if (!b.lastMessageAt) return -1;
-      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+      return (
+        new Date(b.lastMessageAt).getTime() -
+        new Date(a.lastMessageAt).getTime()
+      );
     });
 
     return enrichedResult;

@@ -43,4 +43,3 @@ export class CreateApiCampaignDto {
   @IsOptional()
   isActive?: boolean;
 }
-

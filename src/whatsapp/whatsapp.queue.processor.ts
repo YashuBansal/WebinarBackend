@@ -18,7 +18,7 @@ import { ISendSingleTemplateMessagePayload } from './dto/msg.dto'; // Import the
 @Injectable()
 export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WhatsappQueueProcessor.name);
-  
+
   // BullMQ Worker instance handling job processing
   // Enforce the payload type on the Worker
   private worker: Worker<ISendSingleTemplateMessagePayload> | null = null;
@@ -44,11 +44,11 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
     // Number of concurrent jobs the worker can process
     const concurrency =
       this.configService.get<number>('WHATSAPP_QUEUE_CONCURRENCY') || 8;
-    
+
     // Maximum number of messages to send per second per WABA
     const rateLimitPerSecond =
       this.configService.get<number>('WHATSAPP_QUEUE_RATE_PER_WABA') || 20;
-    
+
     // Timeout for individual job processing in milliseconds
     const jobTimeoutMs =
       this.configService.get<number>('WHATSAPP_QUEUE_TIMEOUT_MS') || 20000;
@@ -66,11 +66,12 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
       queueName,
       async (job: Job<ISendSingleTemplateMessagePayload>) => {
         const payload = job.data;
-        const phoneNumber = payload?.formattedPhoneData?.phoneNumber || 'unknown';
+        const phoneNumber =
+          payload?.formattedPhoneData?.phoneNumber || 'unknown';
         const templateName = payload?.templateName || 'unknown';
         const projectId = payload?.projectId || 'unknown';
         const adminId = payload?.adminId || 'unknown';
-        
+
         // Log job start with key details
         const logData = {
           jobId: job.id,
@@ -83,13 +84,19 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
           attempt: job.attemptsMade + 1,
           maxAttempts: job.opts?.attempts || 1,
         };
-        this.logger.log('Processing queue job - calling optimizedSendSingleTemplateMessage', logData);
+        this.logger.log(
+          'Processing queue job - calling optimizedSendSingleTemplateMessage',
+          logData,
+        );
         // Console fallback for visibility
 
         try {
           // Call the method and capture result
-          const result = await this.whatsappService.optimizedSendSingleTemplateMessage(payload);
-          
+          const result =
+            await this.whatsappService.optimizedSendSingleTemplateMessage(
+              payload,
+            );
+
           // Log successful completion
           const successLogData = {
             jobId: job.id,
@@ -101,13 +108,14 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
           };
           this.logger.log('Queue job completed successfully', successLogData);
           // Console fallback for visibility
-          
+
           return result;
         } catch (error) {
           // Log error with full context
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           const errorStack = error instanceof Error ? error.stack : undefined;
-          
+
           const errorLogData = {
             jobId: job.id,
             phoneNumber,
@@ -122,7 +130,7 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
           this.logger.error('Queue job failed with error', errorLogData);
           // Console fallback for visibility
           console.error(`[QUEUE] Job ${job.id} failed`, errorLogData);
-          
+
           // Re-throw to let BullMQ handle retries
           throw error;
         }
@@ -145,19 +153,22 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
     );
 
     // Event listener for successful job completion
-    this.worker.on('completed', (job: Job<ISendSingleTemplateMessagePayload>) => {
-      this.logger.log(
-        `Job ${job.id} for recipient ${job.data?.formattedPhoneData?.phoneNumber} completed`,
-      );
-    });
-    
+    this.worker.on(
+      'completed',
+      (job: Job<ISendSingleTemplateMessagePayload>) => {
+        this.logger.log(
+          `Job ${job.id} for recipient ${job.data?.formattedPhoneData?.phoneNumber} completed`,
+        );
+      },
+    );
+
     // Event listener for job failure
-    this.worker.on('failed', (job: Job<ISendSingleTemplateMessagePayload> | undefined, err) => {
-      this.logger.error(
-        `Job ${job?.id} failed: ${err?.message}`,
-        err?.stack,
-      );
-    });
+    this.worker.on(
+      'failed',
+      (job: Job<ISendSingleTemplateMessagePayload> | undefined, err) => {
+        this.logger.error(`Job ${job?.id} failed: ${err?.message}`, err?.stack);
+      },
+    );
   }
 
   /**
@@ -173,4 +184,3 @@ export class WhatsappQueueProcessor implements OnModuleInit, OnModuleDestroy {
     }
   }
 }
-

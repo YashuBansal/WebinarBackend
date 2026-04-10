@@ -12,7 +12,7 @@ import {
   AttendeeAssociationDto,
   UpdateAttendeeTagDto,
 } from './dto/attendee-association.dto';
-import { AdminId, Role, Id } from 'src/decorators/custom.decorator';
+import { AdminId, Id } from 'src/decorators/custom.decorator';
 import { Types } from 'mongoose';
 
 @Controller('attendee-association')

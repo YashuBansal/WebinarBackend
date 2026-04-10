@@ -39,4 +39,3 @@ export class ZoomProject {
 export type ZoomProjectDocument = HydratedDocument<ZoomProject>;
 export const ZoomProjectSchema = SchemaFactory.createForClass(ZoomProject);
 ZoomProjectSchema.index({ adminId: 1, projectName: 1 }, { unique: true });
-

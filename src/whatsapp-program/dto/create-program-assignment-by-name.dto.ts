@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString, MaxLength, IsObject } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  IsObject,
+} from 'class-validator';
 
 export class CreateProgramAssignmentByNameDto {
   @IsString()
@@ -15,4 +21,3 @@ export class CreateProgramAssignmentByNameDto {
   @IsObject()
   variables?: Record<string, string>;
 }
-

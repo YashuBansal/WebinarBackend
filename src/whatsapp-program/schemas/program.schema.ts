@@ -18,7 +18,11 @@ export enum ProgramMessageType {
 
 @Schema({ _id: false })
 export class ProgramMessageConfig {
-  @Prop({ type: String, enum: Object.values(ProgramMessageType), default: ProgramMessageType.TEMPLATE })
+  @Prop({
+    type: String,
+    enum: Object.values(ProgramMessageType),
+    default: ProgramMessageType.TEMPLATE,
+  })
   messageType: ProgramMessageType;
 
   @Prop({ type: String, required: true })
@@ -61,7 +65,12 @@ export class Program extends Document {
   @Prop({ type: Types.ObjectId, ref: User.name, required: true, index: true })
   adminId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: Project.name, required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: Project.name,
+    required: true,
+    index: true,
+  })
   projectId: Types.ObjectId;
 
   @Prop({ type: Number, required: true, min: 1 }) // e.g. 5 days, 10 cycles

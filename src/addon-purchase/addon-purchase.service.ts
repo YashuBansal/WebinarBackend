@@ -17,7 +17,6 @@ import { RazorpayService } from 'src/razorpay/razorpay.service';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
 import { SubscriptionAddonService } from 'src/subscription-addon/subscription-addon.service';
-import { UserAddonStatus } from 'src/schemas/SubscriptionAddon.schema';
 import { BillingHistoryService } from 'src/billing-history/billing-history.service';
 import { UsersService } from 'src/users/users.service';
 
@@ -74,7 +73,8 @@ export class AddonPurchaseService {
       );
     }
 
-    const subscription = await this.subscriptionService.getSubscription(adminId);
+    const subscription =
+      await this.subscriptionService.getSubscription(adminId);
     const subscriptionExpiry = subscription?.expiryDate
       ? new Date(subscription.expiryDate)
       : null;
@@ -180,7 +180,11 @@ export class AddonPurchaseService {
       if (purchase.status === AddonPurchaseStatus.APPLIED) {
         await session.commitTransaction();
         session.endSession();
-        return { ok: true, purchaseId: purchase._id.toString(), status: purchase.status };
+        return {
+          ok: true,
+          purchaseId: purchase._id.toString(),
+          status: purchase.status,
+        };
       }
 
       // Record payment id (idempotent set)
@@ -195,13 +199,20 @@ export class AddonPurchaseService {
       const subscription = await this.subscriptionService.getSubscription(
         purchase.admin.toString(),
       );
-      const addon = await this.addonService.getAddOnById(purchase.addon.toString());
+      const addon = await this.addonService.getAddOnById(
+        purchase.addon.toString(),
+      );
       const now = new Date();
       const fromValidity = new Date(
         now.getTime() + addon.validityInDays * 24 * 60 * 60 * 1000,
       );
       const endAt = subscription.expiryDate
-        ? new Date(Math.min(fromValidity.getTime(), new Date(subscription.expiryDate).getTime()))
+        ? new Date(
+            Math.min(
+              fromValidity.getTime(),
+              new Date(subscription.expiryDate).getTime(),
+            ),
+          )
         : fromValidity;
 
       const benefitsSnapshot = {
@@ -328,7 +339,9 @@ export class AddonPurchaseService {
     const purchases = await this.addonPurchaseModel
       .find({
         provider: PaymentProvider.RAZORPAY,
-        status: { $in: [AddonPurchaseStatus.PAID, AddonPurchaseStatus.APPLIED] },
+        status: {
+          $in: [AddonPurchaseStatus.PAID, AddonPurchaseStatus.APPLIED],
+        },
       })
       .sort({ updatedAt: 1 })
       .limit(limit)
@@ -361,15 +374,22 @@ export class AddonPurchaseService {
           this.subscriptionService.GST_VALUE || 0,
           p._id.toString(),
           {
-            startDate: userAddon?.startAt ? new Date(userAddon.startAt) : undefined,
-            expiryDate: userAddon?.expiryDate ? new Date(userAddon.expiryDate) : undefined,
+            startDate: userAddon?.startAt
+              ? new Date(userAddon.startAt)
+              : undefined,
+            expiryDate: userAddon?.expiryDate
+              ? new Date(userAddon.expiryDate)
+              : undefined,
           },
         );
       } catch (_) {
         // best-effort reconciliation; leave counters for observability
         await this.addonPurchaseModel.updateOne(
           { _id: p._id },
-          { $inc: { attempts: 1 }, $set: { lastError: 'billing_reconcile_failed' } },
+          {
+            $inc: { attempts: 1 },
+            $set: { lastError: 'billing_reconcile_failed' },
+          },
         );
       }
     }
@@ -377,4 +397,3 @@ export class AddonPurchaseService {
     return { ok: true, attempted };
   }
 }
-

@@ -1,5 +1,14 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsEnum, IsMongoId, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import {
   AdvanceFilterLogicOperator,
   AdvanceFilterMode,
@@ -43,7 +52,10 @@ export class AdvanceFilterDTO {
 
   @IsArray()
   @IsNotEmpty({ message: 'At least one webinar ID is required' })
-  @IsMongoId({ each: true, message: 'Each webinar ID must be a valid MongoDB ObjectId' })
+  @IsMongoId({
+    each: true,
+    message: 'Each webinar ID must be a valid MongoDB ObjectId',
+  })
   webinarIds: string[];
 
   @IsBoolean()

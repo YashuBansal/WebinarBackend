@@ -46,11 +46,17 @@ export class AttendeesController {
   ) {}
 
   @Post('advance-filters')
-  async fetchAttendeesByAdvanceFilters(@Body() body: AdvanceFilterDTO, @Id() adminId: string) {
+  async fetchAttendeesByAdvanceFilters(
+    @Body() body: AdvanceFilterDTO,
+    @Id() adminId: string,
+  ) {
     if (!mongoose.isValidObjectId(adminId)) {
       throw new BadRequestException('Invalid Admin ID');
     }
-    return await this.attendeesService.fetchAttendeesByAdvanceFilters(body, adminId);
+    return await this.attendeesService.fetchAttendeesByAdvanceFilters(
+      body,
+      adminId,
+    );
   }
 
   @Get('webinar')
@@ -216,7 +222,7 @@ export class AttendeesController {
       await this.attendeesService.getPostWebinarAttendee(
         body.webinarId,
         adminId,
-      );  
+      );
 
     if (postWebinarExists && !body.isAttended) {
       throw new NotAcceptableException(

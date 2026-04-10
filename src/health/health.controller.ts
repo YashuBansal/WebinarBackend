@@ -55,17 +55,15 @@ export class HealthController {
 
     // Determine HTTP status code
     const statusCode =
-      result.status === 'down'
-        ? HttpStatus.SERVICE_UNAVAILABLE
-        : HttpStatus.OK;
+      result.status === 'down' ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.OK;
 
     const sanitized = this.sanitizeResponse(result);
-    
+
     if (res) {
       res.status(statusCode).json(sanitized);
       return;
     }
-    
+
     // This shouldn't happen, but handle gracefully
     return sanitized;
   }
@@ -76,10 +74,7 @@ export class HealthController {
    * Returns readiness check by default
    */
   @Get()
-  async health(
-    @Query('skipCache') skipCache?: string,
-    @Res() res?: Response,
-  ) {
+  async health(@Query('skipCache') skipCache?: string, @Res() res?: Response) {
     return this.readiness(skipCache, res);
   }
 
@@ -116,12 +111,13 @@ export class HealthController {
       return message.split('\n')[0];
     }
     // Return generic message for sensitive errors
-    if (message.toLowerCase().includes('password') ||
-        message.toLowerCase().includes('secret') ||
-        message.toLowerCase().includes('key')) {
+    if (
+      message.toLowerCase().includes('password') ||
+      message.toLowerCase().includes('secret') ||
+      message.toLowerCase().includes('key')
+    ) {
       return 'Configuration error';
     }
     return message;
   }
 }
-

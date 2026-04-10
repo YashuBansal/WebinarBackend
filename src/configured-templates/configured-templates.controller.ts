@@ -4,14 +4,12 @@ import {
   Post,
   Body,
   Query,
-  HttpCode,
   HttpStatus,
   Param,
   Delete,
   Patch,
   ValidationPipe,
   UsePipes,
-  BadRequestException,
   NotAcceptableException,
 } from '@nestjs/common';
 import { ConfiguredTemplatesService } from './configured-templates.service';
@@ -25,7 +23,9 @@ import {
 
 @Controller('configured-templates')
 export class ConfiguredTemplatesController {
-  constructor(private readonly configuredTemplatesService: ConfiguredTemplatesService) {}
+  constructor(
+    private readonly configuredTemplatesService: ConfiguredTemplatesService,
+  ) {}
 
   @Get(':projectId')
   @UsePipes(new ValidationPipe({ transform: true }))
@@ -41,14 +41,15 @@ export class ConfiguredTemplatesController {
     const page = parseInt(query.page || '1', 10);
     const limit = parseInt(query.limit || '20', 10);
 
-    const configuredTemplates = await this.configuredTemplatesService.getConfiguredTemplates(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      page,
-      limit,
-      query.search,
-      query.isActive,
-    );
+    const configuredTemplates =
+      await this.configuredTemplatesService.getConfiguredTemplates(
+        new Types.ObjectId(`${adminId}`),
+        new Types.ObjectId(`${projectId}`),
+        page,
+        limit,
+        query.search,
+        query.isActive,
+      );
 
     return {
       statusCode: HttpStatus.OK,
@@ -68,11 +69,12 @@ export class ConfiguredTemplatesController {
       throw new NotAcceptableException('Invalid Project ID');
     }
 
-    const result = await this.configuredTemplatesService.createConfiguredTemplate(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      createConfiguredTemplateDto,
-    );
+    const result =
+      await this.configuredTemplatesService.createConfiguredTemplate(
+        new Types.ObjectId(`${adminId}`),
+        new Types.ObjectId(`${projectId}`),
+        createConfiguredTemplateDto,
+      );
 
     return {
       statusCode: HttpStatus.CREATED,
@@ -97,12 +99,13 @@ export class ConfiguredTemplatesController {
       throw new NotAcceptableException('Invalid Configured Template ID');
     }
 
-    const result = await this.configuredTemplatesService.updateConfiguredTemplate(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      new Types.ObjectId(`${configuredTemplateId}`),
-      updateConfiguredTemplateDto,
-    );
+    const result =
+      await this.configuredTemplatesService.updateConfiguredTemplate(
+        new Types.ObjectId(`${adminId}`),
+        new Types.ObjectId(`${projectId}`),
+        new Types.ObjectId(`${configuredTemplateId}`),
+        updateConfiguredTemplateDto,
+      );
 
     return {
       statusCode: HttpStatus.OK,
@@ -125,11 +128,12 @@ export class ConfiguredTemplatesController {
       throw new NotAcceptableException('Invalid Configured Template ID');
     }
 
-    const result = await this.configuredTemplatesService.deleteConfiguredTemplate(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      new Types.ObjectId(`${configuredTemplateId}`),
-    );
+    const result =
+      await this.configuredTemplatesService.deleteConfiguredTemplate(
+        new Types.ObjectId(`${adminId}`),
+        new Types.ObjectId(`${projectId}`),
+        new Types.ObjectId(`${configuredTemplateId}`),
+      );
 
     return {
       statusCode: HttpStatus.OK,
@@ -152,11 +156,12 @@ export class ConfiguredTemplatesController {
       throw new NotAcceptableException('Invalid Configured Template ID');
     }
 
-    const configuredTemplate = await this.configuredTemplatesService.getConfiguredTemplateById(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${projectId}`),
-      new Types.ObjectId(`${configuredTemplateId}`),
-    );
+    const configuredTemplate =
+      await this.configuredTemplatesService.getConfiguredTemplateById(
+        new Types.ObjectId(`${adminId}`),
+        new Types.ObjectId(`${projectId}`),
+        new Types.ObjectId(`${configuredTemplateId}`),
+      );
 
     return {
       statusCode: HttpStatus.OK,

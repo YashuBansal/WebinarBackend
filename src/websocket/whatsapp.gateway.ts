@@ -44,7 +44,9 @@ interface ZoomLiveUpdatePayload {
   transports: ['websocket'],
 })
 @UseFilters(new WebsocketExceptionFilter())
-export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class WhatsAppGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   private readonly logger = new Logger(WhatsAppGateway.name);
 
   constructor(
@@ -65,11 +67,13 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   async handleConnection(client: Socket) {
     this.logger.log(`WS client connected: ${client.id}`);
-    
+
     // Read token from cookies
     const cookieHeader = client.handshake.headers.cookie;
     if (!cookieHeader) {
-      this.logger.warn(`No cookies found for client ${client.id}, disconnecting`);
+      this.logger.warn(
+        `No cookies found for client ${client.id}, disconnecting`,
+      );
       client.disconnect();
       return;
     }
@@ -80,7 +84,9 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     const token = cookies[accessTokenName];
 
     if (!token) {
-      this.logger.warn(`No access token found in cookies for client ${client.id}, disconnecting`);
+      this.logger.warn(
+        `No access token found in cookies for client ${client.id}, disconnecting`,
+      );
       client.disconnect();
       return;
     }
@@ -89,27 +95,29 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
       // Validate token
       const secret = this.configService.get('ACCESS_TOKEN_SECRET');
       const decodedToken = this.jwtService.verify(token, { secret });
-      
+
       // Extract userId from token
       const userId = String(decodedToken.id || decodedToken.adminId);
       const clientApp = this.getClientApp(client);
-      
+
       // Store userId in socket data for later use
       client.data.userId = userId;
       client.data.clientApp = clientApp;
-      
+
       // Automatically join user room based on authenticated userId
       const roomName = `user:${userId}`;
       client.join(roomName);
       this.activeUsers.set(userId, client.id);
       this.activeUsersByApp[clientApp].set(userId, client.id);
-      
+
       this.logger.log(
         `Client ${client.id} (${clientApp}) authenticated as user ${userId} and joined room ${roomName}`,
       );
-      
     } catch (error) {
-      this.logger.error(`Token validation failed for client ${client.id}:`, error);
+      this.logger.error(
+        `Token validation failed for client ${client.id}:`,
+        error,
+      );
       client.disconnect();
     }
   }
@@ -166,16 +174,18 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   // Note: No explicit join handler needed - user is automatically joined to their room
   // during connection based on authenticated token. This keeps it simpler and more secure.
-  emitToUser(userId: string, payload: {
-    phoneNumber: string;
-    textBody?: string;
-    direction: 'inbound' | 'outbound';
-    createdAt?: string;
-    messageFormat?: 'text' | 'template' | 'media';
-    mimeType?: string;
-    mediaUrl?: string;
-  }) {
-
+  emitToUser(
+    userId: string,
+    payload: {
+      phoneNumber: string;
+      textBody?: string;
+      direction: 'inbound' | 'outbound';
+      createdAt?: string;
+      messageFormat?: 'text' | 'template' | 'media';
+      mimeType?: string;
+      mediaUrl?: string;
+    },
+  ) {
     const room = `user:${String(userId)}`;
     this.server.to(room).emit('chat-message', {
       ...payload,
@@ -191,7 +201,10 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     });
   }
 
-  emitZoomRegistrantsUpdate(userId: string, payload: ZoomRegistrantsUpdatePayload) {
+  emitZoomRegistrantsUpdate(
+    userId: string,
+    payload: ZoomRegistrantsUpdatePayload,
+  ) {
     const room = `user:${String(userId)}`;
     this.server.to(room).emit('zoom-registrants-update', {
       ...payload,
@@ -207,5 +220,3 @@ export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect
     });
   }
 }
-
-

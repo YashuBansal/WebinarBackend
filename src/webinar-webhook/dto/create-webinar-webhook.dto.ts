@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsUrl, IsObject, ValidateNested, ValidateIf } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsBoolean,
+  IsUrl,
+  IsObject,
+} from 'class-validator';
 
 export class CreateWebinarWebhookDto {
   @IsString()
@@ -66,4 +73,3 @@ export class UpdateWebinarWebhookDto {
     source?: string;
   };
 }
-

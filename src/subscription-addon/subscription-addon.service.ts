@@ -1,4 +1,4 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import {
@@ -113,11 +113,28 @@ export class SubscriptionAddonService {
       },
       {
         $project: {
-          addonName: { $ifNull: ['$benefitsSnapshot.addonName', '$addOnDetails.addonName'] },
+          addonName: {
+            $ifNull: ['$benefitsSnapshot.addonName', '$addOnDetails.addonName'],
+          },
           expiryDate: '$expiryDate',
-          employeeLimit: { $ifNull: ['$benefitsSnapshot.employeeLimit', '$addOnDetails.employeeLimit'] },
-          contactLimit: { $ifNull: ['$benefitsSnapshot.contactLimit', '$addOnDetails.contactLimit'] },
-          webinarLimit: { $ifNull: ['$benefitsSnapshot.webinarLimit', '$addOnDetails.webinarLimit'] },
+          employeeLimit: {
+            $ifNull: [
+              '$benefitsSnapshot.employeeLimit',
+              '$addOnDetails.employeeLimit',
+            ],
+          },
+          contactLimit: {
+            $ifNull: [
+              '$benefitsSnapshot.contactLimit',
+              '$addOnDetails.contactLimit',
+            ],
+          },
+          webinarLimit: {
+            $ifNull: [
+              '$benefitsSnapshot.webinarLimit',
+              '$addOnDetails.webinarLimit',
+            ],
+          },
           whatsappProjectLimit: {
             $ifNull: [
               '$benefitsSnapshot.whatsappProjectLimit',
@@ -130,7 +147,12 @@ export class SubscriptionAddonService {
               '$addOnDetails.zoomProjectLimit',
             ],
           },
-          addOnPrice: { $ifNull: ['$benefitsSnapshot.addOnPrice', '$addOnDetails.addOnPrice'] },
+          addOnPrice: {
+            $ifNull: [
+              '$benefitsSnapshot.addOnPrice',
+              '$addOnDetails.addOnPrice',
+            ],
+          },
           addOnId: '$addOn',
           status: '$status',
         },

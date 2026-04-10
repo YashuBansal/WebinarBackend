@@ -1,4 +1,11 @@
-import { Body, Controller, Logger, Post, Query, Redirect } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Logger,
+  Post,
+  Query,
+  Redirect,
+} from '@nestjs/common';
 import { RazorpayService } from './razorpay.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import {
@@ -84,12 +91,15 @@ export class RazorpayController {
 
     // Create purchase-ledger order under the hood.
     const idempotencyKey = crypto.randomUUID();
-    const { purchase, order, addon: addonData } =
-      await this.addonPurchaseService.createRazorpayPurchaseOrder({
-        adminId,
-        addonId: addon,
-        idempotencyKey,
-      });
+    const {
+      purchase,
+      order,
+      addon: addonData,
+    } = await this.addonPurchaseService.createRazorpayPurchaseOrder({
+      adminId,
+      addonId: addon,
+      idempotencyKey,
+    });
 
     // Backward-compatible response shape for older clients + include canonical fields.
     return {
@@ -108,7 +118,9 @@ export class RazorpayController {
     @Query() query: RazorPayAddOnDTO,
   ): Promise<any> {
     // Deprecated endpoint: kept as alias for backwards compatibility.
-    this.logger.warn('DeprecatedEndpointUsed: POST /razorpay/addon/payment-success');
+    this.logger.warn(
+      'DeprecatedEndpointUsed: POST /razorpay/addon/payment-success',
+    );
 
     const generatedSignature = crypto
       .createHmac('sha256', this.configService.get('RAZORPAY_KEY_SECRET'))

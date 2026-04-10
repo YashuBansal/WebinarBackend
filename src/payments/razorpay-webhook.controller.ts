@@ -25,8 +25,9 @@ export class RazorpayWebhookController {
     @Headers('x-razorpay-signature') signature: string,
   ) {
     // We expect `req.body` to be a Buffer (set via express.raw middleware).
-    const rawBody =
-      Buffer.isBuffer((req as any).body) ? ((req as any).body as Buffer) : null;
+    const rawBody = Buffer.isBuffer((req as any).body)
+      ? ((req as any).body as Buffer)
+      : null;
     if (!rawBody) {
       throw new BadRequestException(
         'Webhook requires raw body (check body-parser configuration)',
@@ -96,4 +97,3 @@ export class RazorpayWebhookController {
     });
   }
 }
-

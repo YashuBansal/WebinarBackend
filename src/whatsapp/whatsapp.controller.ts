@@ -24,12 +24,7 @@ import { Response } from 'express';
 import { WhatsappService } from './whatsapp.service';
 import { Id } from 'src/decorators/custom.decorator';
 import mongoose, { Types } from 'mongoose';
-import {
-  CreateTemplateDto,
-  UpdateTemplateDto,
-  GetTemplatesQueryDto,
-  DeleteTemplateDto,
-} from './dto/template.dto';
+import { UpdateTemplateDto } from './dto/template.dto';
 import {
   SendTemplateMessageDto,
   SendBulkTemplateMessageDto,
@@ -577,7 +572,10 @@ export class WhatsappController {
       res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
       res.send(data);
     } catch (error) {
-      if (error instanceof BadRequestException || error instanceof ForbiddenException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new ServiceUnavailableException('Failed to proxy media', error);

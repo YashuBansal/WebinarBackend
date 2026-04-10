@@ -11,7 +11,7 @@ export class ValidationUtil {
 
     // Remove all non-digit characters
     const cleaned = phone.replace(/\D/g, '');
-    
+
     // Basic validation - should be between 7-15 digits
     if (cleaned.length < 7 || cleaned.length > 15) {
       throw new BadRequestException('Invalid phone number format');
@@ -41,7 +41,7 @@ export class ValidationUtil {
    */
   static sanitizeText(text: string): string {
     if (!text) return '';
-    
+
     return text
       .trim()
       .replace(/[<>]/g, '') // Remove potential HTML tags
@@ -75,7 +75,9 @@ export class ValidationUtil {
 
     const sanitized = this.sanitizeText(name);
     if (sanitized.length < 1 || sanitized.length > 100) {
-      throw new BadRequestException('Template name must be between 1-100 characters');
+      throw new BadRequestException(
+        'Template name must be between 1-100 characters',
+      );
     }
 
     return sanitized;
@@ -94,7 +96,9 @@ export class ValidationUtil {
     }
 
     if (!payload.payload && !payload.object) {
-      throw new BadRequestException('Webhook payload must contain payload or object');
+      throw new BadRequestException(
+        'Webhook payload must contain payload or object',
+      );
     }
   }
 
@@ -141,15 +145,21 @@ export class ValidationUtil {
     if (template.variableMappings && Array.isArray(template.variableMappings)) {
       template.variableMappings.forEach((mapping: any, index: number) => {
         if (!mapping.variable) {
-          throw new BadRequestException(`Variable mapping ${index} must have a variable name`);
+          throw new BadRequestException(
+            `Variable mapping ${index} must have a variable name`,
+          );
         }
-        
+
         if (mapping.isDynamic && !mapping.dynamicField) {
-          throw new BadRequestException(`Dynamic variable ${index} must have a dynamic field`);
+          throw new BadRequestException(
+            `Dynamic variable ${index} must have a dynamic field`,
+          );
         }
-        
+
         if (!mapping.isDynamic && !mapping.staticValue) {
-          throw new BadRequestException(`Static variable ${index} must have a static value`);
+          throw new BadRequestException(
+            `Static variable ${index} must have a static value`,
+          );
         }
       });
     }

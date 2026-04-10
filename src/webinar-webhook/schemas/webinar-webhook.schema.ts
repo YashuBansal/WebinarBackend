@@ -16,25 +16,25 @@ export class WebinarWebhook {
   @Prop({ required: false, type: String })
   webhookUrl?: string;
 
-  @Prop({required: true, type: String})
+  @Prop({ required: true, type: String })
   webhookName: string;
-  
-  @Prop({default: false, type: Boolean})
+
+  @Prop({ default: false, type: Boolean })
   isResponseCaptured: boolean;
 
-  @Prop({default: true, type: Boolean})
+  @Prop({ default: true, type: Boolean })
   isActive: boolean;
 
-  @Prop({required: false, type: Date})
+  @Prop({ required: false, type: Date })
   lastCapturedAt?: Date;
 
-  @Prop({required: false, type: Object})
+  @Prop({ required: false, type: Object })
   lastCapturedData?: any;
 
-  @Prop({required: false, type: String})
+  @Prop({ required: false, type: String })
   webhookToken?: string;
 
-  @Prop({required: false, type: Object})
+  @Prop({ required: false, type: Object })
   fieldMapping?: {
     email?: string;
     firstName?: string;
@@ -47,7 +47,7 @@ export class WebinarWebhook {
     source?: string;
   };
 
-  @Prop({required: false, type: Object})
+  @Prop({ required: false, type: Object })
   staticValues?: {
     firstName?: string;
     lastName?: string;
@@ -58,7 +58,7 @@ export class WebinarWebhook {
     tags?: string;
     source?: string;
   };
-
 }
 
-export const WebinarWebhookSchema = SchemaFactory.createForClass(WebinarWebhook);
+export const WebinarWebhookSchema =
+  SchemaFactory.createForClass(WebinarWebhook);

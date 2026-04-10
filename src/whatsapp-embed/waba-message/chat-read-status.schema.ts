@@ -42,6 +42,9 @@ export class ChatReadStatus extends Document {
 const ChatReadStatusSchema = SchemaFactory.createForClass(ChatReadStatus);
 
 // Create compound index for efficient lookups
-ChatReadStatusSchema.index({ adminId: 1, projectId: 1, phoneNumber: 1 }, { unique: true });
+ChatReadStatusSchema.index(
+  { adminId: 1, projectId: 1, phoneNumber: 1 },
+  { unique: true },
+);
 
 export { ChatReadStatusSchema };

@@ -85,7 +85,9 @@ export class RazorpayService {
       addonData.addOnPrice,
     );
     const result = await this.createOrder(totalAmount, {
-      receipt: meta?.purchaseId ? `addon_purchase_${meta.purchaseId}` : undefined,
+      receipt: meta?.purchaseId
+        ? `addon_purchase_${meta.purchaseId}`
+        : undefined,
       notes: meta?.purchaseId ? { purchaseId: meta.purchaseId } : undefined,
     });
     return { addonData, result };

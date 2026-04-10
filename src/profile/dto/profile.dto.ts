@@ -127,7 +127,6 @@ export class DisplayNameStatusDto {
 
   @IsString()
   throughput: string;
-
 }
 
 // Profile Picture Upload DTO

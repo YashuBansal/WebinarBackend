@@ -39,7 +39,6 @@ export class Plans extends Document {
   })
   internalName: string;
 
-
   @Prop({
     type: Number,
     min: 1,
@@ -203,7 +202,11 @@ export class Plans extends Document {
 
       // Get the base price for this duration to validate flat discount
       const pricingConfig = this.planDurationConfig.get(key);
-      if (discountType === 'flat' && pricingConfig && discountValue > pricingConfig.price) {
+      if (
+        discountType === 'flat' &&
+        pricingConfig &&
+        discountValue > pricingConfig.price
+      ) {
         throw new Error(
           `The discount value for "${key}" cannot exceed the plan price (${pricingConfig.price}) if the discount type is "flat".`,
         );

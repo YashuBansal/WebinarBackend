@@ -17,4 +17,3 @@ export class RazorpayConfirmAddonDto {
   @IsString()
   razorpay_signature: string;
 }
-

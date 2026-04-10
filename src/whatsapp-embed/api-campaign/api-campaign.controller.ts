@@ -40,7 +40,12 @@ export class ApiCampaignController {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
 
-    return this.apiCampaignService.findAll(adminId, projectId, pageNum, limitNum);
+    return this.apiCampaignService.findAll(
+      adminId,
+      projectId,
+      pageNum,
+      limitNum,
+    );
   }
 
   @Get(':id')
@@ -50,10 +55,11 @@ export class ApiCampaignController {
 
   @Get(':id/report/download')
   async downloadReport(@Param('id') id: string, @Id() adminId: string) {
-    const result = await this.apiCampaignService.getApiCampaignReportForDownload(
-      id,
-      adminId,
-    );
+    const result =
+      await this.apiCampaignService.getApiCampaignReportForDownload(
+        id,
+        adminId,
+      );
     return {
       statusCode: HttpStatus.OK,
       message: 'API campaign report data fetched successfully',
@@ -85,4 +91,3 @@ export class ApiCampaignController {
     return this.apiCampaignService.execute(executeApiCampaignDto, adminId);
   }
 }
-

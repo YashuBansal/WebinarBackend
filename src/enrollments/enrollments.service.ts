@@ -51,7 +51,9 @@ export class EnrollmentsService {
   ): Promise<Enrollment[]> {
     // Validate input parameters
     if (!tagsData || !Array.isArray(tagsData) || tagsData.length === 0) {
-      this.logger.warn('createEnrollments called with empty or invalid tagsData');
+      this.logger.warn(
+        'createEnrollments called with empty or invalid tagsData',
+      );
       return [];
     }
 
@@ -101,18 +103,13 @@ export class EnrollmentsService {
         const normalizedEmail = ValidationUtil.validateEmail(item.email);
         // Validate tags array
         if (!Array.isArray(item.tags) || item.tags.length === 0) {
-          this.logger.debug(
-            `Skipping ${normalizedEmail} - no tags provided`,
-          );
+          this.logger.debug(`Skipping ${normalizedEmail} - no tags provided`);
           continue;
         }
 
         // Filter and validate tags
         const validTags = item.tags
-          .filter(
-            (tag) =>
-              typeof tag === 'string' && tag.trim() !== '',
-          )
+          .filter((tag) => typeof tag === 'string' && tag.trim() !== '')
           .map((tag) => tag.trim().toLowerCase());
 
         if (validTags.length === 0) {
@@ -271,7 +268,8 @@ export class EnrollmentsService {
     });
 
     // Log duplicate count if duplicates were found
-    const duplicateCount = potentialEnrollments.length - enrollmentsToInsert.length;
+    const duplicateCount =
+      potentialEnrollments.length - enrollmentsToInsert.length;
     if (duplicateCount > 0) {
       this.logger.log(
         `${duplicateCount}/${potentialEnrollments.length} enrollments already exist`,
@@ -288,9 +286,7 @@ export class EnrollmentsService {
           enrollmentsToInsert,
           { session },
         );
-        this.logger.log(
-          `Successfully inserted ${result.length} enrollments`,
-        );
+        this.logger.log(`Successfully inserted ${result.length} enrollments`);
         return result;
       } catch (error) {
         this.logger.error(

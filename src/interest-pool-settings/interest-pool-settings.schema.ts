@@ -3,7 +3,13 @@ import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class InterestPoolSettings extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'users', required: true, index: true, unique: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'users',
+    required: true,
+    index: true,
+    unique: true,
+  })
   userId: Types.ObjectId;
 
   @Prop({ type: String, required: true, trim: true })
@@ -15,4 +21,3 @@ export class InterestPoolSettings extends Document {
 
 export const InterestPoolSettingsSchema =
   SchemaFactory.createForClass(InterestPoolSettings);
-

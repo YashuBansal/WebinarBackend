@@ -306,7 +306,9 @@ export class ProgramService {
           }
           if (trimmed !== (program.name ?? '').trim()) {
             const excludeId =
-              program._id != null ? new Types.ObjectId(String(program._id)) : undefined;
+              program._id != null
+                ? new Types.ObjectId(String(program._id))
+                : undefined;
             await this.assertUniqueProgramName(
               new Types.ObjectId(adminId),
               trimmed,
@@ -574,7 +576,9 @@ export class ProgramService {
       throw new BadRequestException('Invalid startAt date.');
     }
 
-    this.logger.log(`Creating ${dto.source} assignment for program ${dto.programId} with phone ${dto.phone} at ${startAt}`);
+    this.logger.log(
+      `Creating ${dto.source} assignment for program ${dto.programId} with phone ${dto.phone} at ${startAt}`,
+    );
 
     // Auto assignment logic for shifting start date if slots would be missed today
     if (dto.source === ProgramAssignmentSource.AUTO) {
@@ -587,7 +591,8 @@ export class ProgramService {
         const now = new Date();
         // Compare in UTC: slot time is in slot.timezone; compute UTC instant for first day and compare with now
         const missedAny = firstDaySlots.some((slot) => {
-          if (!slot.time?.trim() || !(slot.timezone || dto.timezone)?.trim()) return false;
+          if (!slot.time?.trim() || !(slot.timezone || dto.timezone)?.trim())
+            return false;
           const tz = slot.timezone || dto.timezone || 'UTC';
           const scheduledAtUTC = getScheduledAtUTC(startAt, slot.time, tz);
           const missed = scheduledAtUTC < now;
@@ -596,7 +601,9 @@ export class ProgramService {
           );
           return missed;
         });
-        this.logger.log(`Auto-assign: missedAny=${missedAny} for phone=${dto.phone}`);
+        this.logger.log(
+          `Auto-assign: missedAny=${missedAny} for phone=${dto.phone}`,
+        );
         if (missedAny) {
           this.logger.log(
             `Shifting auto-assignment to next day for ${dto.phone} due to missed slots.`,

@@ -2,8 +2,6 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Program } from './program.schema';
 import { ProgramAssignment } from './program-assignment.schema';
-import { WabaMessage } from 'src/whatsapp-embed/waba-message/waba-message.schema';
-
 
 export enum ProgramSlotStatus {
   PENDING = 'pending',
@@ -11,7 +9,7 @@ export enum ProgramSlotStatus {
   SKIPPED = 'skipped',
   CANCELLED = 'cancelled',
   PAUSED = 'paused',
-  FAILED = 'failed'
+  FAILED = 'failed',
 }
 
 export type ProgramSlotDocument = ProgramSlot & Document;
@@ -51,4 +49,3 @@ export const ProgramSlotSchema = SchemaFactory.createForClass(ProgramSlot);
 ProgramSlotSchema.index({ status: 1, scheduledAt: 1 });
 ProgramSlotSchema.index({ programAssignmentId: 1 });
 ProgramSlotSchema.index({ programId: 1, occurrenceIndex: 1, timeSlotIndex: 1 });
-

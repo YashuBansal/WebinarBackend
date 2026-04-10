@@ -36,9 +36,10 @@ export class WebinarWebhookModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(AuthAdminTokenMiddleware)
-      .exclude(
-        { path: 'webinar-webhook/receive/:token', method: RequestMethod.POST },
-      )
+      .exclude({
+        path: 'webinar-webhook/receive/:token',
+        method: RequestMethod.POST,
+      })
       .forRoutes(WebinarWebhookController);
   }
 }

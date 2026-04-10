@@ -5,8 +5,7 @@ import { RedisModule, REDIS_CONNECTION } from 'src/redis/redis.module';
 
 // Injection tokens for queues / queue events
 export const WHATSAPP_TEMPLATE_QUEUE = 'WHATSAPP_TEMPLATE_QUEUE';
-export const WHATSAPP_TEMPLATE_QUEUE_EVENTS =
-  'WHATSAPP_TEMPLATE_QUEUE_EVENTS';
+export const WHATSAPP_TEMPLATE_QUEUE_EVENTS = 'WHATSAPP_TEMPLATE_QUEUE_EVENTS';
 export const WHATSAPP_WEBHOOK_QUEUE = 'WHATSAPP_WEBHOOK_QUEUE';
 
 // Base (non-namespaced) queue names
@@ -19,9 +18,7 @@ export const WHATSAPP_QUEUE_NAMESPACE_ENV = 'WHATSAPP_QUEUE_NAMESPACE';
 // Internal helper to resolve the namespace, preferring ConfigService and finally a safe default.
 const DEFAULT_WHATSAPP_QUEUE_NAMESPACE = 'default';
 
-function resolveWhatsappQueueNamespace(
-  configService?: ConfigService,
-): string {
+function resolveWhatsappQueueNamespace(configService?: ConfigService): string {
   const fromConfig = configService?.get<string>(WHATSAPP_QUEUE_NAMESPACE_ENV);
 
   return fromConfig || DEFAULT_WHATSAPP_QUEUE_NAMESPACE;
@@ -115,4 +112,3 @@ export function getWhatsappWebhookQueueName(
   ],
 })
 export class WhatsappQueueModule {}
-

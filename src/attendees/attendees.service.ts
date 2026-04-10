@@ -122,7 +122,9 @@ export class AttendeesService {
     return attendees;
   }
 
-  async getRemainingContacts(): Promise<{ _id: Types.ObjectId; counts: number }[]> {
+  async getRemainingContacts(): Promise<
+    { _id: Types.ObjectId; counts: number }[]
+  > {
     const pipeline: PipelineStage[] = [
       {
         $group: {

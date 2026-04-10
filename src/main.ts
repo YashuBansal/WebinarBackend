@@ -1,4 +1,4 @@
-import './tracer'
+import './tracer';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -11,7 +11,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   // Set Winston as the global logger
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
-  
+
   app.enableCors({
     origin: (origin, callback) => {
       const allowedOrigins = [
@@ -27,9 +27,9 @@ async function bootstrap() {
         'http://172.27.48.1:5175',
         'https://localhost:5174',
         'https://localhost:5173',
-        'http://localhost:3000',                                                                                                                                                            
-        'http://localhost:3002',                                                                                                                                                            
-        'https://da5f61e2268f.ngrok-free.app', 
+        'http://localhost:3000',
+        'http://localhost:3002',
+        'https://da5f61e2268f.ngrok-free.app',
         'https://dashboard.webinarleadshub.com',
         'https://msg.webinarleadshub.com',
         'https://livezoom.webinarleadshub.com',

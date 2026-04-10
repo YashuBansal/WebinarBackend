@@ -5,7 +5,11 @@ import { createHash } from 'crypto';
 
 type RedisLike = {
   exists(key: string): Promise<number>;
-  set(key: string, value: string, ...args: Array<string | number>): Promise<any>;
+  set(
+    key: string,
+    value: string,
+    ...args: Array<string | number>
+  ): Promise<any>;
 };
 
 @Injectable()
@@ -79,4 +83,3 @@ export class PabblyTokenBlacklistService implements OnModuleInit {
     return ttlSeconds > 0 ? ttlSeconds : null;
   }
 }
-

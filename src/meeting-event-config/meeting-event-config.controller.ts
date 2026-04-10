@@ -9,7 +9,6 @@ import {
   Query,
   ValidationPipe,
   UsePipes,
-  BadRequestException,
   NotAcceptableException,
 } from '@nestjs/common';
 import { MeetingEventConfigService } from './meeting-event-config.service';
@@ -22,7 +21,9 @@ import {
 
 @Controller('meeting-event-config')
 export class MeetingEventConfigController {
-  constructor(private readonly meetingEventConfigService: MeetingEventConfigService) {}
+  constructor(
+    private readonly meetingEventConfigService: MeetingEventConfigService,
+  ) {}
 
   @Get(':meetingId')
   async getMeetingEventConfig(
@@ -56,7 +57,11 @@ export class MeetingEventConfigController {
       throw new NotAcceptableException('Invalid Admin ID');
     }
 
-    const config = await this.meetingEventConfigService.createMeetingEventConfig(createDto, new Types.ObjectId(`${adminId}`));
+    const config =
+      await this.meetingEventConfigService.createMeetingEventConfig(
+        createDto,
+        new Types.ObjectId(`${adminId}`),
+      );
 
     return {
       statusCode: 201,
@@ -76,7 +81,11 @@ export class MeetingEventConfigController {
       throw new NotAcceptableException('Invalid Admin ID');
     }
 
-    const config = await this.meetingEventConfigService.updateMeetingEventConfig(meetingId, updateDto);
+    const config =
+      await this.meetingEventConfigService.updateMeetingEventConfig(
+        meetingId,
+        updateDto,
+      );
 
     return {
       statusCode: 200,
@@ -95,10 +104,11 @@ export class MeetingEventConfigController {
       throw new NotAcceptableException('Invalid Admin ID');
     }
 
-    const config = await this.meetingEventConfigService.deleteMeetingEventConfig(
-      meetingId,
-      occurrenceId,
-    );
+    const config =
+      await this.meetingEventConfigService.deleteMeetingEventConfig(
+        meetingId,
+        occurrenceId,
+      );
 
     return {
       statusCode: 200,
@@ -113,9 +123,10 @@ export class MeetingEventConfigController {
       throw new NotAcceptableException('Invalid Admin ID');
     }
 
-    const configs = await this.meetingEventConfigService.getAllMeetingEventConfigs(
-      new Types.ObjectId(adminId)
-    );
+    const configs =
+      await this.meetingEventConfigService.getAllMeetingEventConfigs(
+        new Types.ObjectId(adminId),
+      );
 
     return {
       statusCode: 200,

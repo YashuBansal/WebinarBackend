@@ -17,6 +17,7 @@ import {
   BulkUpdateContactTagsDto,
   PaginationQueryDto,
   ContactFiltersDto,
+  ImportHistoryQueryDto,
 } from './dto/contacts.dto';
 import { Id } from 'src/decorators/custom.decorator';
 import { Types } from 'mongoose';
@@ -44,6 +45,34 @@ export class ContactsController {
     return this.contactsService.bulkCreate(
       bulkCreateContactsDto,
       new Types.ObjectId(adminId),
+    );
+  }
+
+  @Get('import-history')
+  async getImportHistory(
+    @Id() adminId: string,
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    )
+    query: ImportHistoryQueryDto,
+  ) {
+    return this.contactsService.getImportHistory(
+      new Types.ObjectId(adminId),
+      query,
+    );
+  }
+
+  @Get('import-history/:id')
+  async getImportHistoryById(
+    @Id() adminId: string,
+    @Param('id') importHistoryId: string,
+  ) {
+    return this.contactsService.getImportHistoryById(
+      new Types.ObjectId(adminId),
+      new Types.ObjectId(importHistoryId),
     );
   }
 

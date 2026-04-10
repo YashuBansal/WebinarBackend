@@ -15,14 +15,12 @@ import { ConfigService } from '@nestjs/config';
 import { CreateEmployeeDto } from 'src/auth/dto/createEmployee.dto';
 import { CreatorDetailsDto } from 'src/auth/dto/creatorDetails.dto';
 import { CreateClientDto } from 'src/auth/dto/createClient.dto';
-import { Plans } from 'src/schemas/Plans.schema';
 import { BillingHistoryService } from 'src/billing-history/billing-history.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { SubscriptionDto } from 'src/subscription/dto/subscription.dto';
 import { UpdateUserInfoDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
 import { UpdatePasswordDto } from './dto/updatePassword.dto';
-import { Roles } from 'src/schemas/Roles.schema';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { JwtService } from '@nestjs/jwt';
 import { GetClientsFilterDto } from './dto/filters.dto';
@@ -49,7 +47,8 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     private readonly rolesService: RolesService,
-    @Inject(forwardRef(() => PlansService)) private readonly plansService: PlansService,
+    @Inject(forwardRef(() => PlansService))
+    private readonly plansService: PlansService,
     private configService: ConfigService,
     private readonly billingHistoryService: BillingHistoryService,
     @Inject(forwardRef(() => SubscriptionService))
@@ -68,11 +67,9 @@ export class UsersService {
     return this.subscriptionService.getSubscription(userId);
   }
 
-
   getUsers() {
     return this.userModel.find();
   }
-
 
   async setTwoFactorAuthenticationSecret(
     secret: string,
@@ -674,7 +671,8 @@ export class UsersService {
       updateUserInfoDto.webinarLimitAddon !== null
     ) {
       const parsedAddon = Number(updateUserInfoDto.webinarLimitAddon);
-      const safeAddon = Number.isFinite(parsedAddon) && parsedAddon >= 0 ? parsedAddon : 0;
+      const safeAddon =
+        Number.isFinite(parsedAddon) && parsedAddon >= 0 ? parsedAddon : 0;
       await this.subscriptionService.updateWebinarLimitAddon(
         String(result._id),
         safeAddon,
@@ -1093,7 +1091,9 @@ export class UsersService {
     const normalizedEmail = createClientDto.email.trim().toLowerCase();
     createClientDto.email = normalizedEmail;
 
-    const plan = await this.plansService.getPlan(createClientDto.plan as string);
+    const plan = await this.plansService.getPlan(
+      createClientDto.plan as string,
+    );
 
     const isDurationConfig = plan.planDurationConfig.has(
       createClientDto.durationType,
@@ -1101,15 +1101,13 @@ export class UsersService {
     if (!isDurationConfig) {
       throw new NotFoundException('Duration type not found');
     }
-    
 
     const durationConfig = plan.planDurationConfig.get(
       createClientDto.durationType,
     );
-    if(!durationConfig.isEnabled){
+    if (!durationConfig.isEnabled) {
       throw new NotAcceptableException('Duration type is not enabled');
     }
-
 
     const date = new Date();
     const currentPlanExpiry = date.setDate(
@@ -1189,26 +1187,23 @@ export class UsersService {
         await this.subscriptionService.addSubscription(subscriptionPayload);
 
       const { totalWithGST, itemAmount, discountAmount, gst } =
-        this.subscriptionService.generatePriceForPlan(
-          durationConfig,
-        );
+        this.subscriptionService.generatePriceForPlan(durationConfig);
 
-      const billingHistory =
-        await this.billingHistoryService.addBillingHistory(
-          {
-            admin: String(user._id),
-            plan: String(plan._id),
-            amount: totalWithGST,
-            itemAmount: itemAmount,
-            discountAmount: discountAmount,
-            taxPercent: this.subscriptionService.GST_VALUE,
-            taxAmount: gst,
-            durationType: createClientDto.durationType,
-            startDate: new Date(),
-            expiryDate: new Date(currentPlanExpiry),
-          },
-          BillingType.NEW_PLAN,
-        );
+      const billingHistory = await this.billingHistoryService.addBillingHistory(
+        {
+          admin: String(user._id),
+          plan: String(plan._id),
+          amount: totalWithGST,
+          itemAmount: itemAmount,
+          discountAmount: discountAmount,
+          taxPercent: this.subscriptionService.GST_VALUE,
+          taxAmount: gst,
+          durationType: createClientDto.durationType,
+          startDate: new Date(),
+          expiryDate: new Date(currentPlanExpiry),
+        },
+        BillingType.NEW_PLAN,
+      );
 
       await this.customLeadTypeService.createDefaultLeadTypes(`${user._id}`);
       await this.productsService.createDefaultProductLevels(

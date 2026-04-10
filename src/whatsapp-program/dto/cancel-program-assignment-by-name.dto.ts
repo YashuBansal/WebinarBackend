@@ -11,4 +11,3 @@ export class CancelProgramAssignmentByNameDto {
   @MaxLength(20)
   phone: string;
 }
-

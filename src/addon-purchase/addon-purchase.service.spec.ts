@@ -14,9 +14,11 @@ describe('AddonPurchaseService', () => {
       _id: '507f1f77bcf86cd799439055',
       expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     }),
-    generatePriceForAddon: jest
-      .fn()
-      .mockReturnValue({ itemAmount: 84.75, taxAmount: 15.25, totalAmount: 100 }),
+    generatePriceForAddon: jest.fn().mockReturnValue({
+      itemAmount: 84.75,
+      taxAmount: 15.25,
+      totalAmount: 100,
+    }),
     GST_VALUE: 18,
     updateSingleSubscriptionAddon: jest.fn(),
   };
@@ -34,7 +36,9 @@ describe('AddonPurchaseService', () => {
   };
 
   const razorpayService = {
-    createAddonOrder: jest.fn().mockResolvedValue({ result: { id: 'order_1' } }),
+    createAddonOrder: jest
+      .fn()
+      .mockResolvedValue({ result: { id: 'order_1' } }),
   };
 
   const subscriptionAddonService = {
@@ -84,7 +88,12 @@ describe('AddonPurchaseService', () => {
   });
 
   it('is idempotent by (admin,idempotencyKey)', async () => {
-    addonPurchaseModel.findOne.mockResolvedValue({ _id: 'p1', providerOrderId: 'order_1', amount: 118, currency: 'INR' });
+    addonPurchaseModel.findOne.mockResolvedValue({
+      _id: 'p1',
+      providerOrderId: 'order_1',
+      amount: 118,
+      currency: 'INR',
+    });
 
     const res = await service.createRazorpayPurchaseOrder({
       adminId: '507f1f77bcf86cd799439011',
@@ -132,4 +141,3 @@ describe('AddonPurchaseService', () => {
     ).resolves.toBeTruthy();
   });
 });
-

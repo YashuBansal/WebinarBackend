@@ -13,7 +13,11 @@ import {
 } from '@nestjs/common';
 import mongoose, { Types } from 'mongoose';
 import { WabaTemplateService } from './waba-template.service';
-import { CreateTemplateDto, DeleteTemplateDto, GetTemplatesQueryDto } from 'src/whatsapp/dto/template.dto';
+import {
+  CreateTemplateDto,
+  DeleteTemplateDto,
+  GetTemplatesQueryDto,
+} from 'src/whatsapp/dto/template.dto';
 import { Id } from 'src/decorators/custom.decorator';
 
 @Controller('waba-template')
@@ -38,7 +42,6 @@ export class WabaTemplateController {
       new Types.ObjectId(`${projectId}`),
     );
   }
-
 
   @Get(':projectId')
   async getTemplates(
@@ -87,7 +90,6 @@ export class WabaTemplateController {
       message: 'Template submitted for review successfully!',
     };
   }
-
 
   @Delete(':projectId')
   async deleteTemplate(

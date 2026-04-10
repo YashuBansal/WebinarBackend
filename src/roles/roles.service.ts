@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { Roles } from 'src/schemas/Roles.schema';
 import { ConfigService } from '@nestjs/config';
 
@@ -26,12 +26,12 @@ export class RolesService implements OnModuleInit {
       }
 
       // const rolesMap: Record<string, string> = JSON.parse(rolesEnv);
-      
+
       // for (const [roleName, roleId] of Object.entries(rolesMap)) {
       //   try {
       //     // Check if role with this ID already exists
       //     const existingRole = await this.rolesModel.findById(roleId).exec();
-          
+
       //     if (!existingRole) {
       //       // Create role with the specified ID
       //       await this.rolesModel.create({
@@ -56,7 +56,9 @@ export class RolesService implements OnModuleInit {
       //   }
       // }
     } catch (error) {
-      this.logger.error(`Failed to parse ROLES environment variable: ${error.message}`);
+      this.logger.error(
+        `Failed to parse ROLES environment variable: ${error.message}`,
+      );
     }
   }
 

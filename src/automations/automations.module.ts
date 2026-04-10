@@ -1,9 +1,15 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
-import { AutomationFlow, AutomationFlowSchema } from './schemas/automation-flow.schema';
-import { AutomationExecution, AutomationExecutionSchema } from './schemas/automation-execution.schema';
+import {
+  AutomationFlow,
+  AutomationFlowSchema,
+} from './schemas/automation-flow.schema';
+import {
+  AutomationExecution,
+  AutomationExecutionSchema,
+} from './schemas/automation-execution.schema';
 import { AutomationsProcessor } from './automations.processor';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 
@@ -14,12 +20,9 @@ import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
       { name: AutomationExecution.name, schema: AutomationExecutionSchema },
     ]),
     WhatsappModule,
-
   ],
   controllers: [AutomationsController],
   providers: [AutomationsService, AutomationsProcessor],
   exports: [AutomationsService],
 })
 export class AutomationsModule {}
-
-

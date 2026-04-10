@@ -21,5 +21,3 @@ export class ValidateZoomConfigDto {
   @IsOptional()
   secretToken?: string;
 }
-
-

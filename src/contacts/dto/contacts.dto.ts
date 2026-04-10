@@ -10,6 +10,9 @@ import {
   MaxLength,
   ArrayMaxSize,
   IsIn,
+  IsInt,
+  Min,
+  ValidateNested,
 } from 'class-validator';
 
 export class CreateContactDto {
@@ -87,6 +90,49 @@ export class BulkCreateContactsDto {
   @IsBoolean()
   @IsOptional()
   readonly replaceTags?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['csv', 'xlsx', 'unknown'])
+  readonly sourceType?: 'csv' | 'xlsx' | 'unknown';
+
+  @IsOptional()
+  @IsString()
+  readonly fileName?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  readonly totalRows?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  readonly clientInvalidRows?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => InvalidContactRecordSampleDto)
+  readonly clientInvalidRecordsSample?: InvalidContactRecordSampleDto[];
+}
+
+export class InvalidContactRecordSampleDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  readonly rowNumber: number;
+
+  @IsOptional()
+  @IsString()
+  readonly phoneRaw?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  readonly reason: string;
+
+  @IsOptional()
+  readonly sourceRow?: Record<string, unknown>;
 }
 
 export class CSVImportDto {
@@ -184,6 +230,11 @@ export class ContactFiltersDto {
   readonly tags?: string[];
 
   @IsOptional()
+  @IsString()
+  @IsIn(['has_any', 'not_has_any'])
+  readonly tagFilterMode?: 'has_any' | 'not_has_any';
+
+  @IsOptional()
   @IsBoolean()
   @Type(() => Boolean)
   readonly isActive?: boolean;
@@ -191,6 +242,22 @@ export class ContactFiltersDto {
   @IsOptional()
   @IsMongoId()
   readonly projectId?: string;
+}
+
+export class ImportHistoryQueryDto extends PaginationQueryDto {
+  @IsOptional()
+  @IsMongoId()
+  readonly projectId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['queued', 'processing', 'success', 'failed', 'partial_success'])
+  readonly status?:
+    | 'queued'
+    | 'processing'
+    | 'success'
+    | 'failed'
+    | 'partial_success';
 }
 
 export class BulkUpdateContactTagsDto {

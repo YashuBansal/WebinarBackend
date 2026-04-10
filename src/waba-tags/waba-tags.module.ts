@@ -5,7 +5,6 @@ import { WabaTagsService } from './waba-tags.service';
 import { WabaTag, WabaTagSchema } from 'src/schemas/waba-tags.schema';
 import { Contact, ContactSchema } from 'src/contacts/Contact.schema';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
-import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [

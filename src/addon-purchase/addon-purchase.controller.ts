@@ -39,4 +39,3 @@ export class AddonPurchaseController {
     return this.addonPurchaseService.getPurchaseById(purchaseId);
   }
 }
-

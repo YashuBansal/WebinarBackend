@@ -1,4 +1,19 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Delete, Put, Query, Headers, BadRequestException, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Delete,
+  Put,
+  Query,
+  Headers,
+  BadRequestException,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import mongoose, { Types } from 'mongoose';
 import { Id } from 'src/decorators/custom.decorator';
@@ -16,7 +31,7 @@ export class ZoomController {
     private readonly zoomService: ZoomService,
     private readonly webhookQueueService: WebhookQueueService,
     private readonly configService: ConfigService,
-  ) { }
+  ) {}
 
   @Post('oauth/exchange')
   async exchange(
@@ -26,8 +41,17 @@ export class ZoomController {
     @Id() adminId: string,
     @Body('projectId') projectId: string,
   ) {
-    if (!code || !redirectUri || !mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(projectId)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    if (
+      !code ||
+      !redirectUri ||
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(projectId)
+    ) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const doc = await this.zoomService.exchangeCodeAndSave(
       code,
@@ -45,36 +69,66 @@ export class ZoomController {
   @Get('accounts')
   async list(@Id() adminId: string) {
     if (!mongoose.isValidObjectId(adminId)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid admin', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid admin',
+        data: null,
+      };
     }
-    const items = await this.zoomService.listAccounts(new Types.ObjectId(`${adminId}`));
+    const items = await this.zoomService.listAccounts(
+      new Types.ObjectId(`${adminId}`),
+    );
     return { statusCode: HttpStatus.OK, message: 'Accounts', data: items };
   }
 
   @Delete('accounts/:accountId')
-  async disconnect(@Id() adminId: string, @Param('accountId') accountId: string) {
+  async disconnect(
+    @Id() adminId: string,
+    @Param('accountId') accountId: string,
+  ) {
     if (!mongoose.isValidObjectId(adminId) || !accountId) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
-    await this.zoomService.disconnectAccount(new Types.ObjectId(`${adminId}`), accountId);
+    await this.zoomService.disconnectAccount(
+      new Types.ObjectId(`${adminId}`),
+      accountId,
+    );
     return { statusCode: HttpStatus.OK, message: 'Disconnected', data: null };
   }
 
   @Post('oauth/refresh/:accountId')
   async refresh(@Id() adminId: string, @Param('accountId') accountId: string) {
     if (!mongoose.isValidObjectId(adminId) || !accountId) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
-    const res = await this.zoomService.refreshAccessToken(new Types.ObjectId(`${adminId}`), accountId);
+    const res = await this.zoomService.refreshAccessToken(
+      new Types.ObjectId(`${adminId}`),
+      accountId,
+    );
     return { statusCode: HttpStatus.OK, message: 'Refreshed', data: res };
   }
 
   @Get('me/:accountId')
   async me(@Id() adminId: string, @Param('accountId') accountId: string) {
     if (!mongoose.isValidObjectId(adminId) || !accountId) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
-    const profile = await this.zoomService.getZoomUserProfile(new Types.ObjectId(`${adminId}`), accountId);
+    const profile = await this.zoomService.getZoomUserProfile(
+      new Types.ObjectId(`${adminId}`),
+      accountId,
+    );
     return { statusCode: HttpStatus.OK, message: 'Profile', data: profile };
   }
 
@@ -89,7 +143,9 @@ export class ZoomController {
     @Body() body: Record<string, unknown>,
     @Headers('authorization') authorization?: string,
   ) {
-    const secret = this.configService.get<string>('ZOOM_DEAUTHORIZATION_SECRET')?.trim();
+    const secret = this.configService
+      .get<string>('ZOOM_DEAUTHORIZATION_SECRET')
+      ?.trim();
     if (secret) {
       const auth = authorization?.trim() ?? '';
       const ok =
@@ -102,30 +158,44 @@ export class ZoomController {
       }
     }
     await this.zoomService.handleAppDeauthorized(body);
-    return { statusCode: HttpStatus.OK, message: 'Deauthorization processed', data: null };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Deauthorization processed',
+      data: null,
+    };
   }
 
   @Post('webhook-v2')
   @HttpCode(HttpStatus.OK)
   async webhook(@Body() body: any, @Query('projectId') projectId: string) {
-
-    this.logger.log(` ========================= ${body?.event} ========================= `);
+    this.logger.log(
+      ` ========================= ${body?.event} ========================= `,
+    );
 
     // Handle validation synchronously (needs to return response)
     if (body.event === 'endpoint.url_validation') {
       if (!mongoose.isValidObjectId(projectId))
         throw new BadRequestException('Invalid projectId');
-      return await this.zoomService.validateWebhook(body, new Types.ObjectId(`${projectId}`));
+      return await this.zoomService.validateWebhook(
+        body,
+        new Types.ObjectId(`${projectId}`),
+      );
     }
 
     // Generate deduplication ID for idempotency
     const deduplicationId = this.generateDeduplicationId(body, projectId);
-    this.logger.log(`Deduplication ID:::::::::::::::::::::::: ${deduplicationId}`);
+    this.logger.log(
+      `Deduplication ID:::::::::::::::::::::::: ${deduplicationId}`,
+    );
 
     // Enqueue webhook for processing
     // Return 200 OK immediately to prevent Zoom from retrying
-    const enqueued = await this.webhookQueueService.enqueue(body, projectId, deduplicationId);
-    
+    const enqueued = await this.webhookQueueService.enqueue(
+      body,
+      projectId,
+      deduplicationId,
+    );
+
     if (!enqueued) {
       this.logger.error('Failed to enqueue webhook event - queue is full', {
         event: body?.event,
@@ -142,7 +212,9 @@ export class ZoomController {
   @Post('webhook-v3')
   @HttpCode(HttpStatus.OK)
   async webhookV3(@Body() body: any) {
-    this.logger.log(` ========================= ${body?.event} (v3) ========================= `);
+    this.logger.log(
+      ` ========================= ${body?.event} (v3) ========================= `,
+    );
 
     // Handle validation synchronously (needs to return response)
     if (body.event === 'endpoint.url_validation') {
@@ -150,7 +222,9 @@ export class ZoomController {
     }
 
     const deduplicationId = this.generateDeduplicationIdV3(body);
-    this.logger.log(`Deduplication ID (v3):::::::::::::::::::::::: ${deduplicationId}`);
+    this.logger.log(
+      `Deduplication ID (v3):::::::::::::::::::::::: ${deduplicationId}`,
+    );
 
     // Enqueue webhook for processing with v3 sentinel projectId (resolved later in service)
     const enqueued = await this.webhookQueueService.enqueue(
@@ -189,27 +263,29 @@ export class ZoomController {
 
     // Add registrant/participant identifier for granular uniqueness
     // This ensures different registrations are treated as separate events
-    const registrantId = body?.payload?.object?.registrant?.id || 
-                        body?.payload?.object?.registrant?.email ||
-                        body?.object?.registrant?.id ||
-                        body?.object?.registrant?.email ||
-                        '';
+    const registrantId =
+      body?.payload?.object?.registrant?.id ||
+      body?.payload?.object?.registrant?.email ||
+      body?.object?.registrant?.id ||
+      body?.object?.registrant?.email ||
+      '';
     if (registrantId) {
       parts.push(registrantId);
     }
 
-    const participantId = body?.payload?.object?.participant?.user_id ||
-                         body?.payload?.object?.participant?.id ||
-                         body?.object?.participant?.user_id ||
-                         body?.object?.participant?.id ||
-                         '';
+    const participantId =
+      body?.payload?.object?.participant?.user_id ||
+      body?.payload?.object?.participant?.id ||
+      body?.object?.participant?.user_id ||
+      body?.object?.participant?.id ||
+      '';
     if (participantId) {
       parts.push(participantId);
     }
 
     // Join all parts with a delimiter and create a hash-like string
     // Using a simple concatenation since we need deterministic IDs
-    return parts.filter(p => p).join('|');
+    return parts.filter((p) => p).join('|');
   }
 
   /**
@@ -251,7 +327,7 @@ export class ZoomController {
       parts.push(participantId);
     }
 
-    return parts.filter(p => p).join('|');
+    return parts.filter((p) => p).join('|');
   }
 
   @Get('webhook-v2/queue/health')
@@ -274,7 +350,11 @@ export class ZoomController {
     @Query() query: QueryZoomProjectsDto,
   ) {
     if (!mongoose.isValidObjectId(adminId)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid admin', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid admin',
+        data: null,
+      };
     }
     const result = await this.zoomService.getProjects(
       new Types.ObjectId(`${adminId}`),
@@ -282,19 +362,38 @@ export class ZoomController {
       query.limit || 10,
       query.search,
     );
-    return { statusCode: HttpStatus.OK, message: 'Projects retrieved', data: result };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Projects retrieved',
+      data: result,
+    };
   }
 
   @Get('projects/:id')
   async getProject(@Id() adminId: string, @Param('id') id: string) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
-    const project = await this.zoomService.getProject(new Types.ObjectId(`${adminId}`), new Types.ObjectId(`${id}`));
+    const project = await this.zoomService.getProject(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+    );
     if (!project) {
-      return { statusCode: HttpStatus.NOT_FOUND, message: 'Project not found', data: null };
+      return {
+        statusCode: HttpStatus.NOT_FOUND,
+        message: 'Project not found',
+        data: null,
+      };
     }
-    return { statusCode: HttpStatus.OK, message: 'Project retrieved', data: project };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Project retrieved',
+      data: project,
+    };
   }
 
   @Post('projects')
@@ -303,10 +402,21 @@ export class ZoomController {
     @Body() createProjectDto: CreateZoomProjectDto,
   ) {
     if (!mongoose.isValidObjectId(adminId)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid admin', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid admin',
+        data: null,
+      };
     }
-    const project = await this.zoomService.createProject(new Types.ObjectId(`${adminId}`), createProjectDto);
-    return { statusCode: HttpStatus.CREATED, message: 'Project created', data: project };
+    const project = await this.zoomService.createProject(
+      new Types.ObjectId(`${adminId}`),
+      createProjectDto,
+    );
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Project created',
+      data: project,
+    };
   }
 
   // New: Validate credentials (S2S OAuth) and create configured project
@@ -316,13 +426,21 @@ export class ZoomController {
     @Body() body: ValidateZoomConfigDto,
   ) {
     if (!mongoose.isValidObjectId(adminId)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid admin', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid admin',
+        data: null,
+      };
     }
     const data = await this.zoomService.validateAndCreateProjectWithCredentials(
       new Types.ObjectId(`${adminId}`),
       body,
     );
-    return { statusCode: HttpStatus.CREATED, message: 'Zoom project configured', data };
+    return {
+      statusCode: HttpStatus.CREATED,
+      message: 'Zoom project configured',
+      data,
+    };
   }
 
   @Put('projects/:id')
@@ -332,7 +450,11 @@ export class ZoomController {
     @Body() updateProjectDto: UpdateZoomProjectDto,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const project = await this.zoomService.updateProject(
       new Types.ObjectId(`${adminId}`),
@@ -340,16 +462,28 @@ export class ZoomController {
       updateProjectDto,
     );
     if (!project) {
-      return { statusCode: HttpStatus.NOT_FOUND, message: 'Project not found', data: null };
+      return {
+        statusCode: HttpStatus.NOT_FOUND,
+        message: 'Project not found',
+        data: null,
+      };
     }
-    return { statusCode: HttpStatus.OK, message: 'Project updated', data: project };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Project updated',
+      data: project,
+    };
   }
 
   @Post('projects/:id/disconnect-oauth')
   @HttpCode(HttpStatus.OK)
   async disconnectOAuth(@Id() adminId: string, @Param('id') id: string) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const project = await this.zoomService.disconnectOAuthProject(
       new Types.ObjectId(`${adminId}`),
@@ -365,59 +499,122 @@ export class ZoomController {
   @Delete('projects/:id')
   async deleteProject(@Id() adminId: string, @Param('id') id: string) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
-    const deleted = await this.zoomService.deleteProject(new Types.ObjectId(`${adminId}`), new Types.ObjectId(`${id}`));
+    const deleted = await this.zoomService.deleteProject(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+    );
     if (!deleted) {
-      return { statusCode: HttpStatus.NOT_FOUND, message: 'Project not found', data: null };
+      return {
+        statusCode: HttpStatus.NOT_FOUND,
+        message: 'Project not found',
+        data: null,
+      };
     }
-    return { statusCode: HttpStatus.OK, message: 'Project deleted', data: { id } };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Project deleted',
+      data: { id },
+    };
   }
 
   @Get('projects/by-account/:accountId')
-  async getProjectByAccountId(@Id() adminId: string, @Param('accountId') accountId: string) {
+  async getProjectByAccountId(
+    @Id() adminId: string,
+    @Param('accountId') accountId: string,
+  ) {
     if (!mongoose.isValidObjectId(adminId) || !accountId) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
-    const project = await this.zoomService.getProjectByAccountId(new Types.ObjectId(`${adminId}`), accountId);
+    const project = await this.zoomService.getProjectByAccountId(
+      new Types.ObjectId(`${adminId}`),
+      accountId,
+    );
     if (!project) {
-      return { statusCode: HttpStatus.NOT_FOUND, message: 'Project not found', data: null };
+      return {
+        statusCode: HttpStatus.NOT_FOUND,
+        message: 'Project not found',
+        data: null,
+      };
     }
-    return { statusCode: HttpStatus.OK, message: 'Project retrieved', data: project };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Project retrieved',
+      data: project,
+    };
   }
 
   @Get('projects/:id/configuration-status')
-  async getProjectConfigurationStatus(@Id() adminId: string, @Param('id') id: string) {
+  async getProjectConfigurationStatus(
+    @Id() adminId: string,
+    @Param('id') id: string,
+  ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
-    const status = await this.zoomService.getProjectConfigurationStatus(new Types.ObjectId(`${adminId}`), new Types.ObjectId(`${id}`));
-    return { statusCode: HttpStatus.OK, message: 'Configuration status retrieved', data: status };
+    const status = await this.zoomService.getProjectConfigurationStatus(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Configuration status retrieved',
+      data: status,
+    };
   }
 
   @Get('projects/:id/webhook-subscription-status')
-  async getWebhookSubscriptionStatus(@Id() adminId: string, @Param('id') id: string) {
+  async getWebhookSubscriptionStatus(
+    @Id() adminId: string,
+    @Param('id') id: string,
+  ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const status = await this.zoomService.checkWebhookSubscriptionStatus(
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(`${id}`),
     );
-    return { statusCode: HttpStatus.OK, message: 'Webhook subscription status retrieved', data: status };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Webhook subscription status retrieved',
+      data: status,
+    };
   }
 
   @Get('projects/:id/meetings')
   async getProjectMeetings(
     @Id() adminId: string,
     @Param('id') id: string,
-    @Query('type') type: 'scheduled' | 'upcoming' | 'live' | 'past' | 'pending' = 'upcoming',
+    @Query('type')
+    type: 'scheduled' | 'upcoming' | 'live' | 'past' | 'pending' = 'upcoming',
     @Query('pageSize') pageSize?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const result = await this.zoomService.getProjectMeetings(
       new Types.ObjectId(`${adminId}`),
@@ -425,7 +622,11 @@ export class ZoomController {
       type,
       { pageSize: pageSize ? Number(pageSize) : 30, from, to },
     );
-    return { statusCode: HttpStatus.OK, message: 'Meetings retrieved', data: result };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Meetings retrieved',
+      data: result,
+    };
   }
 
   @Get('projects/:id/webinars')
@@ -438,7 +639,11 @@ export class ZoomController {
     @Query('to') to?: string,
   ) {
     if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const result = await this.zoomService.getProjectWebinars(
       new Types.ObjectId(`${adminId}`),
@@ -446,7 +651,11 @@ export class ZoomController {
       type,
       { pageSize: pageSize ? Number(pageSize) : 30, from, to },
     );
-    return { statusCode: HttpStatus.OK, message: 'Webinars retrieved', data: result };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Webinars retrieved',
+      data: result,
+    };
   }
 
   @Get('projects/:id/webinars/:webinarId')
@@ -455,15 +664,27 @@ export class ZoomController {
     @Param('id') id: string,
     @Param('webinarId') webinarId: string,
   ) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !webinarId) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(id) ||
+      !webinarId
+    ) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const result = await this.zoomService.getWebinarDetails(
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(`${id}`),
       webinarId,
     );
-    return { statusCode: HttpStatus.OK, message: 'Webinar details retrieved', data: result };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Webinar details retrieved',
+      data: result,
+    };
   }
 
   @Get('projects/:id/webinars/:webinarId/registrants')
@@ -476,8 +697,16 @@ export class ZoomController {
     @Query('page_size') pageSize?: string,
     @Query('occurrenceId') occurrenceId?: string,
   ) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !webinarId) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(id) ||
+      !webinarId
+    ) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const pageNum = page ? parseInt(page, 10) : 1;
     const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 30;
@@ -490,7 +719,11 @@ export class ZoomController {
       pageSizeNum,
       occurrenceId,
     );
-    return { statusCode: HttpStatus.OK, message: 'Webinar registrants retrieved', data: result };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Webinar registrants retrieved',
+      data: result,
+    };
   }
 
   @Get('projects/:id/meetings/:meetingId')
@@ -499,15 +732,27 @@ export class ZoomController {
     @Param('id') id: string,
     @Param('meetingId') meetingId: string,
   ) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !meetingId) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(id) ||
+      !meetingId
+    ) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const result = await this.zoomService.getMeetingDetails(
       new Types.ObjectId(`${adminId}`),
       new Types.ObjectId(`${id}`),
       meetingId,
     );
-    return { statusCode: HttpStatus.OK, message: 'Meeting details retrieved', data: result };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Meeting details retrieved',
+      data: result,
+    };
   }
 
   @Get('projects/:id/meetings/:meetingId/registrants')
@@ -520,8 +765,16 @@ export class ZoomController {
     @Query('page_size') pageSize?: string,
     @Query('occurrenceId') occurrenceId?: string,
   ) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id) || !meetingId) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: 'Invalid request', data: null };
+    if (
+      !mongoose.isValidObjectId(adminId) ||
+      !mongoose.isValidObjectId(id) ||
+      !meetingId
+    ) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
     }
     const pageNum = page ? parseInt(page, 10) : 1;
     const pageSizeNum = pageSize ? parseInt(pageSize, 10) : 30;
@@ -535,8 +788,10 @@ export class ZoomController {
       status ?? 'approved',
       occurrenceId,
     );
-    return { statusCode: HttpStatus.OK, message: 'Meeting registrants retrieved', data: result };
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Meeting registrants retrieved',
+      data: result,
+    };
   }
-
 }
-

@@ -47,7 +47,7 @@ export class Profile extends Document {
   @Prop({ type: Date })
   last_synced_at?: Date;
 
-   // Cached display name status and related fields
+  // Cached display name status and related fields
   @Prop({ type: String, trim: true })
   display_name_status?: string;
 
@@ -75,4 +75,3 @@ const ProfileSchema = SchemaFactory.createForClass(Profile);
 ProfileSchema.index({ projectId: 1, adminId: 1 }, { unique: true });
 
 export { ProfileSchema };
-

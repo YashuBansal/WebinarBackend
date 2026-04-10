@@ -1,5 +1,9 @@
 // src/file-storage/file-storage.service.ts
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { promises as fs } from 'fs';
 import { join } from 'path';
@@ -29,11 +33,14 @@ export class FileStorageService {
     }
   }
 
-  async saveFile(file: Express.Multer.File, subfolder: string): Promise<{ publicUrl: string; filePath: string }> {
+  async saveFile(
+    file: Express.Multer.File,
+    subfolder: string,
+  ): Promise<{ publicUrl: string; filePath: string }> {
     try {
       const fileExtension = file.originalname.split('.').pop();
       const uniqueFileName = `${randomUUID()}.${fileExtension}`;
-      
+
       const destinationFolder = join(this.uploadPath, subfolder);
       const filePath = join(destinationFolder, uniqueFileName);
 
@@ -42,15 +49,15 @@ export class FileStorageService {
 
       // Write the file to the disk
       await fs.writeFile(filePath, file.buffer);
-      
+
       // Construct the public URL
       // Note: We use forward slashes for URLs regardless of the OS
       const publicUrl = `${this.baseUrl}/uploads/${subfolder}/${uniqueFileName}`;
 
       return { publicUrl, filePath };
     } catch (error) {
-        this.logger.error(`Failed to save file: ${error.message}`, error.stack);
-        throw new InternalServerErrorException('Failed to save file.');
+      this.logger.error(`Failed to save file: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to save file.');
     }
   }
 }

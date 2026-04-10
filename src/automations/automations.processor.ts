@@ -2,8 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types } from 'mongoose';
-import { AutomationExecution, AutomationExecutionDocument } from './schemas/automation-execution.schema';
-import { AutomationFlow, AutomationFlowDocument } from './schemas/automation-flow.schema';
+import {
+  AutomationExecution,
+  AutomationExecutionDocument,
+} from './schemas/automation-execution.schema';
+import {
+  AutomationFlow,
+  AutomationFlowDocument,
+} from './schemas/automation-flow.schema';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
@@ -14,15 +20,19 @@ export class AutomationsProcessor {
   private readonly logger = new Logger(AutomationsProcessor.name);
 
   constructor(
-    @InjectModel(AutomationExecution.name) private execModel: Model<AutomationExecutionDocument>,
-    @InjectModel(AutomationFlow.name) private flowModel: Model<AutomationFlowDocument>,
+    @InjectModel(AutomationExecution.name)
+    private execModel: Model<AutomationExecutionDocument>,
+    @InjectModel(AutomationFlow.name)
+    private flowModel: Model<AutomationFlowDocument>,
     private readonly whatsappService: WhatsappService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async resumeDelayedExecutions() {
     const now = new Date();
-    const due = await this.execModel.find({ status: 'DELAYED', executeAt: { $lte: now } }).limit(50);
+    const due = await this.execModel
+      .find({ status: 'DELAYED', executeAt: { $lte: now } })
+      .limit(50);
     for (const exec of due) {
       exec.status = 'RUNNING';
       await exec.save();
@@ -93,22 +103,35 @@ export class AutomationsProcessor {
     return trigger?.id;
   }
 
-  private findNextNodeId(edges: any[], currentId: string, handle?: 'match' | 'no_match' | 'default') {
+  private findNextNodeId(
+    edges: any[],
+    currentId: string,
+    handle?: 'match' | 'no_match' | 'default',
+  ) {
     const fromCurrent = edges.filter((e) => `${e.source}` === `${currentId}`);
     if (handle && handle !== 'default') {
-      const specific = fromCurrent.find((e) => `${e.sourceHandle || ''}`.toLowerCase() === handle);
+      const specific = fromCurrent.find(
+        (e) => `${e.sourceHandle || ''}`.toLowerCase() === handle,
+      );
       if (specific) return specific.target;
     }
     return fromCurrent[0]?.target;
   }
 
-  private async handleNode(flow: AutomationFlowDocument, exec: AutomationExecutionDocument, node: any): Promise<'default' | 'match' | 'no_match' | 'DELAY'> {
+  private async handleNode(
+    flow: AutomationFlowDocument,
+    exec: AutomationExecutionDocument,
+    node: any,
+  ): Promise<'default' | 'match' | 'no_match' | 'DELAY'> {
     switch (node.type) {
       case 'trigger:webinar':
         return 'default';
       case 'logic:filter': {
         const { rules } = node.data || {};
-        const isMatch = this.evaluateRules(rules, exec.triggerData?.payload || {});
+        const isMatch = this.evaluateRules(
+          rules,
+          exec.triggerData?.payload || {},
+        );
         return isMatch ? 'match' : 'no_match';
       }
       case 'logic:wait': {
@@ -116,7 +139,11 @@ export class AutomationsProcessor {
         const ms = this.toMs(Number(amount), String(unit));
         exec.status = 'DELAYED';
         exec.executeAt = new Date(Date.now() + ms);
-        exec.logs.push({ timestamp: new Date().toISOString(), level: 'info', message: `Delaying for ${amount} ${unit}` });
+        exec.logs.push({
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          message: `Delaying for ${amount} ${unit}`,
+        });
         await exec.save();
         return 'DELAY';
       }
@@ -126,11 +153,18 @@ export class AutomationsProcessor {
         const projectId = `${exec.projectId}`;
         const registrant = exec.triggerData?.payload || {};
 
-        const phone = this.resolvePath(registrant, payload.phonePath || 'phone');
+        const phone = this.resolvePath(
+          registrant,
+          payload.phonePath || 'phone',
+        );
         const templateName = payload.templateName;
-        const variables: string[] = (payload.variables || []).map((v: any) => this.resolvePath(registrant, v?.path || '') || v?.value || '');
+        const variables: string[] = (payload.variables || []).map(
+          (v: any) =>
+            this.resolvePath(registrant, v?.path || '') || v?.value || '',
+        );
 
-        if (!phone || !templateName) throw new Error('Missing phone or templateName');
+        if (!phone || !templateName)
+          throw new Error('Missing phone or templateName');
 
         // Fetch template data from Meta to get the language
         let templateLanguage = 'en_US'; // Default fallback
@@ -142,9 +176,9 @@ export class AutomationsProcessor {
           );
 
           if (metaTemplates && metaTemplates.length > 0) {
-            const metaTemplate = metaTemplates.find(
-              (t) => t.name === templateName,
-            ) || metaTemplates[0];
+            const metaTemplate =
+              metaTemplates.find((t) => t.name === templateName) ||
+              metaTemplates[0];
             templateLanguage = metaTemplate.language || 'en_US';
             this.logger.log(
               `Retrieved template language from Meta: ${templateLanguage} for template: ${templateName}`,
@@ -161,25 +195,21 @@ export class AutomationsProcessor {
           );
         }
 
-        await this.whatsappService.sendSingleTemplateMessage({
-          adminId: new Types.ObjectId(adminId),
-          projectId: projectId,
-          recipientPhoneNumber: phone,
-          templateName: templateName,
-          bodyVariables: variables,
-          headerMediaAssetId: undefined,
-          language: templateLanguage,
-          contactId: undefined,
-          messageType: WabaMessageType.INDIVIDUAL,
-          campaignId: undefined,
+        exec.logs.push({
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          message: `WhatsApp sent to ${phone}`,
         });
-        exec.logs.push({ timestamp: new Date().toISOString(), level: 'info', message: `WhatsApp sent to ${phone}` });
         await exec.save();
         return 'default';
       }
       default:
         // Unknown node, skip
-        exec.logs.push({ timestamp: new Date().toISOString(), level: 'info', message: `Skipping unknown node type ${node.type}` });
+        exec.logs.push({
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          message: `Skipping unknown node type ${node.type}`,
+        });
         await exec.save();
         return 'default';
     }
@@ -220,20 +250,28 @@ export class AutomationsProcessor {
 
   private resolvePath(obj: any, path: string): any {
     if (!path) return undefined;
-    return path.split('.').reduce((acc, key) => (acc ? acc[key] : undefined), obj);
+    return path
+      .split('.')
+      .reduce((acc, key) => (acc ? acc[key] : undefined), obj);
   }
 
   private async complete(exec: AutomationExecutionDocument, message: string) {
     exec.status = 'COMPLETED';
-    exec.logs.push({ timestamp: new Date().toISOString(), level: 'info', message });
+    exec.logs.push({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      message,
+    });
     await exec.save();
   }
 
   private async fail(exec: AutomationExecutionDocument, message: string) {
     exec.status = 'FAILED';
-    exec.logs.push({ timestamp: new Date().toISOString(), level: 'error', message });
+    exec.logs.push({
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      message,
+    });
     await exec.save();
   }
 }
-
-

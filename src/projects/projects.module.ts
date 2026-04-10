@@ -15,7 +15,7 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
     forwardRef(() => UsersModule),
     forwardRef(() => SubscriptionModule),
     HttpModule,
-    WabaMessageModule
+    WabaMessageModule,
   ],
   providers: [ProjectsService],
   controllers: [ProjectsController],

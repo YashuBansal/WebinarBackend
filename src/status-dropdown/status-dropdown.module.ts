@@ -7,9 +7,6 @@ import {
   StatusDropdownSchema,
 } from 'src/schemas/StatusDropdown.schema';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
-import { RolesService } from 'src/roles/roles.service';
-import { Roles, RolesSchema } from 'src/schemas/Roles.schema';
-import { User, UserSchema } from 'src/schemas/User.schema';
 import { UsersModule } from 'src/users/users.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 
@@ -22,11 +19,11 @@ import { RolesModule } from 'src/roles/roles.module';
       {
         name: StatusDropdown.name,
         schema: StatusDropdownSchema,
-      }
+      },
     ]),
     UsersModule,
     SubscriptionModule,
-    RolesModule
+    RolesModule,
   ],
   controllers: [StatusDropdownController],
   providers: [StatusDropdownService],

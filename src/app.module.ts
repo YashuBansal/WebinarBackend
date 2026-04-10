@@ -122,7 +122,8 @@ import { PabblyTokenBlacklistModule } from './auth/pabbly-token-blacklist.module
           level: 'error',
         }),
         // OpenTelemetry transport - only added if OTEL is configured
-        ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_SERVICE_NAME
+        ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT &&
+        process.env.OTEL_SERVICE_NAME
           ? [
               new OtelWinstonTransport({
                 serviceName: process.env.OTEL_SERVICE_NAME,

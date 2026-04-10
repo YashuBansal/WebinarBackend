@@ -7,7 +7,6 @@ import {
   Param,
   Delete,
   Query,
-  HttpCode,
   HttpStatus,
   UsePipes,
   ValidationPipe,
@@ -126,8 +125,14 @@ export class CampaignController {
   }
 
   @Patch(':id/cancel')
-  async cancelScheduledCampaign(@Param('id') id: string, @Id() adminId: string) {
-    const campaign = await this.campaignService.cancelScheduledCampaign(id, adminId);
+  async cancelScheduledCampaign(
+    @Param('id') id: string,
+    @Id() adminId: string,
+  ) {
+    const campaign = await this.campaignService.cancelScheduledCampaign(
+      id,
+      adminId,
+    );
     return {
       statusCode: HttpStatus.OK,
       message: 'Scheduled campaign cancelled successfully',
@@ -142,7 +147,11 @@ export class CampaignController {
     @Body() body: { scheduledAt: string },
     @Id() adminId: string,
   ) {
-    const campaign = await this.campaignService.rescheduleCampaign(id, body.scheduledAt, adminId);
+    const campaign = await this.campaignService.rescheduleCampaign(
+      id,
+      body.scheduledAt,
+      adminId,
+    );
     return {
       statusCode: HttpStatus.OK,
       message: 'Campaign rescheduled successfully',

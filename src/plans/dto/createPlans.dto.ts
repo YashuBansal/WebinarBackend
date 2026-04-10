@@ -23,7 +23,6 @@ export class CreatePlansDto {
   @IsNotEmpty()
   internalName: string;
 
-
   @IsNumber()
   @IsNotEmpty()
   employeeCount: number;

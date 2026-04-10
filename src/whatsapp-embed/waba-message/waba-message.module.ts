@@ -6,10 +6,7 @@ import {
 } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { WabaMessageService } from './waba-message.service';
-import {
-  WabaMessage,
-  WabaMessageSchema,
-} from './waba-message.schema';
+import { WabaMessage, WabaMessageSchema } from './waba-message.schema';
 import {
   ChatReadStatus,
   ChatReadStatusSchema,
@@ -40,11 +37,9 @@ export class WabaMessageModule {
         method: RequestMethod.GET,
       })
       .forRoutes(WabaMessageController);
-    consumer
-      .apply(AuthSuperAdminMiddleware)
-      .forRoutes({
-        path: 'waba-message/counts',
-        method: RequestMethod.GET,
-      });
+    consumer.apply(AuthSuperAdminMiddleware).forRoutes({
+      path: 'waba-message/counts',
+      method: RequestMethod.GET,
+    });
   }
 }

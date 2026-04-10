@@ -19,5 +19,3 @@ export enum ZoomWebhookEvent {
 }
 
 export default ZoomWebhookEvent;
-
-

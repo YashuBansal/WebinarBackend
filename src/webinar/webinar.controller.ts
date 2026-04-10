@@ -166,9 +166,14 @@ export class WebinarController {
   async updateWebinarMeetingId(
     @Id() adminId: string,
     @Param('id') webinarId: string,
-    @Body() body: { meetingId: string; occurrenceId?: string }
+    @Body() body: { meetingId: string; occurrenceId?: string },
   ): Promise<any> {
-    const result = await this.webinarService.updateWebinarMeetingId(webinarId, body.meetingId, adminId, body.occurrenceId);
+    const result = await this.webinarService.updateWebinarMeetingId(
+      webinarId,
+      body.meetingId,
+      adminId,
+      body.occurrenceId,
+    );
     return {
       message: 'Webinar meeting ID updated successfully',
       data: result,
@@ -179,9 +184,12 @@ export class WebinarController {
   @Delete(':id/meeting')
   async removeWebinarMeetingId(
     @Id() adminId: string,
-    @Param('id') webinarId: string
+    @Param('id') webinarId: string,
   ): Promise<any> {
-    const result = await this.webinarService.removeWebinarMeetingId(webinarId, adminId);
+    const result = await this.webinarService.removeWebinarMeetingId(
+      webinarId,
+      adminId,
+    );
     return {
       message: 'Webinar meeting ID removed successfully',
       data: result,

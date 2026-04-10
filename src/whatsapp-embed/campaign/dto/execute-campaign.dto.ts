@@ -1,15 +1,4 @@
-import {
-  IsArray,
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  ValidateNested,
-  IsEnum,
-  IsObject,
-} from 'class-validator';
-import { Type } from 'class-transformer';
-import { WlhAttendeeFiltersDto } from './create-campaign-workflow.dto';
-import { VariableMapping } from 'src/webinar-auto-message/webinar-auto-message.schema';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class CampaignContactDto {
   @IsString()
@@ -33,5 +22,4 @@ export class ExecuteCampaignDto {
   @IsString()
   @IsNotEmpty()
   campaignId: string;
-
 }

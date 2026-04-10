@@ -39,8 +39,6 @@ import { AttendeesModule } from 'src/attendees/attendees.module';
 })
 export class ProgramModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(AuthAdminTokenMiddleware)
-      .forRoutes(ProgramController);
+    consumer.apply(AuthAdminTokenMiddleware).forRoutes(ProgramController);
   }
 }

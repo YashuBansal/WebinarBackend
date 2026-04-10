@@ -9,7 +9,7 @@ import { WhatsAppGateway } from './whatsapp.gateway';
     ConfigModule,
     JwtModule.register({}), // JwtModule will use ConfigService internally for secrets
   ],
-  providers: [WebsocketGateway, WhatsAppGateway ],
+  providers: [WebsocketGateway, WhatsAppGateway],
   exports: [WebsocketGateway, WhatsAppGateway],
 })
 export class WebsocketModule {}

@@ -24,7 +24,11 @@ export class SubscriptionAddOn extends Document {
   @Prop({ type: Types.ObjectId, ref: AddonPurchase.name })
   purchase?: Types.ObjectId;
 
-  @Prop({ type: String, enum: UserAddonStatus, default: UserAddonStatus.ACTIVE })
+  @Prop({
+    type: String,
+    enum: UserAddonStatus,
+    default: UserAddonStatus.ACTIVE,
+  })
   status: UserAddonStatus;
 
   @Prop({ type: Date, default: Date.now })

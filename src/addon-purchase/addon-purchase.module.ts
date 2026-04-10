@@ -25,7 +25,6 @@ import { UsersModule } from 'src/users/users.module';
     forwardRef(() => RazorpayModule),
     forwardRef(() => SubscriptionAddonModule),
     BillingHistoryModule,
-    
   ],
   providers: [AddonPurchaseService],
   controllers: [AddonPurchaseController],
@@ -36,4 +35,3 @@ export class AddonPurchaseModule {
     consumer.apply(AuthAdminTokenMiddleware).forRoutes(AddonPurchaseController);
   }
 }
-

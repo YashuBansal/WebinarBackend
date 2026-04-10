@@ -5,7 +5,7 @@ import {
   IsMongoId,
   IsDateString,
   IsObject,
-  IsEnum
+  IsEnum,
 } from 'class-validator';
 
 export class CreateProgramAssignmentDto {

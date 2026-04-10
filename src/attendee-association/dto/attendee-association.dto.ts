@@ -1,4 +1,10 @@
-import { IsEmail, IsMongoId, IsNotEmpty, IsString, IsEnum } from 'class-validator';
+import {
+  IsEmail,
+  IsMongoId,
+  IsNotEmpty,
+  IsString,
+  IsEnum,
+} from 'class-validator';
 import { Types } from 'mongoose';
 
 export class AttendeeAssociationDto {
@@ -24,7 +30,9 @@ export class UpdateAttendeeTagDto {
   @IsNotEmpty({ message: 'Tag is required' })
   tag: string;
 
-  @IsEnum(['add', 'remove'], { message: 'Action must be either "add" or "remove"' })
+  @IsEnum(['add', 'remove'], {
+    message: 'Action must be either "add" or "remove"',
+  })
   @IsNotEmpty({ message: 'Action is required' })
   action: 'add' | 'remove';
 }

@@ -28,10 +28,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       error:
         typeof message === 'string'
           ? message
-          : (message as Record<string, unknown>)?.['message'] ?? message,
+          : ((message as Record<string, unknown>)?.['message'] ?? message),
       timestamp: new Date().toISOString(),
     });
   }
 }
-
-

@@ -24,4 +24,3 @@ export const REDIS_CONNECTION = 'REDIS_CONNECTION';
   exports: [REDIS_CONNECTION],
 })
 export class RedisModule {}
-

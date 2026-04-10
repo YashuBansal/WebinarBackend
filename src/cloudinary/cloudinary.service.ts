@@ -43,19 +43,21 @@ export class CloudinaryService {
     );
 
     return new Promise((resolve, reject) => {
-      const uploadOptions: any = { 
+      const uploadOptions: any = {
         folder: folderName,
-        resource_type: 'auto'
+        resource_type: 'auto',
       };
-      
+
       if (fileName) {
         uploadOptions.public_id = fileName;
       }
 
-      v2.uploader.upload_stream(uploadOptions, (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      }).end(buffer);
+      v2.uploader
+        .upload_stream(uploadOptions, (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        })
+        .end(buffer);
     });
   }
 

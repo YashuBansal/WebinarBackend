@@ -1,11 +1,15 @@
-import { forwardRef, MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
+import {
+  forwardRef,
+  MiddlewareConsumer,
+  Module,
+  RequestMethod,
+} from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HttpModule } from '@nestjs/axios';
 import { ZoomController } from './zoom.controller';
 import { ZoomService } from './zoom.service';
 import { WebhookQueueService } from './webhook-queue.service';
 import { ZoomProject, ZoomProjectSchema } from './schemas/zoom-project.schema';
-import { ZoomMeetingEvent, ZoomMeetingEventSchema } from './schemas/zoom-meeting-event.schema';
 import { UsersModule } from 'src/users/users.module';
 import { ProjectsModule } from 'src/projects/projects.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
@@ -30,12 +34,12 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
     MongooseModule.forFeature([
       { name: ZoomProject.name, schema: ZoomProjectSchema },
     ]),
-    forwardRef(() => ZoomEventModule), 
-     MeetingEventConfigModule,
-     ConfiguredTemplatesModule,
-     WhatsappModule,
-     WebsocketModule,
-     forwardRef(() => ZoomMeetingModule)
+    forwardRef(() => ZoomEventModule),
+    MeetingEventConfigModule,
+    ConfiguredTemplatesModule,
+    WhatsappModule,
+    WebsocketModule,
+    forwardRef(() => ZoomMeetingModule),
   ],
   controllers: [ZoomController],
   providers: [ZoomService, WebhookQueueService],
@@ -54,4 +58,3 @@ export class ZoomModule {
       .forRoutes(ZoomController);
   }
 }
-

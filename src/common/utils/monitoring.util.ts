@@ -9,7 +9,7 @@ export interface MessageEventMetrics {
   failedMessages: number;
   processingTimeMs: number;
   timestamp: Date;
-  errors?: Array<{contactId: string, error: string}>;
+  errors?: Array<{ contactId: string; error: string }>;
 }
 
 export class MonitoringUtil {
@@ -19,9 +19,12 @@ export class MonitoringUtil {
    * Logs structured metrics for message events
    */
   static logMessageEventMetrics(metrics: MessageEventMetrics): void {
-    const successRate = metrics.totalContacts > 0 
-      ? (metrics.successfulMessages / metrics.totalContacts * 100).toFixed(2)
-      : '0';
+    const successRate =
+      metrics.totalContacts > 0
+        ? ((metrics.successfulMessages / metrics.totalContacts) * 100).toFixed(
+            2,
+          )
+        : '0';
 
     this.logger.log('Message Event Metrics', {
       eventType: metrics.eventType,
@@ -32,24 +35,29 @@ export class MonitoringUtil {
       failedMessages: metrics.failedMessages,
       successRate: `${successRate}%`,
       processingTimeMs: metrics.processingTimeMs,
-      timestamp: metrics.timestamp.toISOString()
+      timestamp: metrics.timestamp.toISOString(),
     });
 
     // Log warnings for high failure rates
     if (metrics.failedMessages > 0) {
-      const failureRate = (metrics.failedMessages / metrics.totalContacts * 100).toFixed(2);
+      const failureRate = (
+        (metrics.failedMessages / metrics.totalContacts) *
+        100
+      ).toFixed(2);
       this.logger.warn(`High failure rate detected: ${failureRate}%`, {
         eventType: metrics.eventType,
         meetingId: metrics.meetingId,
         failedCount: metrics.failedMessages,
-        totalCount: metrics.totalContacts
+        totalCount: metrics.totalContacts,
       });
     }
 
     // Log individual errors for debugging
     if (metrics.errors && metrics.errors.length > 0) {
-      metrics.errors.forEach(error => {
-        this.logger.debug(`Message failed for contact ${error.contactId}: ${error.error}`);
+      metrics.errors.forEach((error) => {
+        this.logger.debug(
+          `Message failed for contact ${error.contactId}: ${error.error}`,
+        );
       });
     }
   }
@@ -57,13 +65,18 @@ export class MonitoringUtil {
   /**
    * Logs webhook processing metrics
    */
-  static logWebhookMetrics(eventType: string, meetingId: string, processingTimeMs: number, success: boolean): void {
+  static logWebhookMetrics(
+    eventType: string,
+    meetingId: string,
+    processingTimeMs: number,
+    success: boolean,
+  ): void {
     this.logger.log('Webhook Processing Metrics', {
       eventType,
       meetingId,
       processingTimeMs,
       success,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -76,7 +89,7 @@ export class MonitoringUtil {
     method: string,
     statusCode: number,
     responseTimeMs: number,
-    error?: string
+    error?: string,
   ): void {
     const level = statusCode >= 400 ? 'warn' : 'log';
     this.logger[level]('API Call Metrics', {
@@ -86,7 +99,7 @@ export class MonitoringUtil {
       statusCode,
       responseTimeMs,
       error,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -98,7 +111,7 @@ export class MonitoringUtil {
     collection: string,
     durationMs: number,
     success: boolean,
-    error?: string
+    error?: string,
   ): void {
     const level = success ? 'debug' : 'warn';
     this.logger[level]('Database Operation Metrics', {
@@ -107,7 +120,7 @@ export class MonitoringUtil {
       durationMs,
       success,
       error,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -126,7 +139,7 @@ export class MonitoringUtil {
     this.logger.error('Critical System Event', {
       event,
       details,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -137,7 +150,7 @@ export class MonitoringUtil {
     this.logger.warn('Security Event', {
       event,
       details,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -152,9 +165,10 @@ export class MonitoringUtil {
     totalRetries: number;
     averageProcessingTimeMs: number;
   }): void {
-    const failureRate = metrics.totalProcessed > 0
-      ? ((metrics.totalFailed / metrics.totalProcessed) * 100).toFixed(2)
-      : '0';
+    const failureRate =
+      metrics.totalProcessed > 0
+        ? ((metrics.totalFailed / metrics.totalProcessed) * 100).toFixed(2)
+        : '0';
 
     this.logger.log('Webhook Queue Metrics', {
       queueDepth: metrics.queueDepth,
@@ -164,15 +178,18 @@ export class MonitoringUtil {
       totalRetries: metrics.totalRetries,
       failureRate: `${failureRate}%`,
       averageProcessingTimeMs: metrics.averageProcessingTimeMs,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     // Log warnings for high queue depth
     if (metrics.queueDepth > 1000) {
-      this.logger.warn(`High webhook queue depth detected: ${metrics.queueDepth}`, {
-        queueDepth: metrics.queueDepth,
-        activeWorkers: metrics.activeWorkers
-      });
+      this.logger.warn(
+        `High webhook queue depth detected: ${metrics.queueDepth}`,
+        {
+          queueDepth: metrics.queueDepth,
+          activeWorkers: metrics.activeWorkers,
+        },
+      );
     }
 
     // Log warnings for high failure rate
@@ -180,7 +197,7 @@ export class MonitoringUtil {
       this.logger.warn(`High webhook failure rate detected: ${failureRate}%`, {
         totalFailed: metrics.totalFailed,
         totalProcessed: metrics.totalProcessed,
-        failureRate: `${failureRate}%`
+        failureRate: `${failureRate}%`,
       });
     }
   }

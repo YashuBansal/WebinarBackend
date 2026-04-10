@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Put,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
-import { Request } from 'express';
+import { Body, Controller, Get, Put } from '@nestjs/common';
 import { InterestPoolSettingsService } from './interest-pool-settings.service';
 import { Id } from 'src/decorators/custom.decorator';
 
@@ -63,4 +55,3 @@ export class InterestPoolSettingsController {
     };
   }
 }
-

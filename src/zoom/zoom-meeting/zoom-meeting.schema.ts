@@ -53,7 +53,7 @@ export class ZoomMeeting {
 
   @Prop({ type: Object })
   raw?: Record<string, any>;
-  
+
   @Prop({ type: Boolean, default: false })
   isWebinar?: boolean;
 }

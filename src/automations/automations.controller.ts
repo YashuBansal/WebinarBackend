@@ -1,6 +1,18 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import { AutomationsService } from './automations.service';
-import { CreateAutomationFlowDto, UpdateAutomationFlowDto } from './dto/automation.dto';
+import {
+  CreateAutomationFlowDto,
+  UpdateAutomationFlowDto,
+} from './dto/automation.dto';
 import { AdminId } from 'src/decorators/custom.decorator';
 
 @Controller('automations')
@@ -17,7 +29,10 @@ export class AutomationsController {
   }
 
   @Get()
-  async list(@AdminId() adminId: string, @Query('projectId') projectId: string) {
+  async list(
+    @AdminId() adminId: string,
+    @Query('projectId') projectId: string,
+  ) {
     return this.automationsService.getFlows(adminId, projectId);
   }
 
@@ -49,5 +64,3 @@ export class AutomationsController {
     return this.automationsService.deleteFlow(adminId, projectId, id);
   }
 }
-
-

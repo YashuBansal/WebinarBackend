@@ -13,9 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ProfileService } from './profile.service';
-import {
-  UpdateBusinessProfileDto,
-} from './dto/profile.dto';
+import { UpdateBusinessProfileDto } from './dto/profile.dto';
 import { Id } from 'src/decorators/custom.decorator';
 import { Types } from 'mongoose';
 

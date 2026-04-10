@@ -45,22 +45,30 @@ export class ProfileService {
     axiosRetry(this.axiosInstance, {
       retries: 3,
       retryDelay: (retryCount) => {
-        this.logger.warn(`Request failed. Retrying in ${retryCount * 2}s... (Attempt ${retryCount})`);
+        this.logger.warn(
+          `Request failed. Retrying in ${retryCount * 2}s... (Attempt ${retryCount})`,
+        );
         return retryCount * 2000;
       },
       retryCondition: (error) => {
-        return axiosRetry.isNetworkOrIdempotentRequestError(error) || error.code === 'ETIMEDOUT';
+        return (
+          axiosRetry.isNetworkOrIdempotentRequestError(error) ||
+          error.code === 'ETIMEDOUT'
+        );
       },
     });
   }
 
-  private async fetchProfileFromMeta(account: any): Promise<BusinessProfileResponseDto> {
+  private async fetchProfileFromMeta(
+    account: any,
+  ): Promise<BusinessProfileResponseDto> {
     const { permanentAccessToken, phoneNumberId } = account;
     const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/whatsapp_business_profile`;
 
     const params = {
-      fields: 'about,address,description,email,profile_picture_url,websites,vertical',
+      fields:
+        'about,address,description,email,profile_picture_url,websites,vertical',
       access_token: permanentAccessToken,
     };
 
@@ -132,12 +140,17 @@ export class ProfileService {
 
     try {
       const profileFromMeta = await this.fetchProfileFromMeta(account);
-      const cached = await this.upsertProfileCache(adminId, projectId, profileFromMeta);
+      const cached = await this.upsertProfileCache(
+        adminId,
+        projectId,
+        profileFromMeta,
+      );
 
       // Also sync display name status into cache
       try {
         const { permanentAccessToken, phoneNumberId } = account;
-        const apiVersion = this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+        const apiVersion =
+          this.configService.get('GRAPH_API_VERSION') || 'v23.0';
         const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}`;
 
         const params = {
@@ -151,7 +164,9 @@ export class ProfileService {
           timeout: 15000,
         });
 
-        const displayNameStatus = this.mapNameStatus(response.data?.name_status || 'UNKNOWN');
+        const displayNameStatus = this.mapNameStatus(
+          response.data?.name_status || 'UNKNOWN',
+        );
         const displayPhoneNumber = response.data.display_phone_number || '';
         const verifiedName = response.data.verified_name || '';
         const qualityRating = response.data.quality_rating || '';
@@ -294,7 +309,8 @@ export class ProfileService {
       metaPayload.websites = updateProfileDto.websites;
     }
     if (updateProfileDto.profilePictureHandle !== undefined) {
-      metaPayload.profile_picture_handle = updateProfileDto.profilePictureHandle;
+      metaPayload.profile_picture_handle =
+        updateProfileDto.profilePictureHandle;
     }
 
     this.logger.log(
@@ -357,9 +373,7 @@ export class ProfileService {
       } else if (axiosError.response?.status === 400) {
         const errorMessage =
           axiosError.response?.data || 'Invalid profile data';
-        throw new BadRequestException(
-          `Profile update failed: ${errorMessage}`,
-        );
+        throw new BadRequestException(`Profile update failed: ${errorMessage}`);
       }
 
       throw new InternalServerErrorException(
@@ -390,7 +404,9 @@ export class ProfileService {
     }
 
     // Try cache first
-    const cached = await this.profileModel.findOne({ adminId, projectId }).lean<ProfileDocument>();
+    const cached = await this.profileModel
+      .findOne({ adminId, projectId })
+      .lean<ProfileDocument>();
     if (cached && cached.display_name_status) {
       return {
         displayNameStatus: this.mapNameStatus(cached.display_name_status),
@@ -406,7 +422,8 @@ export class ProfileService {
     const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}`;
 
     const params = {
-      fields: 'name_status,display_phone_number, verified_name, quality_rating, throughput, messaging_limit_tier',
+      fields:
+        'name_status,display_phone_number, verified_name, quality_rating, throughput, messaging_limit_tier',
       access_token: permanentAccessToken,
     };
 
@@ -415,11 +432,10 @@ export class ProfileService {
     );
 
     try {
-      const response = await this.axiosInstance.get(url, { 
+      const response = await this.axiosInstance.get(url, {
         params,
         timeout: 15000,
       });
-
 
       this.logger.log(
         `Successfully fetched display name status for phone number ${phoneNumberId}`,
@@ -437,7 +453,6 @@ export class ProfileService {
         { adminId, projectId },
         {
           $set: {
-            
             adminId,
             projectId,
             display_name_status: displayNameStatus,
@@ -485,7 +500,8 @@ export class ProfileService {
       }
 
       throw new InternalServerErrorException(
-        axiosError.response?.data || 'Could not fetch display name status from Meta.',
+        axiosError.response?.data ||
+          'Could not fetch display name status from Meta.',
       );
     }
   }
@@ -534,10 +550,14 @@ export class ProfileService {
         `Creating upload session: ${originalName} (${fileBuffer.length} bytes, ${mimeType})`,
       );
 
-      const sessionResponse = await this.axiosInstance.post(createSessionUrl, null, {
-        params: sessionParams,
-        timeout: 15000,
-      });
+      const sessionResponse = await this.axiosInstance.post(
+        createSessionUrl,
+        null,
+        {
+          params: sessionParams,
+          timeout: 15000,
+        },
+      );
 
       const uploadSessionId = sessionResponse.data.id;
       if (!uploadSessionId || !uploadSessionId.startsWith('upload:')) {
@@ -549,24 +569,29 @@ export class ProfileService {
 
       this.logger.log(`Uploading file data to session: ${uploadSessionId}`);
 
-      const uploadResponse = await this.axiosInstance.post(uploadUrl, fileBuffer, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'file_offset': '0',
-          'Content-Type': mimeType,
+      const uploadResponse = await this.axiosInstance.post(
+        uploadUrl,
+        fileBuffer,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            file_offset: '0',
+            'Content-Type': mimeType,
+          },
+          timeout: 15000,
         },
-        timeout: 15000,
-      });
+      );
 
       const fileHandle = uploadResponse.data.h;
       if (!fileHandle) {
         throw new Error('No file handle received from Meta upload');
       }
 
-      this.logger.log(`Profile picture uploaded successfully, handle: ${fileHandle}`);
+      this.logger.log(
+        `Profile picture uploaded successfully, handle: ${fileHandle}`,
+      );
 
       return fileHandle;
-
     } catch (error) {
       this.logger.error(
         'Profile picture upload failed:',
@@ -602,10 +627,11 @@ export class ProfileService {
 
     const { permanentAccessToken, wabaId } = account;
 
-    const subscriptionStatus = await this.whatsappService.checkAppSubscriptionToWaba(
-      wabaId,
-      permanentAccessToken,
-    );
+    const subscriptionStatus =
+      await this.whatsappService.checkAppSubscriptionToWaba(
+        wabaId,
+        permanentAccessToken,
+      );
 
     return {
       isSubscribed: subscriptionStatus.isSubscribed,
@@ -633,10 +659,11 @@ export class ProfileService {
       );
     }
 
-    const subscriptionResult = await this.whatsappService.subscribeAppToWabaForProject(
-      adminId,
-      projectId,
-    );
+    const subscriptionResult =
+      await this.whatsappService.subscribeAppToWabaForProject(
+        adminId,
+        projectId,
+      );
 
     return {
       success: true,

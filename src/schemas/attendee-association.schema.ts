@@ -20,7 +20,6 @@ export class AttendeeAssociation extends Document {
   })
   leadType: Types.ObjectId; //Lead Type
 
-
   @Prop({
     type: [String],
     default: [],
@@ -30,19 +29,19 @@ export class AttendeeAssociation extends Document {
       }
       // Filter out "undefined" strings, empty strings, and null/undefined values
       return fullNames
-        .filter((name) => name != null && name !== 'undefined' && name.trim() !== '')
+        .filter(
+          (name) => name != null && name !== 'undefined' && name.trim() !== '',
+        )
         .map((name) => name.trim());
     },
   })
   fullNames: string[]; //Full Names
-
 
   @Prop({
     type: [String],
     default: [],
   })
   phones: string[]; //Phones
-
 
   @Prop({
     type: [String],
@@ -74,4 +73,3 @@ AttendeeAssociationSchema.pre('save', function (next) {
 });
 
 AttendeeAssociationSchema.index({ adminId: 1, email: 1, leadType: 1 });
-

@@ -22,7 +22,8 @@ import { UsersModule } from 'src/users/users.module';
 })
 export class InterestPoolSettingsModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(AuthAdminTokenMiddleware).forRoutes(InterestPoolSettingsController);
+    consumer
+      .apply(AuthAdminTokenMiddleware)
+      .forRoutes(InterestPoolSettingsController);
   }
 }
-

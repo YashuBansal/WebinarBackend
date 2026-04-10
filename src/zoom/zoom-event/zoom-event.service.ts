@@ -91,7 +91,11 @@ export class ZoomEventService {
     const AllUniqueParticipantEmails = new Set<string>();
 
     const [events, registrants] = await Promise.all([
-      this.zoomMeetingEventModel.find(query).sort({ createdAt: 1 }).lean().exec(),
+      this.zoomMeetingEventModel
+        .find(query)
+        .sort({ createdAt: 1 })
+        .lean()
+        .exec(),
       this.zoomService.getAllMeetingRegistrantsOnly({
         adminId,
         zoomProjectId,
@@ -126,10 +130,15 @@ export class ZoomEventService {
 
     const allUniqueParticipantEmails = Array.from(AllUniqueParticipantEmails);
 
-    const attendeesData = await this.zoomService.fetchGroupedAttendees(adminId, allUniqueParticipantEmails);
+    const attendeesData = await this.zoomService.fetchGroupedAttendees(
+      adminId,
+      allUniqueParticipantEmails,
+    );
 
     // Helper function to transform attendee data to ParticipantAttendeeData format
-    const transformAttendeeData = (attendee: any): ParticipantAttendeeData | null => {
+    const transformAttendeeData = (
+      attendee: any,
+    ): ParticipantAttendeeData | null => {
       if (!attendee) return null;
       return {
         fullNames: attendee.fullNames || undefined,
@@ -154,7 +163,6 @@ export class ZoomEventService {
       }
     }
 
-
     type ParticipantState = {
       participantId?: string;
       participantUserId?: string;
@@ -168,7 +176,6 @@ export class ZoomEventService {
     };
 
     const participantState = new Map<string, ParticipantState>();
-
 
     let meetingStartedAt: Date | undefined;
     let meetingEndedAt: Date | undefined;
@@ -240,7 +247,11 @@ export class ZoomEventService {
           // If no open session but we have sessions, add a new one with leave time
           // This handles edge cases where leave comes before join in the data
           const lastSession = state.sessions[state.sessions.length - 1];
-          if (lastSession && !lastSession.leaveAt && createdAt > lastSession.joinAt) {
+          if (
+            lastSession &&
+            !lastSession.leaveAt &&
+            createdAt > lastSession.joinAt
+          ) {
             lastSession.leaveAt = createdAt;
           }
         }
@@ -267,7 +278,7 @@ export class ZoomEventService {
 
       if (state.isOnline) {
         onlineCount += 1;
-        
+
         // Calculate online duration: from lastJoinAt to current time (or meeting end time)
         let onlineDuration: number | undefined = undefined;
         if (state.lastJoinAt) {
@@ -291,7 +302,7 @@ export class ZoomEventService {
         });
       } else if (state.joinCount > 0) {
         joinedButLeftCount += 1;
-        
+
         // Close any remaining open sessions using lastLeftAt or meeting end time
         if (state.lastLeftAt) {
           for (const session of state.sessions) {
@@ -308,7 +319,7 @@ export class ZoomEventService {
             }
           }
         }
-        
+
         // Calculate total online duration by summing all complete sessions
         let totalOnlineDuration: number | undefined = undefined;
         if (state.sessions.length > 0) {
@@ -316,7 +327,8 @@ export class ZoomEventService {
           for (const session of state.sessions) {
             if (session.joinAt && session.leaveAt) {
               // Complete session: join to leave
-              const durationMs = session.leaveAt.getTime() - session.joinAt.getTime();
+              const durationMs =
+                session.leaveAt.getTime() - session.joinAt.getTime();
               if (durationMs > 0) {
                 totalSeconds += Math.floor(durationMs / 1000);
               }
@@ -364,7 +376,8 @@ export class ZoomEventService {
       (r: any): ParticipantDto => {
         const email = (r.email || r.registrant_email || '').toLowerCase();
         const attendee = email ? attendeesDataMapByEmail.get(email) : null;
-        const attendeeData = transformAttendeeData(attendee) || (r.attendeeData ?? null);
+        const attendeeData =
+          transformAttendeeData(attendee) || (r.attendeeData ?? null);
 
         return {
           participantId: r.id || r.registrant_id,

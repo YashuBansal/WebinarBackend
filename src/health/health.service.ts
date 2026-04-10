@@ -2,7 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
-import { HealthCheckResult, CachedHealthResult } from './interfaces/health-check.interface';
+import {
+  HealthCheckResult,
+  CachedHealthResult,
+} from './interfaces/health-check.interface';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -31,8 +34,11 @@ export class HealthService {
     try {
       const packageJsonPath = path.join(process.cwd(), 'package.json');
       if (fs.existsSync(packageJsonPath)) {
-        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-        this.appVersion = packageJson.version || process.env.APP_VERSION || 'unknown';
+        const packageJson = JSON.parse(
+          fs.readFileSync(packageJsonPath, 'utf8'),
+        );
+        this.appVersion =
+          packageJson.version || process.env.APP_VERSION || 'unknown';
       } else {
         this.appVersion = process.env.APP_VERSION || 'unknown';
       }
@@ -75,7 +81,7 @@ export class HealthService {
    */
   async checkReadiness(useCache: boolean = true): Promise<HealthCheckResult> {
     const cacheKey = 'readiness';
-    
+
     // Check cache first
     if (useCache) {
       const cached = this.cache.get(cacheKey);
@@ -92,7 +98,7 @@ export class HealthService {
 
     // Critical checks
     checks.database = await this.checkDatabase();
-    
+
     // Soft dependencies
     checks.smtp = await this.checkSmtp();
     checks.cloudinary = await this.checkCloudinary();
@@ -137,7 +143,7 @@ export class HealthService {
     message?: string;
   }> {
     const startTime = Date.now();
-    
+
     try {
       const checkPromise = this.mongooseConnection.db
         .admin()
@@ -184,7 +190,7 @@ export class HealthService {
     message?: string;
   }> {
     const startTime = Date.now();
-    
+
     try {
       // Check if SMTP configuration exists
       const smtpHost = this.configService.get<string>('MAILDEV_INCOMING_USER');
@@ -199,7 +205,7 @@ export class HealthService {
       // Actual connection test would require sending a test email
       // which we don't want to do on every health check
       const latency = Date.now() - startTime;
-      
+
       return {
         status: 'up',
         latency,
@@ -225,7 +231,7 @@ export class HealthService {
     message?: string;
   }> {
     const startTime = Date.now();
-    
+
     try {
       const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
       const apiKey = process.env.CLOUDINARY_API_KEY;
@@ -241,7 +247,7 @@ export class HealthService {
       // Lightweight check - verify configuration is loaded
       // Full API check would require making an actual API call
       const latency = Date.now() - startTime;
-      
+
       return {
         status: 'up',
         latency,
@@ -266,4 +272,3 @@ export class HealthService {
     this.logger.log('Health check cache cleared');
   }
 }
-

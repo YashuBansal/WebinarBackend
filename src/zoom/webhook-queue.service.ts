@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MonitoringUtil } from 'src/common/utils/monitoring.util';
 
@@ -31,13 +36,13 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
     totalRetries: 0,
     processingTimes: [] as number[],
   };
-  
+
   private workers: Promise<void>[] = [];
   private isShuttingDown = false;
   private processingWorker: any = null;
   private metricsLoggerInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
-  
+
   // Idempotency tracking: Map of deduplicationId -> timestamp
   private readonly processedEvents = new Map<string, number>();
   private readonly IDEMPOTENCY_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -48,15 +53,18 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly retryAttempts: number;
   private readonly retryDelayMs: number;
 
-  constructor(
-    private readonly config: ConfigService,
-  ) {
-    this.concurrency = this.config.get<number>('WEBHOOK_QUEUE_CONCURRENCY') || 10;
-    this.maxQueueSize = this.config.get<number>('WEBHOOK_QUEUE_MAX_SIZE') || 10000;
+  constructor(private readonly config: ConfigService) {
+    this.concurrency =
+      this.config.get<number>('WEBHOOK_QUEUE_CONCURRENCY') || 10;
+    this.maxQueueSize =
+      this.config.get<number>('WEBHOOK_QUEUE_MAX_SIZE') || 10000;
     this.retryAttempts = this.config.get<number>('WEBHOOK_RETRY_ATTEMPTS') || 3;
-    this.retryDelayMs = this.config.get<number>('WEBHOOK_RETRY_DELAY_MS') || 1000;
+    this.retryDelayMs =
+      this.config.get<number>('WEBHOOK_RETRY_DELAY_MS') || 1000;
 
-    this.logger.log(`WebhookQueueService initialized with concurrency: ${this.concurrency}, maxSize: ${this.maxQueueSize}`);
+    this.logger.log(
+      `WebhookQueueService initialized with concurrency: ${this.concurrency}, maxSize: ${this.maxQueueSize}`,
+    );
   }
 
   onModuleInit() {
@@ -70,10 +78,13 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
    */
   private startMetricsLogger() {
     // Log metrics every 5 minutes
-    this.metricsLoggerInterval = setInterval(() => {
-      const metrics = this.getMetrics();
-      MonitoringUtil.logWebhookQueueMetrics(metrics);
-    }, 5 * 60 * 1000); // 5 minutes
+    this.metricsLoggerInterval = setInterval(
+      () => {
+        const metrics = this.getMetrics();
+        MonitoringUtil.logWebhookQueueMetrics(metrics);
+      },
+      5 * 60 * 1000,
+    ); // 5 minutes
 
     this.logger.log('Started periodic queue metrics logging (every 5 minutes)');
   }
@@ -83,9 +94,12 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
    */
   private startIdempotencyCleanup() {
     // Cleanup every 15 minutes
-    this.cleanupInterval = setInterval(() => {
-      this.cleanupProcessedEvents();
-    }, 15 * 60 * 1000); // 15 minutes
+    this.cleanupInterval = setInterval(
+      () => {
+        this.cleanupProcessedEvents();
+      },
+      15 * 60 * 1000,
+    ); // 15 minutes
 
     this.logger.log('Started periodic idempotency cleanup (every 15 minutes)');
   }
@@ -96,14 +110,14 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
   private cleanupProcessedEvents() {
     const now = Date.now();
     let cleaned = 0;
-    
+
     for (const [id, timestamp] of this.processedEvents.entries()) {
       if (now - timestamp > this.IDEMPOTENCY_TTL_MS) {
         this.processedEvents.delete(id);
         cleaned++;
       }
     }
-    
+
     if (cleaned > 0) {
       this.logger.debug(`Cleaned up ${cleaned} old idempotency entries`);
     }
@@ -111,19 +125,19 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy() {
     this.isShuttingDown = true;
-    
+
     // Clear metrics logger interval
     if (this.metricsLoggerInterval) {
       clearInterval(this.metricsLoggerInterval);
       this.metricsLoggerInterval = null;
     }
-    
+
     // Clear idempotency cleanup interval
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
-    
+
     this.logger.log('Shutting down webhook queue workers...');
     // Wait for all workers to finish processing
     return Promise.all(this.workers);
@@ -136,33 +150,41 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
    * @param deduplicationId - Optional unique ID for idempotency checking
    * @returns true if enqueued, false if duplicate or queue full
    */
-  async enqueue(payload: any, projectId: string, deduplicationId?: string): Promise<boolean> {
+  async enqueue(
+    payload: any,
+    projectId: string,
+    deduplicationId?: string,
+  ): Promise<boolean> {
     // Check for duplicate if deduplicationId is provided
     if (deduplicationId) {
       const now = Date.now();
-      
+
       // Check if we've seen this event recently
       if (this.processedEvents.has(deduplicationId)) {
         const previousTimestamp = this.processedEvents.get(deduplicationId)!;
         const age = now - previousTimestamp;
-        
+
         // If within TTL, it's a duplicate
         if (age < this.IDEMPOTENCY_TTL_MS) {
-          this.logger.debug(`Duplicate webhook event detected and skipped: ${deduplicationId} (age: ${age}ms)`);
+          this.logger.debug(
+            `Duplicate webhook event detected and skipped: ${deduplicationId} (age: ${age}ms)`,
+          );
           return true; // Return true to indicate "handled" (even though we skipped it)
         } else {
           // Entry is old, remove it and continue
           this.processedEvents.delete(deduplicationId);
         }
       }
-      
+
       // Mark as processed
       this.processedEvents.set(deduplicationId, now);
     }
 
     // Check if queue is full
     if (this.queue.length >= this.maxQueueSize) {
-      this.logger.error(`Webhook queue is full (${this.queue.length}/${this.maxQueueSize}). Rejecting new event.`);
+      this.logger.error(
+        `Webhook queue is full (${this.queue.length}/${this.maxQueueSize}). Rejecting new event.`,
+      );
       return false;
     }
 
@@ -175,8 +197,10 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
     };
 
     this.queue.push(item);
-    this.logger.debug(`Enqueued webhook event: ${item.id}, queue depth: ${this.queue.length}${deduplicationId ? `, dedupId: ${deduplicationId}` : ''}`);
-    
+    this.logger.debug(
+      `Enqueued webhook event: ${item.id}, queue depth: ${this.queue.length}${deduplicationId ? `, dedupId: ${deduplicationId}` : ''}`,
+    );
+
     return true;
   }
 
@@ -233,13 +257,18 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
   /**
    * Process a queue item with retry logic
    */
-  private async processItem(item: WebhookQueueItem, workerId: number): Promise<void> {
+  private async processItem(
+    item: WebhookQueueItem,
+    workerId: number,
+  ): Promise<void> {
     const startTime = Date.now();
     item.attempts++;
     item.lastAttemptAt = new Date();
 
     try {
-      this.logger.debug(`Worker ${workerId} processing webhook event: ${item.id}, attempt: ${item.attempts}`);
+      this.logger.debug(
+        `Worker ${workerId} processing webhook event: ${item.id}, attempt: ${item.attempts}`,
+      );
 
       // Call the processing function (will be injected)
       if (!this.processingWorker) {
@@ -253,42 +282,52 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
       const processingTime = Date.now() - startTime;
       this.metrics.totalProcessed++;
       this.metrics.processingTimes.push(processingTime);
-      
+
       // Keep only last 1000 processing times for average calculation
       if (this.metrics.processingTimes.length > 1000) {
         this.metrics.processingTimes.shift();
       }
 
-      this.logger.debug(`Worker ${workerId} successfully processed webhook event: ${item.id} in ${processingTime}ms`);
+      this.logger.debug(
+        `Worker ${workerId} successfully processed webhook event: ${item.id} in ${processingTime}ms`,
+      );
     } catch (error) {
-      this.logger.error(`Worker ${workerId} failed to process webhook event: ${item.id}`, {
-        error: error.message,
-        attempt: item.attempts,
-        stack: error.stack,
-      });
+      this.logger.error(
+        `Worker ${workerId} failed to process webhook event: ${item.id}`,
+        {
+          error: error.message,
+          attempt: item.attempts,
+          stack: error.stack,
+        },
+      );
 
       // Check if we should retry
       if (item.attempts < this.retryAttempts) {
         this.metrics.totalRetries++;
         const delay = this.retryDelayMs * Math.pow(2, item.attempts - 1); // Exponential backoff
-        this.logger.debug(`Retrying webhook event: ${item.id} after ${delay}ms (attempt ${item.attempts}/${this.retryAttempts})`);
-        
+        this.logger.debug(
+          `Retrying webhook event: ${item.id} after ${delay}ms (attempt ${item.attempts}/${this.retryAttempts})`,
+        );
+
         // Remove from processing set temporarily
         this.processingSet.delete(item.id);
-        
+
         // Wait before retrying
         await this.sleep(delay);
-        
+
         // Re-enqueue for retry
         this.queue.push(item);
       } else {
         // Max retries reached - move to dead letter
         this.processingSet.delete(item.id);
         this.metrics.totalFailed++;
-        this.logger.error(`Webhook event ${item.id} failed after ${item.attempts} attempts. Moving to dead letter.`, {
-          payload: item.payload,
-          projectId: item.projectId,
-        });
+        this.logger.error(
+          `Webhook event ${item.id} failed after ${item.attempts} attempts. Moving to dead letter.`,
+          {
+            payload: item.payload,
+            projectId: item.projectId,
+          },
+        );
       }
     }
   }
@@ -296,7 +335,9 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
   /**
    * Set the processing worker function
    */
-  setProcessingWorker(worker: (payload: any, projectId: string) => Promise<void>) {
+  setProcessingWorker(
+    worker: (payload: any, projectId: string) => Promise<void>,
+  ) {
     this.processingWorker = worker;
     this.logger.log('Processing worker set');
   }
@@ -305,9 +346,11 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
    * Get current queue metrics
    */
   getMetrics(): QueueMetrics {
-    const averageProcessingTime = this.metrics.processingTimes.length > 0
-      ? this.metrics.processingTimes.reduce((a, b) => a + b, 0) / this.metrics.processingTimes.length
-      : 0;
+    const averageProcessingTime =
+      this.metrics.processingTimes.length > 0
+        ? this.metrics.processingTimes.reduce((a, b) => a + b, 0) /
+          this.metrics.processingTimes.length
+        : 0;
 
     return {
       queueDepth: this.queue.length,
@@ -322,7 +365,12 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
   /**
    * Get queue health status
    */
-  getHealthStatus(): { healthy: boolean; queueDepth: number; maxSize: number; utilizationPercent: number } {
+  getHealthStatus(): {
+    healthy: boolean;
+    queueDepth: number;
+    maxSize: number;
+    utilizationPercent: number;
+  } {
     const utilizationPercent = (this.queue.length / this.maxQueueSize) * 100;
     const healthy = utilizationPercent < 90; // Healthy if less than 90% full
 
@@ -338,7 +386,6 @@ export class WebhookQueueService implements OnModuleInit, OnModuleDestroy {
    * Utility: Sleep for specified milliseconds
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
-

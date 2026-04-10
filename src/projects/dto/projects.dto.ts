@@ -64,34 +64,32 @@ export class PaginationQueryDto {
   limit: number = 10;
 }
 
-
 export class CampaignPaginationQueryDto extends PaginationQueryDto {
+  @IsOptional()
+  @IsMongoId()
+  campaignId?: string;
 
-@IsOptional()
-@IsMongoId()
-campaignId?: string;
+  @IsOptional()
+  @IsMongoId()
+  apiCampaignId?: string;
 
-@IsOptional()
-@IsMongoId()
-apiCampaignId?: string;
+  @IsOptional()
+  @IsString()
+  datePreset?: 'today' | 'yesterday' | 'lastWeek' | 'custom';
 
-@IsOptional()
-@IsString()
-datePreset?: 'today' | 'yesterday' | 'lastWeek' | 'custom';
+  @IsOptional()
+  @IsString()
+  startDate?: string; // ISO date string
 
-@IsOptional()
-@IsString()
-startDate?: string; // ISO date string
+  @IsOptional()
+  @IsString()
+  endDate?: string; // ISO date string
 
-@IsOptional()
-@IsString()
-endDate?: string; // ISO date string
+  @IsOptional()
+  @IsEnum(WabaMessageType)
+  messageType?: WabaMessageType;
 
-@IsOptional()
-@IsEnum(WabaMessageType)
-messageType?: WabaMessageType;
-
-@IsOptional()
-@IsString()
-meetingId?: string;
+  @IsOptional()
+  @IsString()
+  meetingId?: string;
 }

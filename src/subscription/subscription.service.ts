@@ -17,10 +17,7 @@ import { SubscriptionAddonService } from 'src/subscription-addon/subscription-ad
 import { PlansService } from 'src/plans/plans.service';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { UsersService } from 'src/users/users.service';
-import {
-  BillingType,
-  DurationType,
-} from 'src/schemas/BillingHistory.schema';
+import { BillingType, DurationType } from 'src/schemas/BillingHistory.schema';
 import { PlanDurationConfig, Plans } from 'src/schemas/Plans.schema';
 import { ConfigService } from '@nestjs/config';
 
@@ -63,13 +60,14 @@ export class SubscriptionService {
     return result;
   }
 
-  async updateSubscriptionContactCount(){
+  async updateSubscriptionContactCount() {
     const data = await this.attendeesService.getRemainingContacts();
-
 
     if (Array.isArray(data) && data.length > 0) {
       data.forEach(async (entry) => {
-        this.logger.log(`Updating contact count${entry.counts} for admin ${entry._id}`);
+        this.logger.log(
+          `Updating contact count${entry.counts} for admin ${entry._id}`,
+        );
       });
 
       const operations = data.map((entry) => ({
@@ -84,7 +82,9 @@ export class SubscriptionService {
       }));
 
       if (operations.length > 0) {
-        const result = await this.SubscriptionModel.bulkWrite(operations, { ordered: false });
+        const result = await this.SubscriptionModel.bulkWrite(operations, {
+          ordered: false,
+        });
         this.logger.log(`Updated ${result} contacts for admins`);
       }
     }
@@ -142,7 +142,8 @@ export class SubscriptionService {
 
     // Backfill webinarLimit for legacy subscriptions that predate the field
     if (
-      (!subscription.webinarLimit && subscription.webinarLimit !== 0) &&
+      !subscription.webinarLimit &&
+      subscription.webinarLimit !== 0 &&
       (subscription as any).plan &&
       typeof (subscription as any).plan.webinarLimit === 'number'
     ) {
@@ -152,20 +153,26 @@ export class SubscriptionService {
 
     // Backfill project limits for legacy subscriptions that predate these fields.
     if (
-      (!subscription.whatsappProjectLimit && subscription.whatsappProjectLimit !== 0) &&
+      !subscription.whatsappProjectLimit &&
+      subscription.whatsappProjectLimit !== 0 &&
       (subscription as any).plan &&
       typeof (subscription as any).plan.whatsappProjectLimit === 'number'
     ) {
-      subscription.whatsappProjectLimit = (subscription as any).plan.whatsappProjectLimit;
+      subscription.whatsappProjectLimit = (
+        subscription as any
+      ).plan.whatsappProjectLimit;
       await subscription.save();
     }
 
     if (
-      (!subscription.zoomProjectLimit && subscription.zoomProjectLimit !== 0) &&
+      !subscription.zoomProjectLimit &&
+      subscription.zoomProjectLimit !== 0 &&
       (subscription as any).plan &&
       typeof (subscription as any).plan.zoomProjectLimit === 'number'
     ) {
-      subscription.zoomProjectLimit = (subscription as any).plan.zoomProjectLimit;
+      subscription.zoomProjectLimit = (
+        subscription as any
+      ).plan.zoomProjectLimit;
       await subscription.save();
     }
 
@@ -326,7 +333,10 @@ export class SubscriptionService {
             employeeLimitAddon: Math.max(addOn.employeeLimit, 0),
             contactLimitAddon: Math.max(addOn.contactLimit, 0),
             webinarLimitAddon: Math.max(addOn.webinarLimit || 0, 0),
-            whatsappProjectLimitAddon: Math.max(addOn.whatsappProjectLimit || 0, 0),
+            whatsappProjectLimitAddon: Math.max(
+              addOn.whatsappProjectLimit || 0,
+              0,
+            ),
             zoomProjectLimitAddon: Math.max(addOn.zoomProjectLimit || 0, 0),
           },
         },
@@ -417,7 +427,8 @@ export class SubscriptionService {
     let adminId: string;
     if (adminIdOrEmail.includes('@')) {
       const normalizedEmail = adminIdOrEmail.trim().toLowerCase();
-      const resolvedId = await this.userService.getAdminIdByEmail(normalizedEmail);
+      const resolvedId =
+        await this.userService.getAdminIdByEmail(normalizedEmail);
       if (!resolvedId) {
         throw new NotFoundException(
           `User not found for email ${normalizedEmail}`,
@@ -468,7 +479,7 @@ export class SubscriptionService {
     }
 
     const durationConfig = plan.planDurationConfig.get(durationType);
-    if(!durationConfig.isEnabled){
+    if (!durationConfig.isEnabled) {
       throw new NotAcceptableException('Duration type is not enabled');
     }
 
@@ -476,7 +487,7 @@ export class SubscriptionService {
 
     if (String(subscription.plan) === String(planId) && !isPlanExpired) {
       billingStartDate = subscription.expiryDate;
-      
+
       subscription.expiryDate = new Date(
         subscription.expiryDate.getTime() +
           durationConfig.duration * 24 * 60 * 60 * 1000,
@@ -557,9 +568,7 @@ export class SubscriptionService {
    * Includes comprehensive validation, precision handling, and error management
    * GST is calculated as inclusive of the price
    */
-  generatePriceForPlan(
-    durationConfig: PlanDurationConfig,
-  ): {
+  generatePriceForPlan(durationConfig: PlanDurationConfig): {
     totalWithGST: number;
     itemAmount: number;
     discountAmount: number;
@@ -582,8 +591,14 @@ export class SubscriptionService {
       throw new Error('Invalid discount type: must be "flat" or "percent"');
     }
 
-    if (typeof discountValue !== 'number' || discountValue < 0 || !isFinite(discountValue)) {
-      throw new Error('Invalid discount value: must be a non-negative finite number');
+    if (
+      typeof discountValue !== 'number' ||
+      discountValue < 0 ||
+      !isFinite(discountValue)
+    ) {
+      throw new Error(
+        'Invalid discount value: must be a non-negative finite number',
+      );
     }
 
     // Handle GST configuration - treat undefined, null, or 0 as 0
@@ -632,7 +647,7 @@ export class SubscriptionService {
     // Handle undefined, null, or 0 GST values
     const gstValue = gstPercentage || 0;
     if (gstValue === 0) return 0;
-    
+
     // Use integer arithmetic to avoid floating point precision issues
     const priceInCents = Math.round(price * 100);
     const gstInCents = Math.round((priceInCents * gstValue) / (100 + gstValue));
@@ -812,7 +827,9 @@ export class SubscriptionService {
           whatsappProjectLimitAddon: {
             $ifNull: ['$totalWhatsappProjectLimitAddon', 0],
           },
-          zoomProjectLimitAddon: { $ifNull: ['$totalZoomProjectLimitAddon', 0] },
+          zoomProjectLimitAddon: {
+            $ifNull: ['$totalZoomProjectLimitAddon', 0],
+          },
         },
       },
       {
@@ -858,7 +875,9 @@ export class SubscriptionService {
     if (!affectedSubscriptionIds.length) {
       return [];
     }
-    return this.updateSubscriptionAddonsForSubscriptions(affectedSubscriptionIds);
+    return this.updateSubscriptionAddonsForSubscriptions(
+      affectedSubscriptionIds,
+    );
   }
 
   async updateSingleSubscriptionAddon(subscriptionId: string) {
@@ -1072,13 +1091,11 @@ export class SubscriptionService {
     if (!durationConfig)
       throw new NotAcceptableException('Duration type not found.');
 
-    if(!durationConfig.isEnabled){
+    if (!durationConfig.isEnabled) {
       throw new NotAcceptableException('Duration type is not enabled');
     }
 
-    const { totalWithGST } = this.generatePriceForPlan(
-      durationConfig,
-    );
+    const { totalWithGST } = this.generatePriceForPlan(durationConfig);
 
     return { isEligible: true, totalWithGST, planData: plan };
   }

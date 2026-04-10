@@ -1,4 +1,13 @@
-import { IsArray, IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString, ValidateIf, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class VariableMappingDto {
@@ -112,5 +121,3 @@ export class ToggleAutoMessageDto {
   @IsNotEmpty()
   enabled: boolean;
 }
-
-

@@ -39,5 +39,3 @@ export class GetAttendeeCountDto {
   @Type(() => AttendeeFilterConditionDto)
   conditions?: AttendeeFilterConditionDto[];
 }
-
-

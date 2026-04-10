@@ -22,7 +22,12 @@ export enum ProgramAssignmentSource {
 
 @Schema({ timestamps: true })
 export class ProgramAssignment extends Document {
-  @Prop({ type: Types.ObjectId, ref: Program.name, required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: Program.name,
+    required: true,
+    index: true,
+  })
   programId: Types.ObjectId;
 
   @Prop({
@@ -40,7 +45,12 @@ export class ProgramAssignment extends Document {
   @Prop({ type: Types.ObjectId, ref: User.name, required: true, index: true })
   adminId: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: Project.name, required: true, index: true })
+  @Prop({
+    type: Types.ObjectId,
+    ref: Project.name,
+    required: true,
+    index: true,
+  })
   projectId: Types.ObjectId;
 
   @Prop({ type: Date, required: true })

@@ -43,7 +43,9 @@ export class CreateConfiguredTemplateDto {
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100, { message: 'Configured template name must not exceed 100 characters' })
+  @MaxLength(100, {
+    message: 'Configured template name must not exceed 100 characters',
+  })
   configuredTemplateName: string;
 
   @IsArray()
@@ -64,7 +66,9 @@ export class CreateConfiguredTemplateDto {
 export class UpdateConfiguredTemplateDto {
   @IsOptional()
   @IsString()
-  @MaxLength(100, { message: 'Configured template name must not exceed 100 characters' })
+  @MaxLength(100, {
+    message: 'Configured template name must not exceed 100 characters',
+  })
   configuredTemplateName?: string;
 
   @IsOptional()

@@ -11,7 +11,6 @@ export class Webinar extends Document {
   })
   webinarName: string; // Webinar Name
 
-
   @Prop({
     type: String,
     required: false,

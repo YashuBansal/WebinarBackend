@@ -42,7 +42,10 @@ export class ProductsService {
 
   async createProduct(createProductsDto: CreateProductsDto): Promise<any> {
     if (createProductsDto.tag) {
-      await this.ensureTagIsAvailable(createProductsDto.tag, createProductsDto.adminId);
+      await this.ensureTagIsAvailable(
+        createProductsDto.tag,
+        createProductsDto.adminId,
+      );
     }
     let attempts = 0;
     let uniqueId: string;

@@ -21,7 +21,6 @@ import { PaginatedCampaignsResponseDto } from './dto/paginated-campaigns-respons
 import { WabaMessageService } from '../waba-message/waba-message.service';
 import { ProjectsService } from '../../projects/projects.service';
 import { WhatsappService } from '../../whatsapp/whatsapp.service';
-import { v4 as uuidv4 } from 'uuid';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { ContactsService } from 'src/contacts/contacts.service';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
@@ -398,7 +397,7 @@ export class CampaignService {
     }
 
     // Fetch template data from Meta to get the language
-    let templateLanguage = campaign.storedCampaignData.language;
+    const templateLanguage = campaign.storedCampaignData.language;
 
     // Update campaign status to in-progress
     await this.update(

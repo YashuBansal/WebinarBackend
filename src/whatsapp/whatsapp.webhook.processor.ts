@@ -73,4 +73,3 @@ export class WhatsappWebhookProcessor implements OnModuleInit, OnModuleDestroy {
     }
   }
 }
-
