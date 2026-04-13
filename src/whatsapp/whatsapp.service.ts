@@ -51,11 +51,23 @@ import {
 import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-template.service';
 import { WabaTemplateDocument } from 'src/whatsapp-embed/waba-template/waba-template.schema';
 import { BaseLoggerService } from 'src/logger/base-logger.service';
+import { WhatsappOptoutService } from 'src/whatsapp-optout/whatsapp-optout.service';
 
 @Injectable()
 export class WhatsappService extends BaseLoggerService {
   private readonly webhookVerifyToken: string;
   private readonly axiosInstance: AxiosInstance;
+  private readonly optOutKeywords = new Set([
+    'stop',
+    'unsubscribe',
+    'optout',
+    'cancel',
+  ]);
+  private readonly optInKeywords = new Set(['start']);
+  private readonly optOutReplyMessage =
+    "You won't get more messages from us. If you want updates from us again later, reply START.";
+  private readonly optInReplyMessage =
+    "Thanks — you're all set. We'll be able to reach you here again.";
 
   constructor(
     private readonly configService: ConfigService,
@@ -75,6 +87,7 @@ export class WhatsappService extends BaseLoggerService {
     @Inject(forwardRef(() => WabaTemplateService))
     private readonly wabaTemplateService: WabaTemplateService,
     private readonly chatbotTriggerService: ChatbotTriggerService,
+    private readonly whatsappOptoutService: WhatsappOptoutService,
   ) {
     super();
     this.webhookVerifyToken = this.configService.get<string>(
@@ -866,6 +879,57 @@ export class WhatsappService extends BaseLoggerService {
       );
     }
 
+    const inboundText = typeof textBody === 'string' ? textBody.trim() : '';
+
+    if (this.isStartKeyword(inboundText)) {
+      try {
+        await this.whatsappOptoutService.removeByPhoneForProject(
+          projectId,
+          from,
+        );
+        await this.sendTextMessage(
+          adminId,
+          projectId,
+          from,
+          this.optInReplyMessage,
+          undefined,
+        );
+        this.logger.log(
+          `Processed subscribe-again keyword for ${from}, project ${projectId}`,
+        );
+      } catch (startError) {
+        this.logger.error(
+          `Failed to process subscribe-again for ${from}, project ${projectId}`,
+          startError instanceof Error ? startError.stack : startError,
+        );
+      }
+      return;
+    }
+
+    if (this.isStopKeyword(inboundText)) {
+      try {
+        await this.addToOptOutList(projectId, from, 'stop_keyword');
+        // Must skip opt-out gate: user was just added to the list above.
+        await this.sendTextMessage(
+          adminId,
+          projectId,
+          from,
+          this.optOutReplyMessage,
+          undefined,
+          { skipOptOutCheck: true },
+        );
+        this.logger.log(
+          `Added ${from} to opt-out list for project ${projectId} from inbound keyword`,
+        );
+      } catch (optOutError) {
+        this.logger.error(
+          `Failed to process opt-out for ${from}, project ${projectId}`,
+          optOutError instanceof Error ? optOutError.stack : optOutError,
+        );
+      }
+      return;
+    }
+
     // Chatbot triggers: if user sent text, check for a matching trigger and send response
     if (textBody && this.chatbotTriggerService) {
       try {
@@ -932,6 +996,7 @@ export class WhatsappService extends BaseLoggerService {
     recipientPhoneNumber: string,
     text: string,
     contactId?: Types.ObjectId,
+    options?: { skipOptOutCheck?: boolean },
   ) {
     // Send via Meta Graph API using project's phoneNumberId and token
     const project = await this.projectService.findOne(adminId, projectId);
@@ -948,6 +1013,15 @@ export class WhatsappService extends BaseLoggerService {
 
     const formatted = this.formatIndianRecipient(recipientPhoneNumber);
     const normalizedRecipientPhoneNumber = formatted.phoneNumber;
+    if (!options?.skipOptOutCheck) {
+      const optedOut = await this.isOptedOut(
+        projectId,
+        normalizedRecipientPhoneNumber,
+      );
+      if (optedOut) {
+        throw new BadRequestException('opted out');
+      }
+    }
     const payload = {
       messaging_product: 'whatsapp',
       to: normalizedRecipientPhoneNumber,
@@ -2020,6 +2094,35 @@ export class WhatsappService extends BaseLoggerService {
 
     const isValid = /^\+91\d{10}$/.test(candidate);
     return { phoneNumber: isValid ? candidate : input, digitsOnly, isValid };
+  }
+
+  private isStopKeyword(text?: string): boolean {
+    if (!text || typeof text !== 'string') {
+      return false;
+    }
+    return this.optOutKeywords.has(text.trim().toLowerCase());
+  }
+
+  private isStartKeyword(text?: string): boolean {
+    if (!text || typeof text !== 'string') {
+      return false;
+    }
+    return this.optInKeywords.has(text.trim().toLowerCase());
+  }
+
+  private async isOptedOut(
+    projectId: Types.ObjectId | string,
+    phoneNumber: string,
+  ): Promise<boolean> {
+    return this.whatsappOptoutService.isOptedOut(projectId, phoneNumber);
+  }
+
+  private async addToOptOutList(
+    projectId: Types.ObjectId | string,
+    phoneNumber: string,
+    reason = 'stop_keyword',
+  ): Promise<void> {
+    await this.whatsappOptoutService.addToOptOutList(projectId, phoneNumber, reason);
   }
 
   async checkVariableMappingLength({
@@ -3868,6 +3971,36 @@ export class WhatsappService extends BaseLoggerService {
               return;
             }
             uniquePhoneNumbers.add(formatted.phoneNumber);
+
+            const optedOut = await this.isOptedOut(
+              projectId,
+              formatted.phoneNumber,
+            );
+            if (optedOut) {
+              results.failed++;
+              results.errors.push(`${recipientPhoneNumber}: opted out`);
+              await this.createErrorMessage({
+                projectId,
+                adminId,
+                normalizedRecipientPhoneNumber: formatted.phoneNumber,
+                contactId,
+                templateName,
+                error: { message: 'opted out' },
+                language: template.language || 'en_US',
+                templateStructure: baseTemplateStructure.components || [],
+                messageType,
+                messageFormat: 'template',
+                meetingId,
+                occurrenceId,
+                campaignId,
+                attendeeId,
+                apiCampaignId,
+                programId,
+                programAssignmentId,
+                programSlotId,
+              });
+              return;
+            }
 
             // Build template structure with recipient-specific body variables
             const templateStructure =

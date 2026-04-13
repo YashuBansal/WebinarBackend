@@ -77,6 +77,7 @@ import 'winston-daily-rotate-file';
 import { HealthModule } from './health/health.module';
 import { OtelWinstonTransport } from './logger/otel-winston-transport';
 import { PabblyTokenBlacklistModule } from './auth/pabbly-token-blacklist.module';
+import { WhatsappOptoutModule } from './whatsapp-optout/whatsapp-optout.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { PabblyTokenBlacklistModule } from './auth/pabbly-token-blacklist.module
       isGlobal: true,
     }),
     PabblyTokenBlacklistModule,
+    WhatsappOptoutModule,
     WinstonModule.forRoot({
       transports: [
         // Console transport for development

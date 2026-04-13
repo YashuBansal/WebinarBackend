@@ -23,6 +23,7 @@ import { WhatsappWebhookProcessor } from './whatsapp.webhook.processor';
 import { WabaTemplateModule } from 'src/whatsapp-embed/waba-template/waba-template.module';
 import { ChatbotTriggerModule } from 'src/chatbot-trigger/chatbot-trigger.module';
 import { ChatbotTriggerController } from 'src/chatbot-trigger/chatbot-trigger.controller';
+import { WhatsappOptoutModule } from 'src/whatsapp-optout/whatsapp-optout.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ChatbotTriggerController } from 'src/chatbot-trigger/chatbot-trigger.co
     WhatsappQueueModule,
     forwardRef(() => WabaTemplateModule),
     ChatbotTriggerModule,
+    WhatsappOptoutModule,
   ],
   providers: [
     WhatsappService,
