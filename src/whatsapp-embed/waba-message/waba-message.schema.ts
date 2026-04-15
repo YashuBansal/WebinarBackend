@@ -15,6 +15,7 @@ export enum WabaMessageType {
   INDIVIDUAL = 'individual',
   TEMPLATE = 'template',
   AUTO_MESSAGE = 'auto-message',
+  ALARM = 'alarm',
   ZOOM_EVENT = 'zoom-event',
   API_CAMPAIGN = 'api-campaign',
   PROGRAM = 'program',

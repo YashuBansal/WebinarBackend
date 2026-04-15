@@ -16,6 +16,8 @@ import { ConfigService } from '@nestjs/config';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
+import { AlarmWhatsappConfigModule } from 'src/alarm-whatsapp-config/alarm-whatsapp-config.module';
+import { AttendeeAssociationModule } from 'src/attendee-association/attendee-association.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 
     AttendeeLogModule,
     WebsocketModule,
+    forwardRef(() => AlarmWhatsappConfigModule),
+    forwardRef(() => AttendeeAssociationModule),
   ],
   controllers: [AlarmController],
   providers: [AlarmService, SchedulerRegistry, ConfigService],

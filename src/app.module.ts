@@ -64,6 +64,7 @@ import { ZoomModule } from './zoom/zoom.module';
 import { AutomationsModule } from './automations/automations.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebinarAutoMessageModule } from './webinar-auto-message/webinar-auto-message.module';
+import { AlarmWhatsappConfigModule } from './alarm-whatsapp-config/alarm-whatsapp-config.module';
 import { ZoomEventModule } from './zoom/zoom-event/zoom-event.module';
 import { ConfiguredTemplatesModule } from './configured-templates/configured-templates.module';
 import { MeetingEventConfigModule } from './meeting-event-config/meeting-event-config.module';
@@ -219,6 +220,7 @@ import { WhatsappOptoutModule } from './whatsapp-optout/whatsapp-optout.module';
     AutomationsModule,
     WebhooksModule,
     WebinarAutoMessageModule,
+    AlarmWhatsappConfigModule,
     ZoomEventModule,
     ConfiguredTemplatesModule,
     MeetingEventConfigModule,

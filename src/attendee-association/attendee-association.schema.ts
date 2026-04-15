@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { CustomLeadType } from './custom-lead-type.schema';
-import { User } from './User.schema';
+import { CustomLeadType } from '../schemas/custom-lead-type.schema';
+import { User } from '../schemas/User.schema';
 
 @Schema({ timestamps: true })
 export class AttendeeAssociation extends Document {

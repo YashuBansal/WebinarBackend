@@ -5,7 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import {
   AttendeeAssociation,
   AttendeeAssociationSchema,
-} from 'src/schemas/attendee-association.schema';
+} from './attendee-association.schema';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { UsersModule } from 'src/users/users.module';
 import { AttendeeLogModule } from 'src/attendee-log/attendee-log.module';

@@ -9,7 +9,7 @@ import { Attendee, AttendeeSchema } from 'src/schemas/Attendee.schema';
 import {
   AttendeeAssociation,
   AttendeeAssociationSchema,
-} from 'src/schemas/attendee-association.schema';
+} from '../attendee-association/attendee-association.schema';
 import {
   BillingHistory,
   BillingHistorySchema,

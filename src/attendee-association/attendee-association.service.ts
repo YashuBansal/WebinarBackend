@@ -2,7 +2,7 @@ import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, PipelineStage, Types } from 'mongoose';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
-import { AttendeeAssociation } from 'src/schemas/attendee-association.schema';
+import { AttendeeAssociation } from './attendee-association.schema';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
 import { UsersService } from 'src/users/users.service';
 
@@ -83,6 +83,19 @@ export class AttendeeAssociationService {
       .findOne({ adminId: new Types.ObjectId(`${adminId}`), email: email })
       .exec();
     return association ? association : null;
+  }
+
+  async getAssociationWithLeadType(
+    adminId: Types.ObjectId,
+    email: string,
+  ): Promise<any | null> {
+    const association = await this.attendeeAssociationModel
+      .findOne({ adminId: new Types.ObjectId(`${adminId}`), email })
+      .populate('leadType', 'label')
+      .lean()
+      .exec();
+
+    return association || null;
   }
 
   async deleteAttendeeAssociationsByAttendeeEmails(

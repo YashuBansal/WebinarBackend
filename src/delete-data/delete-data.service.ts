@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
 import { Alarm } from 'src/schemas/Alarm.schema';
 import { Assignments } from 'src/schemas/Assignments.schema';
-import { AttendeeAssociation } from 'src/schemas/attendee-association.schema';
+import { AttendeeAssociation } from '../attendee-association/attendee-association.schema';
 import { Attendee } from 'src/schemas/Attendee.schema';
 import { BillingHistory } from 'src/schemas/BillingHistory.schema';
 import { CustomLeadType } from 'src/schemas/custom-lead-type.schema';

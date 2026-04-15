@@ -17,6 +17,8 @@ import { SubscriptionService } from 'src/subscription/subscription.service';
 import { ConfigService } from '@nestjs/config';
 import { AttendeeLogService } from 'src/attendee-log/attendee-log.service';
 import { AttendeeAction } from 'src/schemas/attendee-logs.schema';
+import { AlarmWhatsappConfigService } from 'src/alarm-whatsapp-config/alarm-whatsapp-config.service';
+import { AttendeeAssociationService } from 'src/attendee-association/attendee-association.service';
 @Injectable()
 export class AlarmService {
   constructor(
@@ -28,6 +30,8 @@ export class AlarmService {
     private readonly whatsappService: WhatsappService,
     @Inject(forwardRef(() => SubscriptionService))
     private readonly subscriptionService: SubscriptionService,
+    private readonly alarmWhatsappConfigService: AlarmWhatsappConfigService,
+    private readonly attendeeAssociationService: AttendeeAssociationService,
     private readonly configService: ConfigService,
     private readonly attendeeLogService: AttendeeLogService,
   ) {}
@@ -241,8 +245,40 @@ export class AlarmService {
       reminderType,
     };
 
-    if (alarm.user.phone) {
-      this.whatsappService.callExternalWebhook(msgData);
+    const recipients = this.getAlarmRecipients(alarm);
+    if (recipients.length) {
+      const adminId = this.getAdminIdForAlarm(alarm);
+      if (adminId) {
+        const associationData = await this.fetchAttendeeAssociationData(
+          adminId,
+          alarm?.email,
+        );
+        let sentCount = 0;
+        for (const phoneNumber of recipients) {
+          const contactPayload = await this.buildAlarmTemplateContact(
+            alarm,
+            phoneNumber,
+            reminderType,
+            associationData,
+          );
+          const templateSendResult =
+            await this.alarmWhatsappConfigService.sendForAlarm({
+              adminId,
+              type: 'reminder',
+              contact: contactPayload,
+            });
+
+          if (templateSendResult) sentCount += 1;
+        }
+
+        if (sentCount > 0) return;
+      }
+
+      await this.whatsappService.callExternalWebhook(msgData);
+    } else {
+      this.logger.warn(
+        `No valid recipients found for reminder alarm ${alarm?._id}.`,
+      );
     }
   }
 
@@ -277,12 +313,110 @@ export class AlarmService {
       isReminder: false,
     };
 
-    if (alarm.user.phone) {
+    const recipients = this.getAlarmRecipients(alarm);
+    if (recipients.length) {
+      const adminId = this.getAdminIdForAlarm(alarm);
+      if (adminId) {
+        const associationData = await this.fetchAttendeeAssociationData(
+          adminId,
+          alarm?.email,
+        );
+        let sentCount = 0;
+        for (const phoneNumber of recipients) {
+          const contactPayload = await this.buildAlarmTemplateContact(
+            alarm,
+            phoneNumber,
+            'main',
+            associationData,
+          );
+          const templateSendResult =
+            await this.alarmWhatsappConfigService.sendForAlarm({
+              adminId,
+              type: 'main',
+              contact: contactPayload,
+            });
+
+          if (templateSendResult) sentCount += 1;
+        }
+
+        if (sentCount > 0) return;
+      }
+
       await this.whatsappService.callExternalWebhook(msgData);
+    } else {
+      this.logger.warn(`No valid recipients found for main alarm ${alarm?._id}.`);
     }
   }
 
-  private async getSubscriptionForAlarm(alarm: any): Promise<any> {
+  private getAlarmRecipients(alarm: any): string[] {
+    const values = [alarm?.user?.phone, alarm?.secondaryNumber]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value) => !!value);
+
+    return Array.from(new Set(values));
+  }
+
+  private async buildAlarmTemplateContact(
+    alarm: any,
+    phoneNumber: string,
+    reminderType: string,
+    associationData?: any | null,
+  ) {
+    const fullNames: string[] = Array.isArray(associationData?.fullNames)
+      ? associationData.fullNames
+      : [];
+    const phones: string[] = Array.isArray(associationData?.phones)
+      ? associationData.phones
+      : [];
+    const tags: string[] = Array.isArray(associationData?.tags)
+      ? associationData.tags
+      : [];
+    const leadTypeLabel =
+      associationData?.leadType &&
+      typeof associationData.leadType === 'object' &&
+      'label' in associationData.leadType
+        ? String((associationData.leadType as any).label || '')
+        : '';
+
+    return {
+      phoneNumber,
+      userName: alarm?.user?.userName,
+      email: alarm?.email,
+      note: alarm?.note,
+      alarmDate: alarm?.date?.toISOString?.(),
+      reminderType,
+      attendeePhone: alarm?.attendeePhone || '',
+      attendeeFirstName: fullNames[0] || '',
+      attendeeFullNames: fullNames.join(', '),
+      attendeePhones: phones.join(', '),
+      attendeeTags: tags.join(', '),
+      attendeeLeadType: leadTypeLabel,
+    };
+  }
+
+  private async fetchAttendeeAssociationData(
+    adminId: string,
+    email?: string,
+  ): Promise<any | null> {
+    if (!email) return null;
+    try {
+      return await this.attendeeAssociationService.getAssociationWithLeadType(
+        new Types.ObjectId(adminId),
+        email,
+      );
+    } catch (error: any) {
+      this.logger.warn(
+        `Failed to fetch attendee association for admin ${adminId}, email ${email}: ${error?.message || 'unknown error'}`,
+      );
+      return null;
+    }
+  }
+
+  private getAdminIdForAlarm(alarm: any): string | null {
+    if (alarm?.adminId) {
+      return String(alarm.adminId);
+    }
+
     const user = alarm?.user;
     if (!user) return null;
 
@@ -290,6 +424,13 @@ export class AlarmService {
       String(user.role) === this.configService.get('appRoles')['ADMIN']
         ? user._id
         : user.adminId;
+
+    return adminId ? String(adminId) : null;
+  }
+
+  private async getSubscriptionForAlarm(alarm: any): Promise<any> {
+    const adminId = this.getAdminIdForAlarm(alarm);
+    if (!adminId) return null;
 
     return this.subscriptionService.getSubscription(adminId);
   }

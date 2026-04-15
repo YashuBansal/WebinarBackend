@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { AppModule } from '../src/app.module';
-import { AttendeeAssociation } from '../src/schemas/attendee-association.schema';
+import { AttendeeAssociation } from '../src/attendee-association/attendee-association.schema';
 
 type AttendeeAssociationDocument = AttendeeAssociation & Document;
 

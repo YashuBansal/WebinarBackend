@@ -5,7 +5,7 @@ import { Document, Model, Types } from 'mongoose';
 
 import { AppModule } from '../src/app.module';
 import { Attendee } from '../src/schemas/Attendee.schema';
-import { AttendeeAssociation } from '../src/schemas/attendee-association.schema';
+import { AttendeeAssociation } from '../src/attendee-association/attendee-association.schema';
 
 type AttendeeDocument = Attendee & Document;
 type AttendeeAssociationDocument = AttendeeAssociation & Document;
