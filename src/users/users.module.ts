@@ -72,6 +72,7 @@ export class UsersModule {
         { path: 'users/employee*', method: RequestMethod.ALL },
         { path: 'users/document*', method: RequestMethod.DELETE },
         { path: 'users/super-admin', method: RequestMethod.GET },
+        { path: 'users/verify-admin-token', method: RequestMethod.GET },
       );
 
     consumer.apply(AuthSuperAdminMiddleware).forRoutes(

@@ -203,4 +203,13 @@ export class UsersController {
   async getClientsforDropdown() {
     return await this.usersService.getClientsForDropdown();
   }
+
+  @Get('verify-admin-token')
+  async verifyAdminToken(@Id() id: string) {
+    const user = await this.usersService.getUserById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return { email: user.email };
+  }
 }
