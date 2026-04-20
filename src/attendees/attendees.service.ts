@@ -4606,4 +4606,26 @@ export class AttendeesService {
       );
     }
   }
+
+  /**
+   * Exact count of distinct non-empty attendee emails (global, all tenants).
+   * Uses indexed email field, allowDiskUse for large $group working sets.
+   */
+  async countDistinctAttendeeEmails(): Promise<number> {
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          email: { $type: 'string', $nin: ['', null] },
+        },
+      },
+      { $group: { _id: '$email' } },
+      { $count: 'count' },
+    ];
+
+    const result = await this.attendeeModel
+      .aggregate(pipeline, { allowDiskUse: true, hint: { email: 1 } })
+      .exec();
+
+    return result[0]?.count ?? 0;
+  }
 }

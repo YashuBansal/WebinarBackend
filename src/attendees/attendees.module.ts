@@ -27,6 +27,7 @@ import { CustomLeadTypeModule } from 'src/custom-lead-type/custom-lead-type.modu
 import { WebsocketModule } from 'src/websocket/websocket.module';
 import { WebinarParticipantModule } from 'src/webinar-participant/webinar-participant.module';
 import { TagsModule } from 'src/tags/tags.module';
+import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 
 @Module({
   imports: [
@@ -57,6 +58,11 @@ import { TagsModule } from 'src/tags/tags.module';
 })
 export class AttendeesModule {
   configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuthSuperAdminMiddleware).forRoutes({
+      path: 'attendees/metrics/unique-email-count',
+      method: RequestMethod.GET,
+    });
+
     consumer.apply(AuthAdminTokenMiddleware).forRoutes(
       { path: 'attendees', method: RequestMethod.POST },
       { path: 'attendees/invalid-tags', method: RequestMethod.GET },
@@ -86,6 +92,10 @@ export class AttendeesModule {
         { path: 'attendees/webinar', method: RequestMethod.GET },
         { path: 'attendees/grouped', method: RequestMethod.ALL },
         { path: 'attendees/advance-filters', method: RequestMethod.POST },
+        {
+          path: 'attendees/metrics/unique-email-count',
+          method: RequestMethod.GET,
+        },
       )
       .forRoutes(
         { path: 'attendees', method: RequestMethod.GET },

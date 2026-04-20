@@ -132,6 +132,16 @@ export class AttendeesController {
     return { ...result, processingTime };
   }
 
+  @Get('metrics/unique-email-count')
+  async getUniqueAttendeeEmailCount(): Promise<{
+    success: boolean;
+    uniqueEmailCount: number;
+  }> {
+    const uniqueEmailCount =
+      await this.attendeesService.countDistinctAttendeeEmails();
+    return { success: true, uniqueEmailCount };
+  }
+
   @Get(':email')
   async getAttendee(
     @Param('email') email: string,
