@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { User } from './User.schema';
+import { User } from '../schemas/User.schema';
 
 @Schema({ timestamps: true })
 export class Subscription extends Document {
@@ -114,6 +114,12 @@ export class Subscription extends Document {
     default: 0,
   })
   contactCount: number;
+
+  @Prop({ type: String, required: false })
+  razorpaySubscriptionId?: string;
+
+  @Prop({ type: String, required: false })
+  razorpaySubscriptionStatus?: string;
 }
 
 const SubscriptionSchema = SchemaFactory.createForClass(Subscription);

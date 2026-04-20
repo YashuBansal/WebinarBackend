@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { User } from './User.schema';
-import { Subscription } from './Subscription.schema';
+import { Subscription } from '../subscription/Subscription.schema';
 import { AddOn } from './addon.schema';
 
 export enum AddonPurchaseStatus {

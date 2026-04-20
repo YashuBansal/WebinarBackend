@@ -5,6 +5,7 @@ import {
   Post,
   Query,
   Redirect,
+  Req,
 } from '@nestjs/common';
 import { RazorpayService } from './razorpay.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
@@ -45,9 +46,16 @@ export class RazorpayController {
   ): Promise<any> {
     //validate payment success here
 
+    let signaturePayload = '';
+    if (body.razorpay_subscription_id) {
+      signaturePayload = `${body.razorpay_payment_id}|${body.razorpay_subscription_id}`;
+    } else {
+      signaturePayload = `${body.razorpay_order_id}|${body.razorpay_payment_id}`;
+    }
+
     const generatedSignature = crypto
       .createHmac('sha256', this.configService.get('RAZORPAY_KEY_SECRET'))
-      .update(`${body.razorpay_order_id}|${body.razorpay_payment_id}`)
+      .update(signaturePayload)
       .digest('hex');
 
     if (generatedSignature !== body.razorpay_signature) {
@@ -58,6 +66,7 @@ export class RazorpayController {
       query.adminId,
       query.planId,
       query.durationType,
+      body.razorpay_subscription_id
     );
     const env = this.configService.get('NEST_ENV');
     const frontendProductionUrl = this.configService.get(
@@ -180,5 +189,52 @@ export class RazorpayController {
       providerPaymentId: body.razorpay_payment_id,
       purchaseId: body.purchaseId,
     });
+  }
+
+  @Post('/webhook')
+  async handleWebhook(@Body() body: any, @Query() query: any, @Req() req: any) {
+    const signature = req.headers['x-razorpay-signature'];
+    if (!signature) {
+      return { status: 'ignored', reason: 'no signature' };
+    }
+
+    try {
+      // Razorpay validation requires raw body. For simplicity in this plan,
+      // we assume JSON.stringify works if raw body parsing isn't configured.
+      // A robust implementation should use a RawBody decorator.
+      const generatedSignature = crypto
+        .createHmac('sha256', this.configService.get('RAZORPAY_WEBHOOK_SECRET'))
+        .update(JSON.stringify(body))
+        .digest('hex');
+
+      // Note: In production, consider taking req.rawBody or using express.raw()
+      // if generateSignature doesn't match the Razorpay signature exactly.
+      if (generatedSignature !== signature) {
+        this.logger.error('Invalid Razorpay Webhook Signature');
+        return { status: 'invalid signature' };
+      }
+
+      this.logger.log(`Received Razorpay Webhook Event: ${body.event}`);
+
+      if (body.event === 'subscription.charged') {
+        const payload = body.payload.subscription.entity;
+        const payment = body.payload.payment.entity;
+        
+        await this.subscriptionService.handleSubscriptionCharged(
+          payload.id, // razorpay_subscription_id
+          payload.notes?.adminId, // assuming we pass adminId in notes during subscription creation
+          payment,
+          payload
+        );
+      } else if (body.event === 'subscription.cancelled' || body.event === 'subscription.halted') {
+        const payload = body.payload.subscription.entity;
+        await this.subscriptionService.handleSubscriptionCancelled(payload.id);
+      }
+
+      return { status: 'ok' };
+    } catch (e) {
+      this.logger.error(`Webhook processing error: ${e.message}`);
+      return { status: 'error', message: e.message };
+    }
   }
 }

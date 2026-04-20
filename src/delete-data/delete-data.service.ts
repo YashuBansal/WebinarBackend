@@ -13,7 +13,7 @@ import { Location } from 'src/schemas/location.schema';
 import { Notes } from 'src/schemas/Notes.schema';
 import { NoticeBoard } from 'src/schemas/notice-board.schema';
 import { Notification } from 'src/schemas/notification.schema';
-import { Plans } from 'src/schemas/Plans.schema';
+import { Plans } from 'src/plans/Plans.schema';
 import { Products } from 'src/schemas/Products.schema';
 import { StatusDropdown } from 'src/schemas/StatusDropdown.schema';
 import { User } from 'src/schemas/User.schema';
@@ -25,7 +25,7 @@ import { Tag } from 'src/schemas/tags.schema';
 import { UserDocuments } from 'src/schemas/user-documents.schema';
 import { ApiAccessToken } from 'src/schemas/api-token.schema';
 import { AttendeeLog } from 'src/schemas/attendee-logs.schema';
-import { Subscription } from 'src/schemas/Subscription.schema';
+import { Subscription } from 'src/subscription/Subscription.schema';
 import { WebinarParticipant } from 'src/schemas/webinar-participant.schema';
 @Injectable()
 export class DeleteDataService {

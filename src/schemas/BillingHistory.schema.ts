@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { Plans } from './Plans.schema';
+import { Plans } from '../plans/Plans.schema';
 import { User } from './User.schema';
 import { AddOn } from './addon.schema';
 import { AddonPurchase } from './AddonPurchase.schema';

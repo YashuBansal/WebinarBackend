@@ -62,6 +62,24 @@ export class RazorpayService {
       throw new BadRequestException('You cannot downgrade the plan');
     }
 
+    const durationConfig = planData.planDurationConfig.get(durationType);
+    if (durationConfig && durationConfig.razorpayPlanId) {
+      // If a razorpayPlanId exists, use the Subscriptions API
+      const instance = new Razorpay({
+        key_id: this.configService.get('RAZORPAY_KEY_ID'),
+        key_secret: this.configService.get('RAZORPAY_KEY_SECRET'),
+      });
+
+      const result = await instance.subscriptions.create({
+        plan_id: durationConfig.razorpayPlanId,
+        total_count: 120, // max iterations for recurring
+        customer_notify: 1,
+        // No total amount here, it's determined by the Razorpay Plan
+      });
+
+      return { planData, result };
+    }
+
     const result = await this.createOrder(totalWithGST);
     return { planData, result };
   }

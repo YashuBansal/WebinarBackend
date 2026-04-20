@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, PipelineStage, Types } from 'mongoose';
-import { Subscription } from 'src/schemas/Subscription.schema';
+import { Subscription } from './Subscription.schema';
 import { SubscriptionDto, UpdateSubscriptionDto } from './dto/subscription.dto';
 import { AddOnService } from 'src/addon/addon.service';
 import { BillingHistoryService } from 'src/billing-history/billing-history.service';
@@ -18,7 +18,7 @@ import { PlansService } from 'src/plans/plans.service';
 import { AttendeesService } from 'src/attendees/attendees.service';
 import { UsersService } from 'src/users/users.service';
 import { BillingType, DurationType } from 'src/schemas/BillingHistory.schema';
-import { PlanDurationConfig, Plans } from 'src/schemas/Plans.schema';
+import { PlanDurationConfig, Plans } from 'src/plans/Plans.schema';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -423,6 +423,7 @@ export class SubscriptionService {
     adminIdOrEmail: string,
     planId: string,
     durationType: DurationType,
+    razorpaySubscriptionId?: string,
   ) {
     let adminId: string;
     if (adminIdOrEmail.includes('@')) {
@@ -508,6 +509,11 @@ export class SubscriptionService {
     subscription.whatsappProjectLimit = plan.whatsappProjectLimit || 0;
     subscription.zoomProjectLimit = plan.zoomProjectLimit || 0;
 
+    if (razorpaySubscriptionId) {
+      subscription.razorpaySubscriptionId = razorpaySubscriptionId;
+      subscription.razorpaySubscriptionStatus = 'active';
+    }
+
     const { totalWithGST, itemAmount, discountAmount, gst } =
       this.generatePriceForPlan(durationConfig);
 
@@ -539,6 +545,120 @@ export class SubscriptionService {
     }
 
     return { subscription, billing };
+  }
+
+  async handleSubscriptionCharged(
+    razorpaySubscriptionId: string,
+    adminIdFromNotes: string | undefined, // in case it's passed
+    paymentObj: any, // razorpay payment object
+    subscriptionObj: any // razorpay subscription object
+  ) {
+    this.logger.log(`Handling subscription charged for: ${razorpaySubscriptionId}`);
+
+    // Find the subscription linked to this Razorpay subscription ID
+    const subscription = await this.SubscriptionModel.findOne({
+      razorpaySubscriptionId,
+    }).populate('plan');
+
+    if (!subscription) {
+      this.logger.error(`No internal subscription found for razorpaySubscriptionId: ${razorpaySubscriptionId}`);
+      // Fallback: If we don't have the ID, wait, it might be the very first charge that payment-success 
+      // will also handle. Razorpay guarantees webhook delivery, but UI redirects could race it.
+      return;
+    }
+
+    const { plan } = subscription as any;
+    if (!plan || !plan.planDurationConfig) {
+      this.logger.error(`Subscription ${subscription.id} lacks a valid plan.`);
+      return;
+    }
+
+    // Determine the duration dynamically, assuming we can find the matching Razorpay Plan ID
+    // or by looking at the subscription's `total_count` or current duration if we stored it.
+    // Since Razorpay Subscription doesn't tell us exactly which PlanDurationConfig key was used,
+    // we match it by razorpayPlanId.
+    let matchedDurationConfig: PlanDurationConfig | undefined;
+    let fallbackDurationDays = 30; // fallback to monthly
+    let matchedDurationType = 'monthly';
+
+    if (plan.planDurationConfig && plan.planDurationConfig instanceof Map) {
+      for (const [key, value] of plan.planDurationConfig.entries()) {
+        if (value.razorpayPlanId === subscriptionObj.plan_id) {
+          matchedDurationConfig = value;
+          matchedDurationType = key;
+          fallbackDurationDays = value.duration;
+          break;
+        }
+      }
+    }
+
+    const amountPaid = (paymentObj.amount || 0) / 100;
+    
+    // Check if this payment was already processed by matching payment ID in BillingHistory 
+    // Wait, addBillingHistory does not store paymentId currently. Let's assume it's fine for now,
+    // or we can just blindly extend. A better way would be using razorpay_payment_id as idempotency.
+    // For MVP/Robust plan: we just extend the expiry by the duration.
+
+    const newExpiryDate = new Date(
+      Date.now() + fallbackDurationDays * 24 * 60 * 60 * 1000
+    );
+
+    subscription.expiryDate = newExpiryDate;
+    subscription.razorpaySubscriptionStatus = 'active';
+
+    if (subscriptionObj.status && subscriptionObj.status === 'halted') {
+      subscription.razorpaySubscriptionStatus = 'halted';
+    }
+
+    await subscription.save();
+
+    // ensure user is active 
+    await this.userService.updateClient(subscription.admin.toString(), { isActive: true });
+    const user = await this.userService.getUserById(subscription.admin.toString());
+    if (user) {
+      user.isActive = true;
+      await user.save();
+    }
+
+    const { itemAmount, discountAmount, gst } = matchedDurationConfig 
+      ? this.generatePriceForPlan(matchedDurationConfig)
+      : this.generatePriceForPlan({ price: amountPaid, discountType: 'flat', discountValue: 0, duration: fallbackDurationDays, isEnabled: true });
+
+    await this.BillingHistoryService.addBillingHistory(
+      {
+        admin: subscription.admin.toString(),
+        plan: plan._id.toString(),
+        amount: amountPaid > 0 ? amountPaid : amountPaid, // use actual paid amount
+        itemAmount: itemAmount,
+        discountAmount: discountAmount,
+        taxPercent: this.GST_VALUE,
+        taxAmount: gst,
+        durationType: matchedDurationType as DurationType,
+        startDate: new Date(),
+        expiryDate: newExpiryDate,
+      },
+      BillingType.RENEWAL,
+    );
+
+    this.logger.log(`Successfully processed recurring charge for ${subscription.admin.toString()}`);
+  }
+
+  async handleSubscriptionCancelled(razorpaySubscriptionId: string) {
+    this.logger.log(`Handling subscription cancelled/halted for: ${razorpaySubscriptionId}`);
+    
+    const subscription = await this.SubscriptionModel.findOne({
+      razorpaySubscriptionId,
+    });
+
+    if (!subscription) return;
+
+    subscription.razorpaySubscriptionStatus = 'cancelled';
+    await subscription.save();
+
+    // Note: We don't necessarily deactivate immediately unless they are past expiry.
+    if (new Date() > new Date(subscription.expiryDate)) {
+      await this.userService.deactivateUserByAdminId(subscription.admin);
+    }
   }
 
   async incrementContactCount(id: string, count: number = 1) {

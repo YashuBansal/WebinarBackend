@@ -10,7 +10,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import {
   Subscription,
   SubscriptionSchema,
-} from 'src/schemas/Subscription.schema';
+} from './Subscription.schema';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { UsersModule } from 'src/users/users.module';

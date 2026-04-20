@@ -27,7 +27,7 @@ import {
 import {
   Subscription,
   SubscriptionSchema,
-} from 'src/schemas/Subscription.schema';
+} from 'src/subscription/Subscription.schema';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 import { Alarm, AlarmSchema } from 'src/schemas/Alarm.schema';
 import {
@@ -61,7 +61,7 @@ import {
   UserDocuments,
   UserDocumentsSchema,
 } from 'src/schemas/user-documents.schema';
-import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
+import { Plans, PlansSchema } from 'src/plans/Plans.schema';
 import { UsersModule } from 'src/users/users.module';
 import {
   ApiAccessToken,

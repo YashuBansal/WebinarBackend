@@ -12,7 +12,28 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { PlanType } from 'src/schemas/Plans.schema';
+import { PlanType } from '../Plans.schema';
+
+export class PlanDurationConfigDto {
+  @IsNumber()
+  duration: number;
+
+  @IsString()
+  discountType: string;
+
+  @IsNumber()
+  discountValue: number;
+
+  @IsNumber()
+  price: number;
+
+  @IsBoolean()
+  isEnabled: boolean;
+
+  @IsOptional()
+  @IsString()
+  razorpayPlanId?: string;
+}
 
 export class CreatePlansDto {
   @IsString()
@@ -101,7 +122,7 @@ export class CreatePlansDto {
 
   @IsObject()
   @IsNotEmpty()
-  planDurationConfig: Map<string, any>;
+  planDurationConfig: Map<string, PlanDurationConfigDto>;
 }
 
 class PlanDTO {

@@ -155,6 +155,7 @@ export class SubscriptionAddonService {
           },
           addOnId: '$addOn',
           status: '$status',
+          startAt: '$startAt',
         },
       },
     ]).exec();
