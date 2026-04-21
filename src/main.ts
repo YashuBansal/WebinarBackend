@@ -32,10 +32,10 @@ async function bootstrap() {
         'https://da5f61e2268f.ngrok-free.app',
         'https://dashboard.webinarleadshub.com',
         'https://msg.webinarleadshub.com',
-        'https://livezoom.webinarleadshub.com',
+        'https://live.webinarleadshub.com',
         'https://dashboard.ajaybansal.com',
         'https://msg.ajaybansal.com',
-        'https://livezoom.ajaybansal.com',
+        'https://live.ajaybansal.com',
       ];
 
       // allow requests with no origin (e.g., Postman)
