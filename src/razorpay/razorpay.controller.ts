@@ -59,7 +59,7 @@ export class RazorpayController {
       .digest('hex');
 
     if (generatedSignature !== body.razorpay_signature) {
-      return { url: 'http://localhost:5173/failed' };
+      return { url: 'http://localhost:5174/failed' };
     }
 
     const planUpdate = await this.subscriptionService.updateClientPlan(
@@ -77,14 +77,14 @@ export class RazorpayController {
       return {
         url:
           env === 'development'
-            ? 'http://localhost:5173/plans'
+            ? 'http://localhost:5174/plans'
             : `${frontendProductionUrl}/plans`,
       };
     } else {
       return {
         url:
           env === 'development'
-            ? 'http://localhost:5173/failed'
+            ? 'http://localhost:5174/failed'
             : `${frontendProductionUrl}/failed`,
       };
     }
@@ -137,7 +137,7 @@ export class RazorpayController {
       .digest('hex');
 
     if (generatedSignature !== body.razorpay_signature) {
-      return { url: 'http://localhost:5173/failed' };
+      return { url: 'http://localhost:5174/failed' };
     }
 
     const finalizeResult =
@@ -154,14 +154,14 @@ export class RazorpayController {
       return {
         url:
           env === 'development'
-            ? `http://localhost:5173/addons/${query.adminId}?purchaseId=${finalizeResult.purchaseId}`
+            ? `http://localhost:5174/addons/${query.adminId}?purchaseId=${finalizeResult.purchaseId}`
             : `${frontendProductionUrl}/addons/${query.adminId}?purchaseId=${finalizeResult.purchaseId}`,
       };
     } else {
       return {
         url:
           env === 'development'
-            ? 'http://localhost:5173/failed'
+            ? 'http://localhost:5174/failed'
             : `${frontendProductionUrl}/failed`,
       };
     }
@@ -194,7 +194,21 @@ export class RazorpayController {
   @Post('/webhook')
   async handleWebhook(@Body() body: any, @Query() query: any, @Req() req: any) {
     const signature = req.headers['x-razorpay-signature'];
+    this.logger.log(
+      JSON.stringify({
+        scope: 'RazorpayWebhook',
+        phase: 'received',
+        body: JSON.stringify(body),
+      }),
+    );
     if (!signature) {
+      this.logger.warn(
+        JSON.stringify({
+          scope: 'RazorpayWebhook',
+          outcome: 'ignored',
+          reason: 'missing_x_razorpay_signature_header',
+        }),
+      );
       return { status: 'ignored', reason: 'no signature' };
     }
 
@@ -210,31 +224,88 @@ export class RazorpayController {
       // Note: In production, consider taking req.rawBody or using express.raw()
       // if generateSignature doesn't match the Razorpay signature exactly.
       if (generatedSignature !== signature) {
-        this.logger.error('Invalid Razorpay Webhook Signature');
+        this.logger.warn(
+          JSON.stringify({
+            scope: 'RazorpayWebhook',
+            outcome: 'rejected',
+            reason: 'signature_mismatch',
+            event: body?.event ?? null,
+          }),
+        );
         return { status: 'invalid signature' };
       }
 
-      this.logger.log(`Received Razorpay Webhook Event: ${body.event}`);
+      this.logger.log(
+        JSON.stringify({
+          scope: 'RazorpayWebhook',
+          phase: 'verified',
+          event: body?.event ?? null,
+          hasSubscriptionEntity: Boolean(
+            body?.payload?.subscription?.entity,
+          ),
+          hasPaymentEntity: Boolean(body?.payload?.payment?.entity),
+        }),
+      );
 
       if (body.event === 'subscription.charged') {
         const payload = body.payload.subscription.entity;
         const payment = body.payload.payment.entity;
-        
+
         await this.subscriptionService.handleSubscriptionCharged(
           payload.id, // razorpay_subscription_id
           payload.notes?.adminId, // assuming we pass adminId in notes during subscription creation
           payment,
-          payload
+          payload,
         );
-      } else if (body.event === 'subscription.cancelled' || body.event === 'subscription.halted') {
+
+        this.logger.log(
+          JSON.stringify({
+            scope: 'RazorpayWebhook',
+            phase: 'handled',
+            event: 'subscription.charged',
+            subscriptionId: payload.id,
+            paymentId: payment?.id ?? null,
+            adminIdFromNotes: payload.notes?.adminId ?? null,
+          }),
+        );
+      } else if (
+        body.event === 'subscription.cancelled' ||
+        body.event === 'subscription.halted'
+      ) {
         const payload = body.payload.subscription.entity;
         await this.subscriptionService.handleSubscriptionCancelled(payload.id);
+
+        this.logger.log(
+          JSON.stringify({
+            scope: 'RazorpayWebhook',
+            phase: 'handled',
+            event: body.event,
+            subscriptionId: payload.id,
+          }),
+        );
+      } else {
+        this.logger.log(
+          JSON.stringify({
+            scope: 'RazorpayWebhook',
+            phase: 'noop',
+            event: body?.event ?? null,
+            reason: 'unhandled_event_type',
+          }),
+        );
       }
 
       return { status: 'ok' };
     } catch (e) {
-      this.logger.error(`Webhook processing error: ${e.message}`);
-      return { status: 'error', message: e.message };
+      const err = e instanceof Error ? e : new Error(String(e));
+      this.logger.error(
+        JSON.stringify({
+          scope: 'RazorpayWebhook',
+          phase: 'error',
+          message: err.message,
+          stack: err.stack ?? null,
+        }),
+      );
+      return { status: 'error', message: err.message };
     }
   }
 }
