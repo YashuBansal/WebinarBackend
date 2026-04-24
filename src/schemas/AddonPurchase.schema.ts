@@ -46,6 +46,10 @@ export class AddonPurchase extends Document {
   @Prop({ type: String })
   providerRazorpaySubscriptionId?: string;
 
+  /** Razorpay subscription.status (e.g. active, halted, cancelled, completed). */
+  @Prop({ type: String })
+  providerRazorpaySubscriptionStatus?: string;
+
   @Prop({ type: String })
   providerPaymentId?: string;
 
@@ -90,6 +94,9 @@ AddonPurchaseSchema.pre('save', function (next) {
   if (this.providerOrderId === null) this.providerOrderId = undefined;
   if (this.providerRazorpaySubscriptionId === null) {
     this.providerRazorpaySubscriptionId = undefined;
+  }
+  if (this.providerRazorpaySubscriptionStatus === null) {
+    this.providerRazorpaySubscriptionStatus = undefined;
   }
   if (this.providerPaymentId === null) this.providerPaymentId = undefined;
   next();

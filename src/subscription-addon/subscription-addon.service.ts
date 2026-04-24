@@ -112,11 +112,35 @@ export class SubscriptionAddonService {
         },
       },
       {
+        $lookup: {
+          from: 'addonpurchases',
+          localField: 'purchase',
+          foreignField: '_id',
+          as: 'purchaseDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$purchaseDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
         $project: {
           addonName: {
             $ifNull: ['$benefitsSnapshot.addonName', '$addOnDetails.addonName'],
           },
           expiryDate: '$expiryDate',
+          providerRazorpaySubscriptionId:
+            '$purchaseDetails.providerRazorpaySubscriptionId',
+          providerRazorpaySubscriptionStatus:
+            '$purchaseDetails.providerRazorpaySubscriptionStatus',
+          validityInDays: {
+            $ifNull: [
+              '$benefitsSnapshot.validityInDays',
+              '$addOnDetails.validityInDays',
+            ],
+          },
           employeeLimit: {
             $ifNull: [
               '$benefitsSnapshot.employeeLimit',
@@ -169,5 +193,16 @@ export class SubscriptionAddonService {
     )
       .lean()
       .exec();
+  }
+
+  async setSubscriptionAddonExpiryByPurchaseId(
+    purchaseId: string,
+    expiryDate: Date,
+  ): Promise<void> {
+    if (!Types.ObjectId.isValid(purchaseId)) return;
+    await this.SubscriptionAddOnModel.updateOne(
+      { purchase: new Types.ObjectId(purchaseId) },
+      { $set: { expiryDate, status: UserAddonStatus.ACTIVE } },
+    ).exec();
   }
 }

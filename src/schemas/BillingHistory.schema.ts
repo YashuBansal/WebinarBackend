@@ -138,10 +138,8 @@ const BillingHistorySchema = SchemaFactory.createForClass(BillingHistory);
 BillingHistorySchema.index({ date: 1 });
 BillingHistorySchema.index({ admin: 1, date: 1 });
 BillingHistorySchema.index({ invoiceNumber: 1 }, { unique: true });
-BillingHistorySchema.index(
-  { addonPurchase: 1 },
-  { unique: true, sparse: true },
-);
+// Non-unique: multiple invoices may reference the same addon purchase (recurring renewals).
+BillingHistorySchema.index({ addonPurchase: 1 }, { sparse: true });
 BillingHistorySchema.index(
   { razorpayPaymentId: 1 },
   { unique: true, sparse: true },

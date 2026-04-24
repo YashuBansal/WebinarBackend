@@ -601,6 +601,15 @@ export class SubscriptionService {
   ) {
     this.logger.log(`Handling subscription charged for: ${razorpaySubscriptionId}`);
 
+    const rzpSubStatus =
+      subscriptionObj && typeof subscriptionObj.status === 'string'
+        ? subscriptionObj.status
+        : undefined;
+    await this.addonPurchaseService.syncProviderSubscriptionStatus(
+      razorpaySubscriptionId,
+      rzpSubStatus,
+    );
+
     const payId = typeof paymentObj?.id === 'string' ? paymentObj.id : null;
 
     if (payId) {
@@ -723,16 +732,30 @@ export class SubscriptionService {
     this.logger.log(`Successfully processed recurring charge for ${subscription.admin.toString()}`);
   }
 
-  async handleSubscriptionCancelled(razorpaySubscriptionId: string) {
+  async handleSubscriptionCancelled(
+    razorpaySubscriptionId: string,
+    providerStatus: string = 'cancelled',
+  ) {
     this.logger.log(`Handling subscription cancelled/halted for: ${razorpaySubscriptionId}`);
-    
+
+    const normalized =
+      typeof providerStatus === 'string' && providerStatus.trim()
+        ? providerStatus.trim().toLowerCase()
+        : 'cancelled';
+
     const subscription = await this.SubscriptionModel.findOne({
       razorpaySubscriptionId,
     });
 
-    if (!subscription) return;
+    if (!subscription) {
+      await this.addonPurchaseService.syncProviderSubscriptionStatus(
+        razorpaySubscriptionId,
+        normalized,
+      );
+      return;
+    }
 
-    subscription.razorpaySubscriptionStatus = 'cancelled';
+    subscription.razorpaySubscriptionStatus = normalized;
     await subscription.save();
 
     // Note: We don't necessarily deactivate immediately unless they are past expiry.

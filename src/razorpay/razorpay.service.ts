@@ -342,7 +342,7 @@ export class RazorpayService {
     try {
       const result = await instance.subscriptions.create({
         plan_id: planId,
-        total_count: 1,
+        total_count: 120, // max iterations for recurring (parity with plan checkout)
         customer_notify: 1,
         notes: {
           purpose: 'addon_purchase',

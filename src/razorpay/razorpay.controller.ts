@@ -301,7 +301,12 @@ export class RazorpayController {
         body.event === 'subscription.halted'
       ) {
         const payload = body.payload.subscription.entity;
-        await this.subscriptionService.handleSubscriptionCancelled(payload.id);
+        const providerStatus =
+          body.event === 'subscription.halted' ? 'halted' : 'cancelled';
+        await this.subscriptionService.handleSubscriptionCancelled(
+          payload.id,
+          providerStatus,
+        );
 
         this.logger.log(
           JSON.stringify({
