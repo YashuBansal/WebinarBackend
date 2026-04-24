@@ -9,7 +9,9 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PlanType } from '../Plans.schema';
@@ -30,8 +32,12 @@ export class PlanDurationConfigDto {
   @IsBoolean()
   isEnabled: boolean;
 
-  @IsOptional()
+  @ValidateIf((o) => o.isEnabled === true)
   @IsString()
+  @IsNotEmpty()
+  @Matches(/^plan_[A-Za-z0-9]+$/i, {
+    message: 'razorpayPlanId must be a Razorpay Subscriptions plan id (e.g. plan_xxx)',
+  })
   razorpayPlanId?: string;
 }
 

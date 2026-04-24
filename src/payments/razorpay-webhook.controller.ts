@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   Controller,
+  forwardRef,
   Headers,
+  Inject,
   Post,
   Req,
   Body,
@@ -16,6 +18,7 @@ import { RazorpayConfirmAddonDto } from './dto/razorpay-confirm-addon.dto';
 export class RazorpayWebhookController {
   constructor(
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => AddonPurchaseService))
     private readonly addonPurchaseService: AddonPurchaseService,
   ) {}
 
@@ -58,7 +61,8 @@ export class RazorpayWebhookController {
       const payment = payload?.payload?.payment?.entity;
       const providerOrderId = payment?.order_id;
       const providerPaymentId = payment?.id;
-      const purchaseId = payment?.notes?.purchaseId;
+      const notes = payment?.notes || {};
+      const purchaseId = notes?.purchaseId;
 
       if (!providerOrderId || !providerPaymentId) {
         throw new BadRequestException('Malformed payment.captured payload');
@@ -81,9 +85,17 @@ export class RazorpayWebhookController {
    */
   @Post('confirm-addon')
   async confirmAddon(@Body() body: RazorpayConfirmAddonDto) {
+    const signaturePayload = body.razorpay_subscription_id
+      ? `${body.razorpay_payment_id}|${body.razorpay_subscription_id}`
+      : body.razorpay_order_id
+        ? `${body.razorpay_order_id}|${body.razorpay_payment_id}`
+        : '';
+    if (!signaturePayload) {
+      throw new BadRequestException('Missing Razorpay order or subscription id');
+    }
     const generatedSignature = crypto
       .createHmac('sha256', this.configService.get('RAZORPAY_KEY_SECRET'))
-      .update(`${body.razorpay_order_id}|${body.razorpay_payment_id}`)
+      .update(signaturePayload)
       .digest('hex');
 
     if (generatedSignature !== body.razorpay_signature) {
@@ -92,6 +104,7 @@ export class RazorpayWebhookController {
 
     return await this.addonPurchaseService.finalizeRazorpayAddonPurchase({
       providerOrderId: body.razorpay_order_id,
+      providerRazorpaySubscriptionId: body.razorpay_subscription_id,
       providerPaymentId: body.razorpay_payment_id,
       purchaseId: body.purchaseId,
     });

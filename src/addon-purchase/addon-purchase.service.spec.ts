@@ -32,13 +32,16 @@ describe('AddonPurchaseService', () => {
       contactLimit: 0,
       webinarLimit: 0,
       addonName: 'Test',
+      isActive: true,
+      razorpayPlanId: 'plan_test123',
     }),
   };
 
   const razorpayService = {
-    createAddonOrder: jest
-      .fn()
-      .mockResolvedValue({ result: { id: 'order_1' } }),
+    createAddonSubscription: jest.fn().mockResolvedValue({
+      result: { id: 'sub_1' },
+      addonData: { addonName: 'Test' },
+    }),
   };
 
   const subscriptionAddonService = {
@@ -90,7 +93,7 @@ describe('AddonPurchaseService', () => {
   it('is idempotent by (admin,idempotencyKey)', async () => {
     addonPurchaseModel.findOne.mockResolvedValue({
       _id: 'p1',
-      providerOrderId: 'order_1',
+      providerRazorpaySubscriptionId: 'sub_1',
       amount: 118,
       currency: 'INR',
     });

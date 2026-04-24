@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotAcceptableException,
@@ -10,24 +12,12 @@ import Razorpay from 'razorpay';
 import { AddOnService } from 'src/addon/addon.service';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
 import { SubscriptionService } from 'src/subscription/subscription.service';
+import { sanitizeRazorpayPlanId } from 'src/razorpay/razorpay-plan-id.util';
 
 type RazorpaySdkError = {
   statusCode?: number;
   error?: { description?: string; message?: string; code?: string } | string;
 };
-
-/** Trim, strip invisible chars, extract plan_… from pasted dashboard URLs. */
-function sanitizeRazorpayPlanId(raw: string): string {
-  let s = raw.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
-  const embedded = s.match(/\b(plan_[A-Za-z0-9]+)\b/);
-  if (
-    embedded &&
-    (s.includes('razorpay.com') || s.toLowerCase().includes('http'))
-  ) {
-    return embedded[1];
-  }
-  return s;
-}
 
 @Injectable()
 export class RazorpayService {
@@ -35,7 +25,9 @@ export class RazorpayService {
 
   constructor(
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => SubscriptionService))
     private readonly subscriptionService: SubscriptionService,
+    @Inject(forwardRef(() => AddOnService))
     private readonly addonService: AddOnService,
   ) {}
 
@@ -105,6 +97,77 @@ export class RazorpayService {
     );
   }
 
+  private isIgnorableRazorpayCancelError(err: unknown): boolean {
+    const { description } = this.razorpaySdkFailureFields(err);
+    const d = (description || '').toLowerCase();
+    return (
+      d.includes('already been cancelled') ||
+      d.includes('already cancelled') ||
+      d.includes('subscription is cancelled') ||
+      d.includes('not found') ||
+      d.includes('does not exist') ||
+      d.includes('invalid subscription id')
+    );
+  }
+
+  /**
+   * After payment succeeds and the DB is updated to `newRazorpaySubscriptionId`,
+   * cancel the prior Razorpay subscription at the provider so the customer is not double-billed.
+   * Does not throw: payment already succeeded; failures are logged for ops follow-up.
+   */
+  async cancelReplacedProviderSubscription(params: {
+    previousRazorpaySubscriptionId?: string | null;
+    newRazorpaySubscriptionId?: string | null;
+  }): Promise<void> {
+    const prev = String(params.previousRazorpaySubscriptionId || '').trim();
+    const next = String(params.newRazorpaySubscriptionId || '').trim();
+    if (!prev || !next || prev === next) {
+      return;
+    }
+
+    const razorpay = new Razorpay({
+      key_id: this.configService.get('RAZORPAY_KEY_ID'),
+      key_secret: this.configService.get('RAZORPAY_KEY_SECRET'),
+    });
+
+    try {
+      await razorpay.subscriptions.cancel(prev, false);
+      this.logger.log(
+        JSON.stringify({
+          scope: 'RazorpayService',
+          method: 'cancelReplacedProviderSubscription',
+          outcome: 'cancelled_ok',
+          cancelledRazorpaySubscriptionId: prev,
+          newRazorpaySubscriptionId: next,
+        }),
+      );
+    } catch (e) {
+      if (this.isIgnorableRazorpayCancelError(e)) {
+        this.logger.warn(
+          JSON.stringify({
+            scope: 'RazorpayService',
+            method: 'cancelReplacedProviderSubscription',
+            outcome: 'cancel_ignorable',
+            cancelledRazorpaySubscriptionId: prev,
+            newRazorpaySubscriptionId: next,
+            ...this.razorpaySdkFailureFields(e),
+          }),
+        );
+      } else {
+        this.logger.warn(
+          JSON.stringify({
+            scope: 'RazorpayService',
+            method: 'cancelReplacedProviderSubscription',
+            outcome: 'cancel_failed_non_fatal',
+            cancelledRazorpaySubscriptionId: prev,
+            newRazorpaySubscriptionId: next,
+            ...this.razorpaySdkFailureFields(e),
+          }),
+        );
+      }
+    }
+  }
+
   private handleRazorpayError(err: unknown, hint?: string): never {
     if (err && typeof err === 'object' && 'error' in err) {
       const rzp = err as RazorpaySdkError;
@@ -130,46 +193,13 @@ export class RazorpayService {
     throw new BadRequestException('Razorpay request failed');
   }
 
-  async createOrder(
-    amount: number,
-    meta?: {
-      receipt?: string;
-      notes?: Record<string, string>;
-    },
-  ) {
-    const instance = new Razorpay({
-      key_id: this.configService.get('RAZORPAY_KEY_ID'),
-      key_secret: this.configService.get('RAZORPAY_KEY_SECRET'),
-    });
-
-    const orderOptions: any = {
-      amount: Math.floor(amount * 100),
-      currency: 'INR',
-      receipt: meta?.receipt,
-      notes: meta?.notes,
-    };
-    try {
-      return await instance.orders.create(orderOptions);
-    } catch (e) {
-      this.logger.warn(
-        JSON.stringify({
-          scope: 'RazorpayService',
-          method: 'createOrder',
-          outcome: 'error',
-          receipt: meta?.receipt ?? null,
-          ...this.razorpaySdkFailureFields(e),
-        }),
-      );
-      this.handleRazorpayError(e);
-    }
-  }
-
   async createPlanOrder(
     planId: string,
     durationType: DurationType,
     adminId: string,
+    opts?: { idempotencyKey?: string },
   ) {
-    const { totalWithGST, planData, isEligible } =
+    const { planData, isEligible } =
       await this.subscriptionService.validateUserEligibility(
         adminId,
         planId,
@@ -180,126 +210,176 @@ export class RazorpayService {
       throw new BadRequestException('You cannot downgrade the plan');
     }
 
+    const razorpayClient = new Razorpay({
+      key_id: this.configService.get('RAZORPAY_KEY_ID'),
+      key_secret: this.configService.get('RAZORPAY_KEY_SECRET'),
+    });
+
     const durationConfig = planData.planDurationConfig.get(durationType);
+    if (!durationConfig) {
+      throw new BadRequestException(
+        `No duration config for "${durationType}". Check plan duration settings.`,
+      );
+    }
     const razorpayPlanIdRaw =
-      typeof durationConfig?.razorpayPlanId === 'string'
+      typeof durationConfig.razorpayPlanId === 'string'
         ? durationConfig.razorpayPlanId
         : '';
     const razorpayPlanId = razorpayPlanIdRaw
       ? sanitizeRazorpayPlanId(razorpayPlanIdRaw)
       : '';
-    if (durationConfig && razorpayPlanId) {
-      // If a razorpayPlanId exists, use the Subscriptions API
-      const instance = new Razorpay({
-        key_id: this.configService.get('RAZORPAY_KEY_ID'),
-        key_secret: this.configService.get('RAZORPAY_KEY_SECRET'),
-      });
-
+    if (!razorpayPlanId) {
       const invalidPlanHint =
-        `(Configured razorpayPlanId for "${durationType}": "${razorpayPlanId}". ` +
-        `Open Razorpay Dashboard → Subscriptions → Plans, copy the Plan ID for this billing cycle, ` +
-        `and ensure it belongs to the same account and mode—test vs live—as RAZORPAY_KEY_ID on the server.)`;
-
-      try {
-        const result = await instance.subscriptions.create({
-          plan_id: razorpayPlanId,
-          total_count: 120, // max iterations for recurring
-          customer_notify: 1,
-          notes: {
-            adminId: String(adminId),
-            planId: String(planId),
-            durationType: String(durationType),
-          },
-        });
-        this.logger.log(
-          JSON.stringify({
-            scope: 'RazorpayService',
-            method: 'createPlanOrder',
-            outcome: 'ok',
-            checkoutMode: 'subscription',
-            adminId,
-            planId,
-            durationType,
-            subscriptionId: result.id,
-            razorpayPlanId,
-          }),
-        );
-        return { planData, result, checkoutMode: 'subscription' };
-      } catch (e) {
-        this.logger.warn(
-          JSON.stringify({
-            scope: 'RazorpayService',
-            method: 'createPlanOrder',
-            outcome: 'error',
-            checkoutMode: 'subscription',
-            adminId,
-            planId,
-            durationType,
-            razorpayPlanId,
-            likelyInvalidPlanId: this.isLikelyInvalidRazorpayPlanIdError(e),
-            ...this.razorpaySdkFailureFields(e),
-          }),
-        );
-        this.handleRazorpayError(
-          e,
-          this.isLikelyInvalidRazorpayPlanIdError(e)
-            ? invalidPlanHint
-            : undefined,
-        );
-      }
+        `Subscription checkout requires a configured razorpayPlanId for "${durationType}". ` +
+        `Open Razorpay Dashboard → Subscriptions → Plans, create or copy the plan id (plan_...) ` +
+        `and save it on this plan's duration in admin. It must match the same Razorpay mode (test vs live) as the server.`;
+      throw new BadRequestException(invalidPlanHint);
     }
 
-    const result = await this.createOrder(totalWithGST);
-    this.logger.log(
-      JSON.stringify({
-        scope: 'RazorpayService',
-        method: 'createPlanOrder',
-        outcome: 'ok',
-        checkoutMode: 'order',
-        adminId,
-        planId,
-        durationType,
-        orderId: result.id,
-      }),
-    );
-    return { planData, result, checkoutMode: 'order' };
+    const invalidPlanHintOnApi =
+      `(Configured razorpayPlanId for "${durationType}": "${razorpayPlanId}". ` +
+      `Open Razorpay Dashboard → Subscriptions → Plans, copy the Plan ID for this billing cycle, ` +
+      `and ensure it belongs to the same account and mode—test vs live—as RAZORPAY_KEY_ID on the server.)`;
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'RazorpayService',
+          method: 'createPlanOrder',
+          phase: 'checkout_start',
+          checkoutMode: 'subscription',
+          adminId,
+          planId,
+          durationType,
+          idempotencyKey: opts?.idempotencyKey ?? null,
+        }),
+      );
+      const result = await razorpayClient.subscriptions.create({
+        plan_id: razorpayPlanId,
+        total_count: 120, // max iterations for recurring
+        customer_notify: 1,
+        notes: {
+          adminId: String(adminId),
+          planId: String(planId),
+          durationType: String(durationType),
+        },
+      });
+      this.logger.log(
+        JSON.stringify({
+          scope: 'RazorpayService',
+          method: 'createPlanOrder',
+          outcome: 'ok',
+          checkoutMode: 'subscription',
+          adminId,
+          planId,
+          durationType,
+          subscriptionId: result.id,
+          razorpayPlanId,
+          idempotencyKey: opts?.idempotencyKey ?? null,
+        }),
+      );
+      return { planData, result, checkoutMode: 'subscription' as const };
+    } catch (e) {
+      this.logger.warn(
+        JSON.stringify({
+          scope: 'RazorpayService',
+          method: 'createPlanOrder',
+          outcome: 'error',
+          checkoutMode: 'subscription',
+          adminId,
+          planId,
+          durationType,
+          razorpayPlanId,
+          likelyInvalidPlanId: this.isLikelyInvalidRazorpayPlanIdError(e),
+          idempotencyKey: opts?.idempotencyKey ?? null,
+          ...this.razorpaySdkFailureFields(e),
+        }),
+      );
+      this.handleRazorpayError(
+        e,
+        this.isLikelyInvalidRazorpayPlanIdError(e)
+          ? invalidPlanHintOnApi
+          : undefined,
+      );
+    }
   }
 
-  async createAddonOrder(
-    addon: string,
-    adminId: string,
-    meta?: { purchaseId?: string },
-  ) {
+  /**
+   * Add-on products use a Razorpay Subscriptions plan (separate `sub_` from the main app subscription).
+   */
+  async createAddonSubscription(input: {
+    addonId: string;
+    adminId: string;
+    purchaseId: string;
+    razorpayPlanId: string;
+  }) {
     const subscription =
-      await this.subscriptionService.getSubscription(adminId);
+      await this.subscriptionService.getSubscription(input.adminId);
     if (!subscription) {
       throw new NotFoundException('Subscription not found');
     }
 
-    const addonData = await this.addonService.getAddOnById(addon);
-
+    const addonData = await this.addonService.getAddOnById(input.addonId);
     if (!addonData) throw new NotAcceptableException('Addon not found.');
 
-    const { totalAmount } = this.subscriptionService.generatePriceForAddon(
-      addonData.addOnPrice,
-    );
-    const result = await this.createOrder(totalAmount, {
-      receipt: meta?.purchaseId
-        ? `addon_purchase_${meta.purchaseId}`
-        : undefined,
-      notes: meta?.purchaseId ? { purchaseId: meta.purchaseId } : undefined,
+    const planId = sanitizeRazorpayPlanId(input.razorpayPlanId);
+    if (!planId) {
+      throw new BadRequestException(
+        'Add-on is missing a valid razorpayPlanId (Razorpay Subscriptions plan id, e.g. plan_...).',
+      );
+    }
+
+    const instance = new Razorpay({
+      key_id: this.configService.get('RAZORPAY_KEY_ID'),
+      key_secret: this.configService.get('RAZORPAY_KEY_SECRET'),
     });
-    this.logger.log(
-      JSON.stringify({
-        scope: 'RazorpayService',
-        method: 'createAddonOrder',
-        outcome: 'ok',
-        adminId,
-        addonId: addon,
-        orderId: result.id,
-        purchaseId: meta?.purchaseId ?? null,
-      }),
-    );
-    return { addonData, result };
+
+    const invalidPlanHint =
+      `Configured razorpayPlanId: "${planId}". ` +
+      `Create an add-on plan in Razorpay Dashboard → Subscriptions → Plans and ` +
+      `paste its id; test vs live must match RAZORPAY_KEY_ID.`;
+
+    try {
+      const result = await instance.subscriptions.create({
+        plan_id: planId,
+        total_count: 1,
+        customer_notify: 1,
+        notes: {
+          purpose: 'addon_purchase',
+          purchaseId: String(input.purchaseId),
+          adminId: String(input.adminId),
+          addonId: String(input.addonId),
+        },
+      });
+      this.logger.log(
+        JSON.stringify({
+          scope: 'RazorpayService',
+          method: 'createAddonSubscription',
+          outcome: 'ok',
+          adminId: input.adminId,
+          addonId: input.addonId,
+          purchaseId: input.purchaseId,
+          subscriptionId: result.id,
+        }),
+      );
+      return { addonData, result };
+    } catch (e) {
+      this.logger.warn(
+        JSON.stringify({
+          scope: 'RazorpayService',
+          method: 'createAddonSubscription',
+          outcome: 'error',
+          adminId: input.adminId,
+          addonId: input.addonId,
+          planId,
+          likelyInvalidPlanId: this.isLikelyInvalidRazorpayPlanIdError(e),
+          ...this.razorpaySdkFailureFields(e),
+        }),
+      );
+      this.handleRazorpayError(
+        e,
+        this.isLikelyInvalidRazorpayPlanIdError(e) ? invalidPlanHint : undefined,
+      );
+    }
   }
 }

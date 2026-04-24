@@ -56,6 +56,10 @@ export class BillingHistoryDto {
     message: 'Duration type must be one of the allowed values.',
   })
   durationType: DurationType;
+
+  @IsOptional()
+  @IsString()
+  razorpayPaymentId?: string;
 }
 
 export class UpdateBillingHistory extends PartialType(BillingHistoryDto) {}

@@ -52,6 +52,15 @@ export class BillingHistoryService {
     return result;
   }
 
+  async findByRazorpayPaymentId(
+    paymentId: string,
+  ): Promise<BillingHistory | null> {
+    if (!paymentId || typeof paymentId !== 'string') {
+      return null;
+    }
+    return this.BillingHistoryModel.findOne({ razorpayPaymentId: paymentId });
+  }
+
   async updateBillingHistory(
     id: string,
     updateBillingHistory: UpdateBillingHistory,

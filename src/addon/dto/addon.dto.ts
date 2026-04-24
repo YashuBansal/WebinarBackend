@@ -1,9 +1,12 @@
 import {
+  IsBoolean,
   IsNumber,
   Min,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateAddOnDto {
@@ -45,6 +48,19 @@ export class CreateAddOnDto {
   @IsNumber()
   @Min(1)
   validityInDays: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  /** Required for active add-ons: Razorpay Subscriptions plan id (test/live must match the server). */
+  @ValidateIf((o) => o.isActive !== false)
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^plan_[A-Za-z0-9]+$/i, {
+    message: 'razorpayPlanId must be a Razorpay plan id (e.g. plan_xxx)',
+  })
+  razorpayPlanId?: string;
 }
 
 export class UpdateAddOnDto {
@@ -81,4 +97,16 @@ export class UpdateAddOnDto {
   @IsNotEmpty()
   @Min(1)
   validityInDays?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ValidateIf((o) => o.isActive === true)
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^plan_[A-Za-z0-9]+$/i, {
+    message: 'razorpayPlanId must be a Razorpay plan id (e.g. plan_xxx)',
+  })
+  razorpayPlanId?: string;
 }

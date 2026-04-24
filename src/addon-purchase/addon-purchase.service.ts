@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  forwardRef,
+  Inject,
   Injectable,
   NotAcceptableException,
   NotFoundException,
@@ -19,17 +21,21 @@ import { Connection } from 'mongoose';
 import { SubscriptionAddonService } from 'src/subscription-addon/subscription-addon.service';
 import { BillingHistoryService } from 'src/billing-history/billing-history.service';
 import { UsersService } from 'src/users/users.service';
+import { sanitizeRazorpayPlanId } from 'src/razorpay/razorpay-plan-id.util';
 
 @Injectable()
 export class AddonPurchaseService {
   constructor(
     @InjectModel(AddonPurchase.name)
     private readonly addonPurchaseModel: Model<AddonPurchase>,
+    @Inject(forwardRef(() => SubscriptionService))
     private readonly subscriptionService: SubscriptionService,
     private readonly addonService: AddOnService,
+    @Inject(forwardRef(() => RazorpayService))
     private readonly razorpayService: RazorpayService,
     private readonly subscriptionAddonService: SubscriptionAddonService,
     private readonly billingHistoryService: BillingHistoryService,
+    @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
     @InjectConnection() private readonly connection: Connection,
   ) {}
@@ -90,6 +96,18 @@ export class AddonPurchaseService {
 
     const addon = await this.addonService.getAddOnById(addonId);
 
+    if (!addon.isActive) {
+      throw new NotAcceptableException('This add-on is not available.');
+    }
+    const razorpayPlanId = sanitizeRazorpayPlanId(
+      String((addon as any).razorpayPlanId || ''),
+    );
+    if (!razorpayPlanId) {
+      throw new NotAcceptableException(
+        'This add-on is not configured for subscription checkout. Set razorpayPlanId (Razorpay plan id) in admin.',
+      );
+    }
+
     const { totalAmount } = this.subscriptionService.generatePriceForAddon(
       addon.addOnPrice,
     );
@@ -104,15 +122,22 @@ export class AddonPurchaseService {
     });
 
     if (existing) {
-      return {
-        purchase: existing,
-        order: existing.providerOrderId
+      const result = existing.providerRazorpaySubscriptionId
+        ? { id: existing.providerRazorpaySubscriptionId, entity: 'subscription' }
+        : existing.providerOrderId
           ? {
               id: existing.providerOrderId,
               amount: Math.floor((existing.amount || 0) * 100),
               currency: existing.currency || 'INR',
             }
-          : null,
+          : null;
+      return {
+        purchase: existing,
+        result,
+        checkoutMode: existing.providerRazorpaySubscriptionId
+          ? 'subscription'
+          : 'order',
+        order: result,
         addon,
       };
     }
@@ -128,17 +153,23 @@ export class AddonPurchaseService {
       currency: 'INR',
     });
 
-    // Create Razorpay order and store its ID on the purchase.
-    const { result: order } = await this.razorpayService.createAddonOrder(
+    const { result } = await this.razorpayService.createAddonSubscription({
       addonId,
       adminId,
-      { purchaseId: created._id.toString() },
-    );
+      purchaseId: created._id.toString(),
+      razorpayPlanId,
+    });
 
-    created.providerOrderId = order.id;
+    created.providerRazorpaySubscriptionId = result.id;
     await created.save();
 
-    return { purchase: created, order, addon };
+    return {
+      purchase: created,
+      result,
+      checkoutMode: 'subscription' as const,
+      order: result,
+      addon,
+    };
   }
 
   async getPurchaseById(purchaseId: string) {
@@ -154,26 +185,71 @@ export class AddonPurchaseService {
    * Finalize a purchase from a provider event/webhook.
    * Idempotent under retries and duplicate deliveries.
    */
+  async tryFinalizeAddonFromSubscriptionCharged(
+    razorpaySubscriptionId: string,
+    payId: string,
+  ): Promise<boolean> {
+    if (!razorpaySubscriptionId || !payId) {
+      return false;
+    }
+    const purchase = await this.addonPurchaseModel
+      .findOne({
+        provider: PaymentProvider.RAZORPAY,
+        providerRazorpaySubscriptionId: razorpaySubscriptionId,
+      })
+      .select('_id');
+    if (!purchase) {
+      return false;
+    }
+    await this.finalizeRazorpayAddonPurchase({
+      providerRazorpaySubscriptionId: razorpaySubscriptionId,
+      providerPaymentId: payId,
+      purchaseId: purchase._id.toString(),
+    });
+    return true;
+  }
+
   async finalizeRazorpayAddonPurchase(params: {
-    providerOrderId: string;
+    providerOrderId?: string;
+    providerRazorpaySubscriptionId?: string;
     providerPaymentId: string;
     purchaseId?: string;
   }) {
-    const { providerOrderId, providerPaymentId, purchaseId } = params;
+    const { providerOrderId, providerRazorpaySubscriptionId, providerPaymentId, purchaseId } =
+      params;
+
+    if (!providerOrderId && !providerRazorpaySubscriptionId) {
+      throw new BadRequestException(
+        'Missing provider order id or Razorpay subscription id',
+      );
+    }
 
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
+      const filter: Record<string, unknown> = {
+        provider: PaymentProvider.RAZORPAY,
+      };
+      if (purchaseId) {
+        filter._id = new Types.ObjectId(purchaseId);
+      }
+      if (providerOrderId && providerRazorpaySubscriptionId) {
+        filter.$or = [
+          { providerOrderId },
+          { providerRazorpaySubscriptionId },
+        ];
+      } else if (providerOrderId) {
+        filter.providerOrderId = providerOrderId;
+      } else {
+        filter.providerRazorpaySubscriptionId = providerRazorpaySubscriptionId;
+      }
+
       const purchase = await this.addonPurchaseModel
-        .findOne({
-          provider: PaymentProvider.RAZORPAY,
-          providerOrderId,
-          ...(purchaseId ? { _id: new Types.ObjectId(purchaseId) } : {}),
-        })
+        .findOne(filter)
         .session(session);
 
       if (!purchase) {
-        throw new NotFoundException('Purchase not found for order');
+        throw new NotFoundException('Purchase not found for payment provider id');
       }
 
       // Idempotency: if already applied, nothing to do.
@@ -315,12 +391,22 @@ export class AddonPurchaseService {
 
     for (const p of stuck) {
       try {
-        if (!p.providerOrderId || !p.providerPaymentId) continue;
-        await this.finalizeRazorpayAddonPurchase({
-          providerOrderId: p.providerOrderId,
-          providerPaymentId: p.providerPaymentId,
-          purchaseId: p._id.toString(),
-        });
+        if (!p.providerPaymentId) continue;
+        if (p.providerRazorpaySubscriptionId) {
+          await this.finalizeRazorpayAddonPurchase({
+            providerRazorpaySubscriptionId: p.providerRazorpaySubscriptionId,
+            providerPaymentId: p.providerPaymentId,
+            purchaseId: p._id.toString(),
+          });
+        } else if (p.providerOrderId) {
+          await this.finalizeRazorpayAddonPurchase({
+            providerOrderId: p.providerOrderId,
+            providerPaymentId: p.providerPaymentId,
+            purchaseId: p._id.toString(),
+          });
+        } else {
+          continue;
+        }
       } catch (_) {
         await this.addonPurchaseModel.updateOne(
           { _id: p._id },

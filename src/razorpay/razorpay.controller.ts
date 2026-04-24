@@ -1,6 +1,9 @@
 import {
   Body,
   Controller,
+  forwardRef,
+  Headers,
+  Inject,
   Logger,
   Post,
   Query,
@@ -24,8 +27,10 @@ export class RazorpayController {
   private readonly logger = new Logger(RazorpayController.name);
   constructor(
     private razorpayService: RazorpayService,
+    @Inject(forwardRef(() => SubscriptionService))
     private subscriptionService: SubscriptionService,
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => AddonPurchaseService))
     private readonly addonPurchaseService: AddonPurchaseService,
   ) {}
 
@@ -33,9 +38,16 @@ export class RazorpayController {
   async createOrder(
     @Body() body: RazorPayCheckoutPlanDTO,
     @Id() adminId: string,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<any> {
     const { plan, durationType } = body;
-    return this.razorpayService.createPlanOrder(plan, durationType, adminId);
+    const key =
+      typeof idempotencyKey === 'string' && idempotencyKey.trim().length > 0
+        ? idempotencyKey.trim()
+        : undefined;
+    return this.razorpayService.createPlanOrder(plan, durationType, adminId, {
+      idempotencyKey: key,
+    });
   }
 
   @Post('/payment-success')
@@ -44,14 +56,19 @@ export class RazorpayController {
     @Body() body: any,
     @Query() query: RazorPayUpdatePlanDTO,
   ): Promise<any> {
-    //validate payment success here
+    const env = this.configService.get('NEST_ENV');
+    const frontendProductionUrl = this.configService.get(
+      'FRONTEND_MAIN_PRODUCTION',
+    );
+    const failedUrl =
+      env === 'development'
+        ? 'http://localhost:5174/failed'
+        : `${frontendProductionUrl}/failed`;
 
-    let signaturePayload = '';
-    if (body.razorpay_subscription_id) {
-      signaturePayload = `${body.razorpay_payment_id}|${body.razorpay_subscription_id}`;
-    } else {
-      signaturePayload = `${body.razorpay_order_id}|${body.razorpay_payment_id}`;
+    if (!body.razorpay_subscription_id) {
+      return { url: failedUrl };
     }
+    const signaturePayload = `${body.razorpay_payment_id}|${body.razorpay_subscription_id}`;
 
     const generatedSignature = crypto
       .createHmac('sha256', this.configService.get('RAZORPAY_KEY_SECRET'))
@@ -59,20 +76,18 @@ export class RazorpayController {
       .digest('hex');
 
     if (generatedSignature !== body.razorpay_signature) {
-      return { url: 'http://localhost:5174/failed' };
+      return { url: failedUrl };
     }
 
     const planUpdate = await this.subscriptionService.updateClientPlan(
       query.adminId,
       query.planId,
       query.durationType,
-      body.razorpay_subscription_id
+      body.razorpay_subscription_id,
+      typeof body.razorpay_payment_id === 'string'
+        ? body.razorpay_payment_id
+        : undefined,
     );
-    const env = this.configService.get('NEST_ENV');
-    const frontendProductionUrl = this.configService.get(
-      'FRONTEND_MAIN_PRODUCTION',
-    );
-
     if (planUpdate) {
       return {
         url:
@@ -100,23 +115,16 @@ export class RazorpayController {
 
     // Create purchase-ledger order under the hood.
     const idempotencyKey = crypto.randomUUID();
-    const {
-      purchase,
-      order,
-      addon: addonData,
-    } = await this.addonPurchaseService.createRazorpayPurchaseOrder({
+    const created = await this.addonPurchaseService.createRazorpayPurchaseOrder({
       adminId,
       addonId: addon,
       idempotencyKey,
     });
 
-    // Backward-compatible response shape for older clients + include canonical fields.
     return {
-      purchase,
-      order,
-      addon: addonData,
-      addonData,
-      result: order,
+      ...created,
+      result: created.result,
+      order: created.order,
     };
   }
 
@@ -126,30 +134,41 @@ export class RazorpayController {
     @Body() body: any,
     @Query() query: RazorPayAddOnDTO,
   ): Promise<any> {
-    // Deprecated endpoint: kept as alias for backwards compatibility.
-    this.logger.warn(
-      'DeprecatedEndpointUsed: POST /razorpay/addon/payment-success',
+    const env = this.configService.get('NEST_ENV');
+    const frontendProductionUrl = this.configService.get(
+      'FRONTEND_MAIN_PRODUCTION',
     );
+    const failedUrl =
+      env === 'development'
+        ? 'http://localhost:5174/failed'
+        : `${frontendProductionUrl}/failed`;
+
+    const signaturePayload = body.razorpay_subscription_id
+      ? `${body.razorpay_payment_id}|${body.razorpay_subscription_id}`
+      : body.razorpay_order_id
+        ? `${body.razorpay_order_id}|${body.razorpay_payment_id}`
+        : '';
+    if (!signaturePayload) {
+      return { url: failedUrl };
+    }
 
     const generatedSignature = crypto
       .createHmac('sha256', this.configService.get('RAZORPAY_KEY_SECRET'))
-      .update(`${body.razorpay_order_id}|${body.razorpay_payment_id}`)
+      .update(signaturePayload)
       .digest('hex');
 
     if (generatedSignature !== body.razorpay_signature) {
-      return { url: 'http://localhost:5174/failed' };
+      return { url: failedUrl };
     }
 
     const finalizeResult =
       await this.addonPurchaseService.finalizeRazorpayAddonPurchase({
         providerOrderId: body.razorpay_order_id,
+        providerRazorpaySubscriptionId: body.razorpay_subscription_id,
         providerPaymentId: body.razorpay_payment_id,
+        purchaseId: query.purchaseId,
       });
 
-    const env = this.configService.get('NEST_ENV');
-    const frontendProductionUrl = this.configService.get(
-      'FRONTEND_MAIN_PRODUCTION',
-    );
     if (finalizeResult) {
       return {
         url:
@@ -175,9 +194,17 @@ export class RazorpayController {
   async confirmAddonPayment(@Body() body: RazorPayConfirmAddonDTO) {
     // Alias route for backwards compatibility; canonical route is
     // POST /payments/razorpay/confirm-addon
+    const signaturePayload = body.razorpay_subscription_id
+      ? `${body.razorpay_payment_id}|${body.razorpay_subscription_id}`
+      : body.razorpay_order_id
+        ? `${body.razorpay_order_id}|${body.razorpay_payment_id}`
+        : '';
+    if (!signaturePayload) {
+      return { ok: false, message: 'Missing Razorpay order or subscription id' };
+    }
     const generatedSignature = crypto
       .createHmac('sha256', this.configService.get('RAZORPAY_KEY_SECRET'))
-      .update(`${body.razorpay_order_id}|${body.razorpay_payment_id}`)
+      .update(signaturePayload)
       .digest('hex');
 
     if (generatedSignature !== body.razorpay_signature) {
@@ -186,6 +213,7 @@ export class RazorpayController {
 
     return await this.addonPurchaseService.finalizeRazorpayAddonPurchase({
       providerOrderId: body.razorpay_order_id,
+      providerRazorpaySubscriptionId: body.razorpay_subscription_id,
       providerPaymentId: body.razorpay_payment_id,
       purchaseId: body.purchaseId,
     });

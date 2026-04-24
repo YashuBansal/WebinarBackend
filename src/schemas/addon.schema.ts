@@ -28,6 +28,10 @@ export class AddOn extends Document {
   @Prop({ type: Number, min: 1, required: true })
   validityInDays: number;
 
+  /** Razorpay Subscriptions plan id (plan_…) for subscription-only add-on checkout. */
+  @Prop({ type: String, required: false, trim: true })
+  razorpayPlanId?: string;
+
   @Prop({ type: Boolean, required: true, default: true })
   isActive: boolean;
 }

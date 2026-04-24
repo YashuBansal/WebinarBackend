@@ -21,9 +21,13 @@ import { PlansModule } from 'src/plans/plans.module';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 import { AttendeesModule } from 'src/attendees/attendees.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
+import { AddonPurchaseModule } from 'src/addon-purchase/addon-purchase.module';
+import { RazorpayModule } from 'src/razorpay/razorpay.module';
 
 @Module({
   imports: [
+    forwardRef(() => AddonPurchaseModule),
+    forwardRef(() => RazorpayModule),
     MongooseModule.forFeature([
       {
         name: Subscription.name,

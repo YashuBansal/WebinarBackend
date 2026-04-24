@@ -20,6 +20,8 @@ import { UsersService } from 'src/users/users.service';
 import { BillingType, DurationType } from 'src/schemas/BillingHistory.schema';
 import { PlanDurationConfig, Plans } from 'src/plans/Plans.schema';
 import { ConfigService } from '@nestjs/config';
+import { AddonPurchaseService } from 'src/addon-purchase/addon-purchase.service';
+import { RazorpayService } from 'src/razorpay/razorpay.service';
 
 @Injectable()
 export class SubscriptionService {
@@ -41,6 +43,10 @@ export class SubscriptionService {
     @Inject(forwardRef(() => PlansService))
     private readonly plansService: PlansService,
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => AddonPurchaseService))
+    private readonly addonPurchaseService: AddonPurchaseService,
+    @Inject(forwardRef(() => RazorpayService))
+    private readonly razorpayService: RazorpayService,
   ) {}
 
   onModuleInit() {
@@ -424,6 +430,7 @@ export class SubscriptionService {
     planId: string,
     durationType: DurationType,
     razorpaySubscriptionId?: string,
+    razorpayPaymentId?: string,
   ) {
     let adminId: string;
     if (adminIdOrEmail.includes('@')) {
@@ -451,6 +458,24 @@ export class SubscriptionService {
       throw new NotFoundException(
         `Subscription with admin ID ${adminId} not found`,
       );
+    }
+
+    if (razorpayPaymentId) {
+      const existingBill =
+        await this.BillingHistoryService.findByRazorpayPaymentId(
+          razorpayPaymentId,
+        );
+      if (existingBill) {
+        this.logger.log(
+          JSON.stringify({
+            scope: 'SubscriptionService',
+            phase: 'updateClientPlan_skip_duplicate_payment',
+            razorpayPaymentId,
+            adminId,
+          }),
+        );
+        return { subscription, billing: existingBill };
+      }
     }
 
     const isPlanExpired = new Date() > new Date(subscription.expiryDate);
@@ -509,6 +534,11 @@ export class SubscriptionService {
     subscription.whatsappProjectLimit = plan.whatsappProjectLimit || 0;
     subscription.zoomProjectLimit = plan.zoomProjectLimit || 0;
 
+    const previousRazorpaySubscriptionId =
+      typeof subscription.razorpaySubscriptionId === 'string'
+        ? subscription.razorpaySubscriptionId.trim()
+        : '';
+
     if (razorpaySubscriptionId) {
       subscription.razorpaySubscriptionId = razorpaySubscriptionId;
       subscription.razorpaySubscriptionStatus = 'active';
@@ -529,6 +559,7 @@ export class SubscriptionService {
         durationType: durationType,
         startDate: billingStartDate,
         expiryDate: subscription.expiryDate,
+        ...(razorpayPaymentId ? { razorpayPaymentId } : {}),
       },
       BillingType.RENEWAL,
     );
@@ -544,6 +575,21 @@ export class SubscriptionService {
       await user.save();
     }
 
+    const newRzp =
+      typeof razorpaySubscriptionId === 'string'
+        ? razorpaySubscriptionId.trim()
+        : '';
+    if (
+      newRzp &&
+      previousRazorpaySubscriptionId &&
+      previousRazorpaySubscriptionId !== newRzp
+    ) {
+      await this.razorpayService.cancelReplacedProviderSubscription({
+        previousRazorpaySubscriptionId,
+        newRazorpaySubscriptionId: newRzp,
+      });
+    }
+
     return { subscription, billing };
   }
 
@@ -551,20 +597,58 @@ export class SubscriptionService {
     razorpaySubscriptionId: string,
     adminIdFromNotes: string | undefined, // in case it's passed
     paymentObj: any, // razorpay payment object
-    subscriptionObj: any // razorpay subscription object
+    subscriptionObj: any, // razorpay subscription object
   ) {
     this.logger.log(`Handling subscription charged for: ${razorpaySubscriptionId}`);
 
-    // Find the subscription linked to this Razorpay subscription ID
+    const payId = typeof paymentObj?.id === 'string' ? paymentObj.id : null;
+
+    if (payId) {
+      const addonFinalized =
+        await this.addonPurchaseService.tryFinalizeAddonFromSubscriptionCharged(
+          razorpaySubscriptionId,
+          payId,
+        );
+      if (addonFinalized) {
+        this.logger.log(
+          JSON.stringify({
+            scope: 'SubscriptionService',
+            phase: 'handleSubscriptionCharged_addon',
+            razorpaySubscriptionId,
+            razorpayPaymentId: payId,
+          }),
+        );
+        return;
+      }
+    }
+
+    // Find the app subscription linked to this Razorpay subscription ID
     const subscription = await this.SubscriptionModel.findOne({
       razorpaySubscriptionId,
     }).populate('plan');
 
     if (!subscription) {
-      this.logger.error(`No internal subscription found for razorpaySubscriptionId: ${razorpaySubscriptionId}`);
-      // Fallback: If we don't have the ID, wait, it might be the very first charge that payment-success 
-      // will also handle. Razorpay guarantees webhook delivery, but UI redirects could race it.
+      this.logger.error(
+        `No internal subscription found for razorpaySubscriptionId: ${razorpaySubscriptionId}`,
+      );
+      // Fallback: first charge + payment-success / races.
       return;
+    }
+
+    if (payId) {
+      const existingBill =
+        await this.BillingHistoryService.findByRazorpayPaymentId(payId);
+      if (existingBill) {
+        this.logger.log(
+          JSON.stringify({
+            scope: 'SubscriptionService',
+            phase: 'handleSubscriptionCharged_skip_duplicate_payment',
+            razorpaySubscriptionId,
+            razorpayPaymentId: payId,
+          }),
+        );
+        return;
+      }
     }
 
     const { plan } = subscription as any;
@@ -593,11 +677,6 @@ export class SubscriptionService {
     }
 
     const amountPaid = (paymentObj.amount || 0) / 100;
-    
-    // Check if this payment was already processed by matching payment ID in BillingHistory 
-    // Wait, addBillingHistory does not store paymentId currently. Let's assume it's fine for now,
-    // or we can just blindly extend. A better way would be using razorpay_payment_id as idempotency.
-    // For MVP/Robust plan: we just extend the expiry by the duration.
 
     const newExpiryDate = new Date(
       Date.now() + fallbackDurationDays * 24 * 60 * 60 * 1000
@@ -636,6 +715,7 @@ export class SubscriptionService {
         durationType: matchedDurationType as DurationType,
         startDate: new Date(),
         expiryDate: newExpiryDate,
+        ...(payId ? { razorpayPaymentId: payId } : {}),
       },
       BillingType.RENEWAL,
     );
@@ -1186,6 +1266,21 @@ export class SubscriptionService {
       );
     }
 
+    const currentPlanIdEarly =
+      this.resolveSubscriptionPlanObjectId(subscription);
+    if (String(currentPlanIdEarly) === String(planId)) {
+      const isPlanExpired = new Date() > new Date(subscription.expiryDate);
+      if (!isPlanExpired) {
+        const until = new Date(subscription.expiryDate).toLocaleDateString(
+          'en-IN',
+          { year: 'numeric', month: 'short', day: 'numeric' },
+        );
+        throw new BadRequestException(
+          `You are already on this plan until ${until}. You can switch to a different plan or purchase again after that date.`,
+        );
+      }
+    }
+
     const usedContacts = await this.attendeesService.getNonUniqueAttendeesCount(
       [],
       new Types.ObjectId(`${adminId}`),
@@ -1218,5 +1313,30 @@ export class SubscriptionService {
     const { totalWithGST } = this.generatePriceForPlan(durationConfig);
 
     return { isEligible: true, totalWithGST, planData: plan };
+  }
+
+  /** Normalize populated or raw `plan` ref to a string id for comparisons. */
+  resolveSubscriptionPlanObjectId(subscription: Subscription): string {
+    const p = subscription.plan as unknown;
+    if (p && typeof p === 'object' && '_id' in (p as Record<string, unknown>)) {
+      return String((p as { _id: Types.ObjectId | string })._id);
+    }
+    return String(p);
+  }
+
+  /**
+   * Clears Razorpay subscription id after cancel at provider (plan switch / cleanup).
+   * Next successful checkout will set a new id via updateClientPlan.
+   */
+  async clearRazorpaySubscriptionAfterProviderCancel(
+    adminId: string,
+  ): Promise<void> {
+    await this.SubscriptionModel.updateOne(
+      { admin: new Types.ObjectId(adminId) },
+      {
+        $set: { razorpaySubscriptionStatus: 'cancelled' },
+        $unset: { razorpaySubscriptionId: 1 },
+      },
+    );
   }
 }

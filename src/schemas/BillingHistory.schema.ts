@@ -123,6 +123,14 @@ export class BillingHistory extends Document {
     required: false,
   })
   addonPurchase?: Types.ObjectId | null;
+
+  /** Razorpay payment id (`pay_…`) — one invoice per captured payment. */
+  @Prop({
+    type: String,
+    required: false,
+    default: null,
+  })
+  razorpayPaymentId?: string | null;
 }
 
 const BillingHistorySchema = SchemaFactory.createForClass(BillingHistory);
@@ -132,6 +140,10 @@ BillingHistorySchema.index({ admin: 1, date: 1 });
 BillingHistorySchema.index({ invoiceNumber: 1 }, { unique: true });
 BillingHistorySchema.index(
   { addonPurchase: 1 },
+  { unique: true, sparse: true },
+);
+BillingHistorySchema.index(
+  { razorpayPaymentId: 1 },
   { unique: true, sparse: true },
 );
 
