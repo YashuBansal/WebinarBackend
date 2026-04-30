@@ -50,6 +50,10 @@ export class AddonPurchase extends Document {
   @Prop({ type: String })
   providerRazorpaySubscriptionStatus?: string;
 
+  /** Hosted checkout / customer-facing URL returned by Razorpay for this subscription. */
+  @Prop({ type: String })
+  providerRazorpaySubscriptionShortUrl?: string;
+
   @Prop({ type: String })
   providerPaymentId?: string;
 
@@ -97,6 +101,9 @@ AddonPurchaseSchema.pre('save', function (next) {
   }
   if (this.providerRazorpaySubscriptionStatus === null) {
     this.providerRazorpaySubscriptionStatus = undefined;
+  }
+  if (this.providerRazorpaySubscriptionShortUrl === null) {
+    this.providerRazorpaySubscriptionShortUrl = undefined;
   }
   if (this.providerPaymentId === null) this.providerPaymentId = undefined;
   next();

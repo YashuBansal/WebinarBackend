@@ -1,0 +1,326 @@
+{
+  "info": {
+    "_postman_id": "7ad33a9d-92fd-40fb-a8bd-f3860d874f3e",
+    "name": "Razorpay Webhook Test Matrix",
+    "description": "Event-wise webhook checklist collection for subscription robustness. Signature is auto-generated in pre-request script using webhook secret.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('HTTP status is 200', function () {",
+          "  pm.response.to.have.status(200);",
+          "});",
+          "",
+          "pm.test('Response has status ok', function () {",
+          "  const json = pm.response.json();",
+          "  pm.expect(json).to.have.property('status');",
+          "  pm.expect(json.status).to.eql('ok');",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "subscription.charged",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const body = pm.request.body.raw;",
+              "const secret = pm.collectionVariables.get('webhookSecret');",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-razorpay-signature', value: sig });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_charged_001\",\n  \"event\": \"subscription.charged\",\n  \"created_at\": 1714473600,\n  \"payload\": {\n    \"subscription\": {\n      \"entity\": {\n        \"id\": \"{{subscriptionId}}\",\n        \"status\": \"active\",\n        \"plan_id\": \"plan_demo_001\",\n        \"notes\": {\n          \"adminId\": \"{{adminId}}\"\n        }\n      }\n    },\n    \"payment\": {\n      \"entity\": {\n        \"id\": \"pay_charged_001\",\n        \"subscription_id\": \"{{subscriptionId}}\",\n        \"amount\": 10000,\n        \"created_at\": 1714473600\n      }\n    }\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/razorpay/webhook"
+      }
+    },
+    {
+      "name": "subscription.charged (duplicate event_id)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const body = pm.request.body.raw;",
+              "const secret = pm.collectionVariables.get('webhookSecret');",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-razorpay-signature', value: sig });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_charged_001\",\n  \"event\": \"subscription.charged\",\n  \"created_at\": 1714473600,\n  \"payload\": {\n    \"subscription\": {\n      \"entity\": {\n        \"id\": \"{{subscriptionId}}\",\n        \"status\": \"active\",\n        \"plan_id\": \"plan_demo_001\",\n        \"notes\": {\n          \"adminId\": \"{{adminId}}\"\n        }\n      }\n    },\n    \"payment\": {\n      \"entity\": {\n        \"id\": \"pay_charged_001\",\n        \"subscription_id\": \"{{subscriptionId}}\",\n        \"amount\": 10000,\n        \"created_at\": 1714473600\n      }\n    }\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/razorpay/webhook"
+      }
+    },
+    {
+      "name": "payment.failed",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const body = pm.request.body.raw;",
+              "const secret = pm.collectionVariables.get('webhookSecret');",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-razorpay-signature', value: sig });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_failed_001\",\n  \"event\": \"payment.failed\",\n  \"created_at\": 1714477600,\n  \"payload\": {\n    \"payment\": {\n      \"entity\": {\n        \"id\": \"pay_failed_001\",\n        \"subscription_id\": \"{{subscriptionId}}\",\n        \"amount\": 10000,\n        \"created_at\": 1714477600\n      }\n    }\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/razorpay/webhook"
+      }
+    },
+    {
+      "name": "subscription.halted",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const body = pm.request.body.raw;",
+              "const secret = pm.collectionVariables.get('webhookSecret');",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-razorpay-signature', value: sig });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_halted_001\",\n  \"event\": \"subscription.halted\",\n  \"created_at\": 1714481200,\n  \"payload\": {\n    \"subscription\": {\n      \"entity\": {\n        \"id\": \"{{subscriptionId}}\",\n        \"status\": \"halted\"\n      }\n    }\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/razorpay/webhook"
+      }
+    },
+    {
+      "name": "subscription.pending",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const body = pm.request.body.raw;",
+              "const secret = pm.collectionVariables.get('webhookSecret');",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-razorpay-signature', value: sig });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_pending_001\",\n  \"event\": \"subscription.pending\",\n  \"created_at\": 1714484800,\n  \"payload\": {\n    \"subscription\": {\n      \"entity\": {\n        \"id\": \"{{subscriptionId}}\",\n        \"status\": \"pending\"\n      }\n    }\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/razorpay/webhook"
+      }
+    },
+    {
+      "name": "subscription.activated",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const body = pm.request.body.raw;",
+              "const secret = pm.collectionVariables.get('webhookSecret');",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-razorpay-signature', value: sig });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_activated_001\",\n  \"event\": \"subscription.activated\",\n  \"created_at\": 1714488400,\n  \"payload\": {\n    \"subscription\": {\n      \"entity\": {\n        \"id\": \"{{subscriptionId}}\",\n        \"status\": \"active\"\n      }\n    }\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/razorpay/webhook"
+      }
+    },
+    {
+      "name": "subscription.updated",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const body = pm.request.body.raw;",
+              "const secret = pm.collectionVariables.get('webhookSecret');",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-razorpay-signature', value: sig });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_updated_001\",\n  \"event\": \"subscription.updated\",\n  \"created_at\": 1714492000,\n  \"payload\": {\n    \"subscription\": {\n      \"entity\": {\n        \"id\": \"{{subscriptionId}}\",\n        \"status\": \"active\",\n        \"notes\": {\n          \"meta\": \"updated-plan-or-notes\"\n        }\n      }\n    }\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/razorpay/webhook"
+      }
+    },
+    {
+      "name": "subscription.cancelled",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const body = pm.request.body.raw;",
+              "const secret = pm.collectionVariables.get('webhookSecret');",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-razorpay-signature', value: sig });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_cancelled_001\",\n  \"event\": \"subscription.cancelled\",\n  \"created_at\": 1714495600,\n  \"payload\": {\n    \"subscription\": {\n      \"entity\": {\n        \"id\": \"{{subscriptionId}}\",\n        \"status\": \"cancelled\"\n      }\n    }\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/razorpay/webhook"
+      }
+    },
+    {
+      "name": "subscription.completed",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const body = pm.request.body.raw;",
+              "const secret = pm.collectionVariables.get('webhookSecret');",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'x-razorpay-signature', value: sig });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_id\": \"evt_completed_001\",\n  \"event\": \"subscription.completed\",\n  \"created_at\": 1714499200,\n  \"payload\": {\n    \"subscription\": {\n      \"entity\": {\n        \"id\": \"{{subscriptionId}}\",\n        \"status\": \"completed\"\n      }\n    }\n  }\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/razorpay/webhook"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "webhookSecret",
+      "value": "replace_with_RAZORPAY_WEBHOOK_SECRET"
+    },
+    {
+      "key": "subscriptionId",
+      "value": "sub_main_001"
+    },
+    {
+      "key": "adminId",
+      "value": "replace_with_admin_id"
+    }
+  ]
+}

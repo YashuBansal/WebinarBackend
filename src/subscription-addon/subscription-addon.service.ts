@@ -135,6 +135,8 @@ export class SubscriptionAddonService {
             '$purchaseDetails.providerRazorpaySubscriptionId',
           providerRazorpaySubscriptionStatus:
             '$purchaseDetails.providerRazorpaySubscriptionStatus',
+          providerRazorpaySubscriptionShortUrl:
+            '$purchaseDetails.providerRazorpaySubscriptionShortUrl',
           validityInDays: {
             $ifNull: [
               '$benefitsSnapshot.validityInDays',
@@ -203,6 +205,25 @@ export class SubscriptionAddonService {
     await this.SubscriptionAddOnModel.updateOne(
       { purchase: new Types.ObjectId(purchaseId) },
       { $set: { expiryDate, status: UserAddonStatus.ACTIVE } },
+    ).exec();
+  }
+
+  async cancelSubscriptionAddonsByPurchaseIds(
+    purchaseIds: string[],
+    now: Date = new Date(),
+  ): Promise<void> {
+    const ids = purchaseIds.filter((id) => Types.ObjectId.isValid(id));
+    if (!ids.length) return;
+    await this.SubscriptionAddOnModel.updateMany(
+      {
+        purchase: { $in: ids.map((id) => new Types.ObjectId(id)) },
+      },
+      {
+        $set: {
+          status: UserAddonStatus.CANCELLED,
+          expiryDate: now,
+        },
+      },
     ).exec();
   }
 }

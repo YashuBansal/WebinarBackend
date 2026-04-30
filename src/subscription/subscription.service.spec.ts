@@ -102,3 +102,63 @@ describe('SubscriptionService targeted addon expiry recompute', () => {
     expect(pipeline[0].$match._id.$in).toHaveLength(1);
   });
 });
+
+describe('SubscriptionService razorpay grace lifecycle', () => {
+  const createService = () => {
+    const service = Object.create(SubscriptionService.prototype) as any;
+    service.SubscriptionModel = {
+      findOne: jest.fn(),
+      find: jest.fn(),
+    };
+    service.addonPurchaseService = {
+      syncProviderSubscriptionStatus: jest.fn(),
+    };
+    service.userService = {
+      updateClient: jest.fn(),
+      deactivateUserByAdminId: jest.fn(),
+    };
+    return service;
+  };
+
+  it('marks payment failed and opens grace window', async () => {
+    const service = createService();
+    const save = jest.fn();
+    const subDoc: any = {
+      admin: { toString: () => 'admin_1' },
+      razorpayPaymentFailureCount: 1,
+      save,
+    };
+    service.SubscriptionModel.findOne.mockResolvedValue(subDoc);
+
+    await service.handleSubscriptionPaymentFailed('sub_123', { id: 'pay_1' });
+
+    expect(subDoc.razorpaySubscriptionStatus).toBe('payment_failed');
+    expect(subDoc.razorpayPaymentFailureCount).toBe(2);
+    expect(subDoc.razorpayGraceUntil).toBeInstanceOf(Date);
+    expect(service.userService.updateClient).toHaveBeenCalledWith('admin_1', {
+      isActive: true,
+    });
+    expect(service.addonPurchaseService.syncProviderSubscriptionStatus).toHaveBeenCalledWith(
+      'sub_123',
+      'payment_failed',
+    );
+    expect(save).toHaveBeenCalled();
+  });
+
+  it('deactivates users whose grace window has expired', async () => {
+    const service = createService();
+    const save1 = jest.fn();
+    const save2 = jest.fn();
+    service.SubscriptionModel.find.mockResolvedValue([
+      { admin: 'a1', save: save1 },
+      { admin: 'a2', save: save2 },
+    ]);
+
+    const result = await service.processRazorpayGraceExpiries();
+
+    expect(result).toEqual({ checked: 2, deactivated: 2 });
+    expect(save1).toHaveBeenCalled();
+    expect(save2).toHaveBeenCalled();
+    expect(service.userService.deactivateUserByAdminId).toHaveBeenCalledTimes(2);
+  });
+});

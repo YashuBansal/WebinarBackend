@@ -1,8 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   forwardRef,
   Headers,
+  HttpCode,
+  InternalServerErrorException,
   Inject,
   Logger,
   Post,
@@ -16,12 +19,14 @@ import {
   RazorPayAddOnDTO,
   RazorPayCheckoutPlanDTO,
   RazorPayConfirmAddonDTO,
+  RazorPayPaymentSuccessBodyDTO,
   RazorPayUpdatePlanDTO,
 } from './dto/razorpay.dto';
 import { ConfigService } from '@nestjs/config';
 import crypto from 'crypto';
 import { Id } from 'src/decorators/custom.decorator';
 import { AddonPurchaseService } from 'src/addon-purchase/addon-purchase.service';
+import { RazorpayWebhookEventStatus } from 'src/schemas/RazorpayWebhookEvent.schema';
 @Controller('razorpay')
 export class RazorpayController {
   private readonly logger = new Logger(RazorpayController.name);
@@ -34,6 +39,24 @@ export class RazorpayController {
     private readonly addonPurchaseService: AddonPurchaseService,
   ) {}
 
+  private resolveSubscriptionIdFromWebhook(parsedBody: any): string {
+    return String(
+      parsedBody?.payload?.subscription?.entity?.id ||
+        parsedBody?.payload?.payment?.entity?.subscription_id ||
+        '',
+    ).trim();
+  }
+
+  private resolveEventCreatedAt(parsedBody: any): Date | undefined {
+    const rawCreatedAt =
+      parsedBody?.created_at ||
+      parsedBody?.payload?.subscription?.entity?.current_start ||
+      parsedBody?.payload?.payment?.entity?.created_at;
+    const asNumber = Number(rawCreatedAt);
+    if (!Number.isFinite(asNumber) || asNumber <= 0) return undefined;
+    return new Date(asNumber * 1000);
+  }
+
   @Post('/checkout')
   async createOrder(
     @Body() body: RazorPayCheckoutPlanDTO,
@@ -45,6 +68,17 @@ export class RazorpayController {
       typeof idempotencyKey === 'string' && idempotencyKey.trim().length > 0
         ? idempotencyKey.trim()
         : undefined;
+    this.logger.log(
+      JSON.stringify({
+        scope: 'RazorpayController',
+        endpoint: 'POST /razorpay/checkout',
+        phase: 'received',
+        adminId,
+        planId: plan,
+        durationType,
+        hasIdempotencyKey: Boolean(key),
+      }),
+    );
     return this.razorpayService.createPlanOrder(plan, durationType, adminId, {
       idempotencyKey: key,
     });
@@ -53,8 +87,8 @@ export class RazorpayController {
   @Post('/payment-success')
   @Redirect()
   async paymentSuccess(
-    @Body() body: any,
-    @Query() query: RazorPayUpdatePlanDTO,
+    @Body() body: RazorPayPaymentSuccessBodyDTO,
+    @Query() query?: Partial<RazorPayUpdatePlanDTO>,
   ): Promise<any> {
     const env = this.configService.get('NEST_ENV');
     const frontendProductionUrl = this.configService.get(
@@ -65,10 +99,41 @@ export class RazorpayController {
         ? 'http://localhost:5174/failed'
         : `${frontendProductionUrl}/failed`;
 
-    if (!body.razorpay_subscription_id) {
+    const isSubscriptionFlow = Boolean(body.razorpay_subscription_id);
+    const isOrderFlow = Boolean(body.razorpay_order_id);
+    this.logger.log(
+      JSON.stringify({
+        scope: 'RazorpayController',
+        endpoint: 'POST /razorpay/payment-success',
+        phase: 'received',
+        flow: isSubscriptionFlow
+          ? 'subscription'
+          : isOrderFlow
+            ? 'order'
+            : 'unknown',
+        adminId: query?.adminId ?? null,
+        planId: query?.planId ?? null,
+        durationType: query?.durationType ?? null,
+        razorpaySubscriptionId: body?.razorpay_subscription_id ?? null,
+        razorpayOrderId: body?.razorpay_order_id ?? null,
+        razorpayPaymentId: body?.razorpay_payment_id ?? null,
+      }),
+    );
+
+    if (!isSubscriptionFlow && !isOrderFlow) {
+      this.logger.warn(
+        JSON.stringify({
+          scope: 'RazorpayController',
+          endpoint: 'POST /razorpay/payment-success',
+          phase: 'rejected',
+          reason: 'missing_order_and_subscription_id',
+        }),
+      );
       return { url: failedUrl };
     }
-    const signaturePayload = `${body.razorpay_payment_id}|${body.razorpay_subscription_id}`;
+    const signaturePayload = isSubscriptionFlow
+      ? `${body.razorpay_payment_id}|${body.razorpay_subscription_id}`
+      : `${body.razorpay_order_id}|${body.razorpay_payment_id}`;
 
     const generatedSignature = crypto
       .createHmac('sha256', this.configService.get('RAZORPAY_KEY_SECRET'))
@@ -76,26 +141,183 @@ export class RazorpayController {
       .digest('hex');
 
     if (generatedSignature !== body.razorpay_signature) {
+      this.logger.warn(
+        JSON.stringify({
+          scope: 'RazorpayController',
+          endpoint: 'POST /razorpay/payment-success',
+          phase: 'rejected',
+          reason: 'signature_mismatch',
+          flow: isSubscriptionFlow ? 'subscription' : 'order',
+          razorpayPaymentId: body?.razorpay_payment_id ?? null,
+        }),
+      );
       return { url: failedUrl };
     }
 
-    const planUpdate = await this.subscriptionService.updateClientPlan(
-      query.adminId,
-      query.planId,
-      query.durationType,
-      body.razorpay_subscription_id,
-      typeof body.razorpay_payment_id === 'string'
-        ? body.razorpay_payment_id
-        : undefined,
-    );
-    if (planUpdate) {
-      return {
-        url:
-          env === 'development'
-            ? 'http://localhost:5174/plans'
-            : `${frontendProductionUrl}/plans`,
-      };
-    } else {
+    try {
+      const paymentId =
+        typeof body.razorpay_payment_id === 'string'
+          ? body.razorpay_payment_id
+          : undefined;
+      const providerSubscriptionId = isSubscriptionFlow
+        ? String(body.razorpay_subscription_id || '').trim()
+        : '';
+      if (!providerSubscriptionId) {
+        this.logger.warn(
+          JSON.stringify({
+            scope: 'RazorpayController',
+            endpoint: 'POST /razorpay/payment-success',
+            phase: 'rejected',
+            reason: 'missing_subscription_id_for_recurring_mode',
+          }),
+        );
+        return { url: failedUrl };
+      }
+
+      const pendingContext =
+        await this.razorpayService.getPlanCheckoutContextByProviderSubscriptionId(
+          providerSubscriptionId,
+        );
+      if (!pendingContext) {
+        this.logger.warn(
+          JSON.stringify({
+            scope: 'RazorpayController',
+            endpoint: 'POST /razorpay/payment-success',
+            phase: 'rejected',
+            reason: 'pending_checkout_context_not_found',
+            providerSubscriptionId,
+            providerPaymentId: paymentId ?? null,
+          }),
+        );
+        return { url: failedUrl };
+      }
+      const resolvedAdminId = pendingContext.admin?.toString?.() ?? '';
+      const resolvedPlanId = pendingContext.plan?.toString?.() ?? '';
+      const resolvedDurationType = pendingContext.durationType;
+      const queryProvided =
+        typeof query?.adminId === 'string' &&
+        typeof query?.planId === 'string' &&
+        typeof query?.durationType === 'string';
+      if (queryProvided) {
+        const hasMismatch =
+          query.adminId !== resolvedAdminId ||
+          query.planId !== resolvedPlanId ||
+          query.durationType !== resolvedDurationType;
+        if (hasMismatch) {
+          this.logger.warn(
+            JSON.stringify({
+              scope: 'RazorpayController',
+              endpoint: 'POST /razorpay/payment-success',
+              phase: 'query_context_mismatch',
+              providerSubscriptionId,
+              queryAdminId: query?.adminId ?? null,
+              queryPlanId: query?.planId ?? null,
+              queryDurationType: query?.durationType ?? null,
+              resolvedAdminId,
+              resolvedPlanId,
+              resolvedDurationType,
+            }),
+          );
+        }
+      }
+      this.logger.log(
+        JSON.stringify({
+          scope: 'RazorpayController',
+          endpoint: 'POST /razorpay/payment-success',
+          phase: 'updateClientPlan_start',
+          adminId: resolvedAdminId,
+          planId: resolvedPlanId,
+          durationType: resolvedDurationType,
+          pendingContextId: pendingContext?._id?.toString?.() ?? null,
+          providerSubscriptionId,
+          providerPaymentId: paymentId ?? null,
+        }),
+      );
+
+      const planUpdate = await this.subscriptionService.updateClientPlan(
+        resolvedAdminId,
+        resolvedPlanId,
+        resolvedDurationType,
+        isSubscriptionFlow ? body.razorpay_subscription_id : undefined,
+        paymentId,
+      );
+
+      if (planUpdate) {
+        await this.razorpayService.markPlanCheckoutContextCompleted({
+          providerSubscriptionId,
+          providerPaymentId: paymentId,
+        });
+        this.logger.log(
+          JSON.stringify({
+            scope: 'RazorpayController',
+            endpoint: 'POST /razorpay/payment-success',
+            phase: 'completed',
+            outcome: 'plan_updated',
+            adminId: resolvedAdminId,
+            planId: resolvedPlanId,
+            durationType: resolvedDurationType,
+            flow: isSubscriptionFlow ? 'subscription' : 'order',
+            pendingContextId: pendingContext?._id?.toString?.() ?? null,
+            providerSubscriptionId,
+            providerPaymentId: paymentId ?? null,
+          }),
+        );
+        return {
+          url:
+            env === 'development'
+              ? 'http://localhost:5174/plans'
+              : `${frontendProductionUrl}/plans`,
+        };
+      } else {
+        await this.razorpayService.markPlanCheckoutContextFailed({
+          providerSubscriptionId,
+          failureReason: 'plan_update_returned_falsy',
+          providerPaymentId: paymentId,
+        });
+        this.logger.warn(
+          JSON.stringify({
+            scope: 'RazorpayController',
+            endpoint: 'POST /razorpay/payment-success',
+            phase: 'completed',
+            outcome: 'plan_update_returned_falsy',
+            adminId: resolvedAdminId,
+            planId: resolvedPlanId,
+            durationType: resolvedDurationType,
+            pendingContextId: pendingContext?._id?.toString?.() ?? null,
+            providerSubscriptionId,
+            providerPaymentId: paymentId ?? null,
+          }),
+        );
+        return {
+          url:
+            env === 'development'
+              ? 'http://localhost:5174/failed'
+              : `${frontendProductionUrl}/failed`,
+        };
+      }
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      if (body?.razorpay_subscription_id) {
+        await this.razorpayService.markPlanCheckoutContextFailed({
+          providerSubscriptionId: body.razorpay_subscription_id,
+          failureReason: err.message,
+          providerPaymentId: body?.razorpay_payment_id,
+        });
+      }
+      this.logger.error(
+        JSON.stringify({
+          scope: 'RazorpayController',
+          endpoint: 'POST /razorpay/payment-success',
+          phase: 'error',
+          adminId: query?.adminId ?? null,
+          planId: query?.planId ?? null,
+          durationType: query?.durationType ?? null,
+          providerSubscriptionId: body?.razorpay_subscription_id ?? null,
+          providerPaymentId: body?.razorpay_payment_id ?? null,
+          message: err.message,
+          stack: err.stack ?? null,
+        }),
+      );
       return {
         url:
           env === 'development'
@@ -220,13 +442,20 @@ export class RazorpayController {
   }
 
   @Post('/webhook')
-  async handleWebhook(@Body() body: any, @Query() query: any, @Req() req: any) {
+  @HttpCode(200)
+  async handleWebhook(@Body() body: any, @Req() req: any) {
     const signature = req.headers['x-razorpay-signature'];
+    const rawBody: Buffer | null = Buffer.isBuffer(req?.body)
+      ? (req.body as Buffer)
+      : null;
+    const parsedBody =
+      rawBody !== null ? JSON.parse(rawBody.toString('utf8')) : body;
     this.logger.log(
       JSON.stringify({
         scope: 'RazorpayWebhook',
         phase: 'received',
-        body: JSON.stringify(body),
+        body: JSON.stringify(parsedBody),
+        usedRawBody: Boolean(rawBody),
       }),
     );
     if (!signature) {
@@ -237,16 +466,15 @@ export class RazorpayController {
           reason: 'missing_x_razorpay_signature_header',
         }),
       );
-      return { status: 'ignored', reason: 'no signature' };
+      throw new BadRequestException('Missing x-razorpay-signature header');
     }
 
     try {
       // Razorpay validation requires raw body. For simplicity in this plan,
-      // we assume JSON.stringify works if raw body parsing isn't configured.
-      // A robust implementation should use a RawBody decorator.
+      // prefer raw bytes; fallback to JSON stringified body only if absent.
       const generatedSignature = crypto
         .createHmac('sha256', this.configService.get('RAZORPAY_WEBHOOK_SECRET'))
-        .update(JSON.stringify(body))
+        .update(rawBody ?? Buffer.from(JSON.stringify(parsedBody)))
         .digest('hex');
 
       // Note: In production, consider taking req.rawBody or using express.raw()
@@ -257,79 +485,173 @@ export class RazorpayController {
             scope: 'RazorpayWebhook',
             outcome: 'rejected',
             reason: 'signature_mismatch',
-            event: body?.event ?? null,
+            event: parsedBody?.event ?? null,
           }),
         );
-        return { status: 'invalid signature' };
+        throw new BadRequestException('Invalid webhook signature');
       }
 
       this.logger.log(
         JSON.stringify({
           scope: 'RazorpayWebhook',
           phase: 'verified',
-          event: body?.event ?? null,
+          flowStage: 'webhook_raw_body_mode',
+          webhookRawBodyMode: rawBody ? 'raw_buffer' : 'json_fallback',
+          event: parsedBody?.event ?? null,
           hasSubscriptionEntity: Boolean(
-            body?.payload?.subscription?.entity,
+            parsedBody?.payload?.subscription?.entity,
           ),
-          hasPaymentEntity: Boolean(body?.payload?.payment?.entity),
+          hasPaymentEntity: Boolean(parsedBody?.payload?.payment?.entity),
         }),
       );
 
-      if (body.event === 'subscription.charged') {
-        const payload = body.payload.subscription.entity;
-        const payment = body.payload.payment.entity;
-
-        await this.subscriptionService.handleSubscriptionCharged(
-          payload.id, // razorpay_subscription_id
-          payload.notes?.adminId, // assuming we pass adminId in notes during subscription creation
-          payment,
-          payload,
-        );
-
-        this.logger.log(
-          JSON.stringify({
-            scope: 'RazorpayWebhook',
-            phase: 'handled',
-            event: 'subscription.charged',
-            subscriptionId: payload.id,
-            paymentId: payment?.id ?? null,
-            adminIdFromNotes: payload.notes?.adminId ?? null,
-          }),
-        );
-      } else if (
-        body.event === 'subscription.cancelled' ||
-        body.event === 'subscription.halted'
-      ) {
-        const payload = body.payload.subscription.entity;
-        const providerStatus =
-          body.event === 'subscription.halted' ? 'halted' : 'cancelled';
-        await this.subscriptionService.handleSubscriptionCancelled(
-          payload.id,
-          providerStatus,
-        );
-
-        this.logger.log(
-          JSON.stringify({
-            scope: 'RazorpayWebhook',
-            phase: 'handled',
-            event: body.event,
-            subscriptionId: payload.id,
-          }),
-        );
-      } else {
+      const eventType = String(parsedBody?.event || '').trim();
+      const providerEventId = String(parsedBody?.event_id || '').trim();
+      const eventCreatedAt = this.resolveEventCreatedAt(parsedBody);
+      const dedupe =
+        await this.razorpayService.startWebhookEventProcessing({
+          providerEventId,
+          eventType,
+          eventCreatedAt,
+        });
+      if (!dedupe.shouldProcess) {
         this.logger.log(
           JSON.stringify({
             scope: 'RazorpayWebhook',
             phase: 'noop',
-            event: body?.event ?? null,
-            reason: 'unhandled_event_type',
+            event: eventType || null,
+            providerEventId: providerEventId || null,
+            reason: dedupe.reason || 'duplicate_event',
           }),
         );
+        return { status: 'ok' };
       }
+
+      const subscriptionId = this.resolveSubscriptionIdFromWebhook(parsedBody);
+      const subscription = subscriptionId
+        ? await this.subscriptionService.findByProviderSubscriptionId(
+            subscriptionId,
+          )
+        : null;
+      if (
+        subscription &&
+        eventCreatedAt &&
+        subscription.razorpayLastWebhookEventAt &&
+        eventCreatedAt.getTime() <
+          new Date(subscription.razorpayLastWebhookEventAt).getTime()
+      ) {
+        await this.razorpayService.completeWebhookEventProcessing({
+          providerEventId,
+          status: RazorpayWebhookEventStatus.IGNORED,
+          reason: 'stale_event_ordering',
+        });
+        this.logger.log(
+          JSON.stringify({
+            scope: 'RazorpayWebhook',
+            phase: 'noop',
+            event: eventType || null,
+            providerEventId: providerEventId || null,
+            subscriptionId,
+            reason: 'stale_event_ordering',
+          }),
+        );
+        return { status: 'ok' };
+      }
+
+      let processed = false;
+      if (eventType === 'subscription.charged') {
+        const payload = parsedBody.payload.subscription.entity;
+        const payment = parsedBody.payload.payment.entity;
+        await this.subscriptionService.handleSubscriptionCharged(
+          payload.id,
+          payload.notes?.adminId,
+          payment,
+          payload,
+        );
+        processed = true;
+      } else if (eventType === 'subscription.cancelled') {
+        const payload = parsedBody.payload.subscription.entity;
+        await this.subscriptionService.handleSubscriptionCancelled(
+          payload.id,
+          'cancelled',
+        );
+        processed = true;
+      } else if (eventType === 'subscription.halted') {
+        const payload = parsedBody.payload.subscription.entity;
+        await this.subscriptionService.handleSubscriptionCancelled(
+          payload.id,
+          'halted',
+        );
+        processed = true;
+      } else if (eventType === 'payment.failed') {
+        const payment = parsedBody?.payload?.payment?.entity;
+        const failedSubscriptionId = String(payment?.subscription_id || '').trim();
+        if (failedSubscriptionId) {
+          await this.subscriptionService.handleSubscriptionPaymentFailed(
+            failedSubscriptionId,
+            payment,
+          );
+          processed = true;
+        }
+      } else if (
+        eventType === 'subscription.activated' ||
+        eventType === 'subscription.pending' ||
+        eventType === 'subscription.completed' ||
+        eventType === 'subscription.updated'
+      ) {
+        const payload = parsedBody?.payload?.subscription?.entity;
+        const normalizedStatus =
+          eventType === 'subscription.activated'
+            ? 'active'
+            : eventType === 'subscription.pending'
+              ? 'pending'
+              : eventType === 'subscription.completed'
+                ? 'completed'
+                : String(payload?.status || '').toLowerCase();
+        if (payload?.id && normalizedStatus) {
+          await this.subscriptionService.handleSubscriptionStatusSync(
+            payload.id,
+            normalizedStatus,
+          );
+          processed = true;
+        }
+      }
+
+      await this.razorpayService.completeWebhookEventProcessing({
+        providerEventId,
+        status: processed
+          ? RazorpayWebhookEventStatus.PROCESSED
+          : RazorpayWebhookEventStatus.IGNORED,
+        reason: processed ? undefined : 'unhandled_event_type',
+      });
+
+      this.logger.log(
+        JSON.stringify({
+          scope: 'RazorpayWebhook',
+          phase: processed ? 'handled' : 'noop',
+          event: eventType || null,
+          providerEventId: providerEventId || null,
+          subscriptionId: subscriptionId || null,
+          reason: processed ? null : 'unhandled_event_type',
+        }),
+      );
 
       return { status: 'ok' };
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
+      const providerEventId = String(
+        req?.body?.event_id || body?.event_id || '',
+      ).trim();
+      if (providerEventId) {
+        await this.razorpayService.completeWebhookEventProcessing({
+          providerEventId,
+          status: RazorpayWebhookEventStatus.FAILED,
+          reason: err.message,
+        });
+      }
+      if (e instanceof BadRequestException) {
+        throw e;
+      }
       this.logger.error(
         JSON.stringify({
           scope: 'RazorpayWebhook',
@@ -338,7 +660,7 @@ export class RazorpayController {
           stack: err.stack ?? null,
         }),
       );
-      return { status: 'error', message: err.message };
+      throw new InternalServerErrorException(err.message);
     }
   }
 }

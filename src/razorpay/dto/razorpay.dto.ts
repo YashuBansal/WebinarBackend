@@ -31,6 +31,26 @@ export class RazorPayCheckoutPlanDTO {
   durationType: DurationType;
 }
 
+export class RazorPayPaymentSuccessBodyDTO {
+  @ValidateIf((o) => !o.razorpay_order_id)
+  @IsString()
+  @IsNotEmpty()
+  razorpay_subscription_id?: string;
+
+  @ValidateIf((o) => !o.razorpay_subscription_id)
+  @IsString()
+  @IsNotEmpty()
+  razorpay_order_id?: string;
+
+  @IsNotEmpty()
+  @IsString()
+  razorpay_payment_id: string;
+
+  @IsNotEmpty()
+  @IsString()
+  razorpay_signature: string;
+}
+
 export class RazorPayAddOnDTO {
   @IsMongoId()
   adminId: string;

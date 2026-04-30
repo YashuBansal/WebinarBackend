@@ -3,6 +3,7 @@ import {
   forwardRef,
   Inject,
   Injectable,
+  Logger,
   NotAcceptableException,
   NotFoundException,
 } from '@nestjs/common';
@@ -26,6 +27,7 @@ import { sanitizeRazorpayPlanId } from 'src/razorpay/razorpay-plan-id.util';
 
 @Injectable()
 export class AddonPurchaseService {
+  private readonly logger = new Logger(AddonPurchaseService.name);
   constructor(
     @InjectModel(AddonPurchase.name)
     private readonly addonPurchaseModel: Model<AddonPurchase>,
@@ -81,6 +83,53 @@ export class AddonPurchaseService {
         providerRazorpaySubscriptionId: subId,
       },
       { $set: { providerRazorpaySubscriptionStatus: normalized } },
+    );
+  }
+
+  async cancelAddonEntitlementsByProviderSubscriptionId(
+    razorpaySubscriptionId: string,
+  ): Promise<void> {
+    const subId =
+      typeof razorpaySubscriptionId === 'string'
+        ? razorpaySubscriptionId.trim()
+        : '';
+    if (!subId) return;
+    const purchases = await this.addonPurchaseModel
+      .find(
+        {
+          provider: PaymentProvider.RAZORPAY,
+          providerRazorpaySubscriptionId: subId,
+        },
+        { _id: 1 },
+      )
+      .lean();
+    const purchaseIds = purchases
+      .map((doc) => doc?._id?.toString())
+      .filter((id): id is string => Boolean(id));
+    if (!purchaseIds.length) {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'AddonPurchaseService',
+          flowStage: 'addon_entitlements_cancelled',
+          outcome: 'no_matching_purchase',
+          providerSubscriptionId: subId,
+          cancelledCount: 0,
+        }),
+      );
+      return;
+    }
+    await this.subscriptionAddonService.cancelSubscriptionAddonsByPurchaseIds(
+      purchaseIds,
+      new Date(),
+    );
+    this.logger.log(
+      JSON.stringify({
+        scope: 'AddonPurchaseService',
+        flowStage: 'addon_entitlements_cancelled',
+        outcome: 'ok',
+        providerSubscriptionId: subId,
+        cancelledCount: purchaseIds.length,
+      }),
     );
   }
 
@@ -190,8 +239,15 @@ export class AddonPurchaseService {
       result && typeof (result as { status?: string }).status === 'string'
         ? String((result as { status?: string }).status).toLowerCase()
         : undefined;
+    const rzpShortUrl =
+      result && typeof (result as { short_url?: string }).short_url === 'string'
+        ? String((result as { short_url: string }).short_url)
+        : undefined;
     if (rzpStatus) {
       created.providerRazorpaySubscriptionStatus = rzpStatus;
+    }
+    if (rzpShortUrl) {
+      created.providerRazorpaySubscriptionShortUrl = rzpShortUrl;
     }
     await created.save();
 
@@ -222,6 +278,16 @@ export class AddonPurchaseService {
     payId: string,
   ): Promise<boolean> {
     if (!razorpaySubscriptionId || !payId) {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'AddonPurchaseService',
+          flowStage: 'addon_finalize_from_subscription_charged',
+          outcome: 'noop',
+          reason: 'missing_subscription_or_payment',
+          providerSubscriptionId: razorpaySubscriptionId || null,
+          providerPaymentId: payId || null,
+        }),
+      );
       return false;
     }
     const purchase = await this.addonPurchaseModel
@@ -231,6 +297,16 @@ export class AddonPurchaseService {
       })
       .select('_id');
     if (!purchase) {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'AddonPurchaseService',
+          flowStage: 'addon_finalize_from_subscription_charged',
+          outcome: 'noop',
+          reason: 'purchase_not_found',
+          providerSubscriptionId: razorpaySubscriptionId,
+          providerPaymentId: payId,
+        }),
+      );
       return false;
     }
     await this.finalizeRazorpayAddonPurchase({
@@ -255,6 +331,16 @@ export class AddonPurchaseService {
   }> {
     const dup = await this.billingHistoryService.findByRazorpayPaymentId(payId);
     if (dup) {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'AddonPurchaseService',
+          flowStage: 'apply_addon_renewal',
+          outcome: 'noop',
+          reason: 'duplicate_payment_id',
+          purchaseId: purchase._id.toString(),
+          providerPaymentId: payId,
+        }),
+      );
       return {
         ok: true,
         purchaseId: purchase._id.toString(),

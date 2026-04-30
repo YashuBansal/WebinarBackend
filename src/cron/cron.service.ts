@@ -214,5 +214,8 @@ export class CronService implements OnModuleInit {
 
     this.logger.log('Backfilling missing addon billing histories...');
     await this.addonPurchaseService.reconcileMissingAddonBilling(200);
+
+    this.logger.log('Applying Razorpay grace expiry actions...');
+    await this.subscriptionService.processRazorpayGraceExpiries();
   }
 }

@@ -120,6 +120,21 @@ export class Subscription extends Document {
 
   @Prop({ type: String, required: false })
   razorpaySubscriptionStatus?: string;
+
+  @Prop({ type: String, required: false })
+  razorpaySubscriptionShortUrl?: string;
+
+  @Prop({ type: Date, required: false })
+  razorpayGraceUntil?: Date;
+
+  @Prop({ type: Date, required: false })
+  razorpayLastPaymentFailureAt?: Date;
+
+  @Prop({ type: Number, default: 0, required: false })
+  razorpayPaymentFailureCount?: number;
+
+  @Prop({ type: Date, required: false })
+  razorpayLastWebhookEventAt?: Date;
 }
 
 const SubscriptionSchema = SchemaFactory.createForClass(Subscription);

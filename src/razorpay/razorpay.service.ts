@@ -13,6 +13,16 @@ import { AddOnService } from 'src/addon/addon.service';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { sanitizeRazorpayPlanId } from 'src/razorpay/razorpay-plan-id.util';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import {
+  PlanCheckoutContext,
+  PlanCheckoutContextStatus,
+} from 'src/schemas/PlanCheckoutContext.schema';
+import {
+  RazorpayWebhookEvent,
+  RazorpayWebhookEventStatus,
+} from 'src/schemas/RazorpayWebhookEvent.schema';
 
 type RazorpaySdkError = {
   statusCode?: number;
@@ -24,12 +34,229 @@ export class RazorpayService {
   private readonly logger = new Logger(RazorpayService.name);
 
   constructor(
+    @InjectModel(PlanCheckoutContext.name)
+    private readonly planCheckoutContextModel: Model<PlanCheckoutContext>,
+    @InjectModel(RazorpayWebhookEvent.name)
+    private readonly razorpayWebhookEventModel: Model<RazorpayWebhookEvent>,
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => SubscriptionService))
     private readonly subscriptionService: SubscriptionService,
     @Inject(forwardRef(() => AddOnService))
     private readonly addonService: AddOnService,
   ) {}
+
+  async startWebhookEventProcessing(input: {
+    providerEventId: string;
+    eventType: string;
+    eventCreatedAt?: Date;
+  }): Promise<{ shouldProcess: boolean; reason?: string }> {
+    const providerEventId = String(input.providerEventId || '').trim();
+    const eventType = String(input.eventType || '').trim();
+    if (!providerEventId || !eventType) {
+      return { shouldProcess: true };
+    }
+
+    try {
+      await this.razorpayWebhookEventModel.create({
+        provider: 'razorpay',
+        providerEventId,
+        eventType,
+        eventCreatedAt: input.eventCreatedAt,
+        status: RazorpayWebhookEventStatus.PROCESSING,
+      });
+      return { shouldProcess: true };
+    } catch (error: unknown) {
+      const err = error as { code?: number };
+      if (err?.code === 11000) {
+        return {
+          shouldProcess: false,
+          reason: 'duplicate_provider_event_id',
+        };
+      }
+      throw error;
+    }
+  }
+
+  async completeWebhookEventProcessing(input: {
+    providerEventId: string;
+    status:
+      | RazorpayWebhookEventStatus.PROCESSED
+      | RazorpayWebhookEventStatus.IGNORED
+      | RazorpayWebhookEventStatus.FAILED;
+    reason?: string;
+  }): Promise<void> {
+    const providerEventId = String(input.providerEventId || '').trim();
+    if (!providerEventId) return;
+    await this.razorpayWebhookEventModel.updateOne(
+      {
+        provider: 'razorpay',
+        providerEventId,
+      },
+      {
+        $set: {
+          status: input.status,
+          processedAt: new Date(),
+          ...(input.reason ? { reason: input.reason.slice(0, 500) } : {}),
+        },
+      },
+    );
+  }
+
+  async createPendingPlanCheckoutContext(input: {
+    adminId: string;
+    planId: string;
+    durationType: DurationType;
+    providerSubscriptionId: string;
+    idempotencyKey?: string;
+  }): Promise<PlanCheckoutContext> {
+    const providerSubscriptionId = String(
+      input.providerSubscriptionId || '',
+    ).trim();
+    if (!providerSubscriptionId) {
+      throw new BadRequestException('Missing provider subscription id');
+    }
+    const idempotencyKey = String(input.idempotencyKey || '').trim();
+    const existingBySubscription = await this.planCheckoutContextModel.findOne({
+      providerSubscriptionId,
+    });
+    if (existingBySubscription) {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'RazorpayService',
+          method: 'createPendingPlanCheckoutContext',
+          outcome: 'existing_by_subscription',
+          providerSubscriptionId,
+          pendingContextId: existingBySubscription?._id?.toString?.() ?? null,
+        }),
+      );
+      return existingBySubscription;
+    }
+    if (idempotencyKey) {
+      const existingByIdempotency = await this.planCheckoutContextModel.findOne({
+        admin: new Types.ObjectId(input.adminId),
+        idempotencyKey,
+      });
+      if (existingByIdempotency) {
+        existingByIdempotency.providerSubscriptionId = providerSubscriptionId;
+        existingByIdempotency.plan = new Types.ObjectId(input.planId);
+        existingByIdempotency.durationType = input.durationType;
+        existingByIdempotency.status = PlanCheckoutContextStatus.PENDING;
+        existingByIdempotency.failureReason = undefined;
+        await existingByIdempotency.save();
+        this.logger.log(
+          JSON.stringify({
+            scope: 'RazorpayService',
+            method: 'createPendingPlanCheckoutContext',
+            outcome: 'updated_by_idempotency',
+            providerSubscriptionId,
+            pendingContextId: existingByIdempotency?._id?.toString?.() ?? null,
+            idempotencyKey,
+          }),
+        );
+        return existingByIdempotency;
+      }
+    }
+    const created = await this.planCheckoutContextModel.create({
+      admin: new Types.ObjectId(input.adminId),
+      plan: new Types.ObjectId(input.planId),
+      durationType: input.durationType,
+      providerSubscriptionId,
+      status: PlanCheckoutContextStatus.PENDING,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+    });
+    this.logger.log(
+      JSON.stringify({
+        scope: 'RazorpayService',
+        method: 'createPendingPlanCheckoutContext',
+        outcome: 'created',
+        providerSubscriptionId,
+        pendingContextId: created?._id?.toString?.() ?? null,
+        idempotencyKey: idempotencyKey || null,
+      }),
+    );
+    return created;
+  }
+
+  async getPlanCheckoutContextByProviderSubscriptionId(
+    providerSubscriptionId: string,
+  ): Promise<PlanCheckoutContext | null> {
+    const subId = String(providerSubscriptionId || '').trim();
+    if (!subId) return null;
+    const context = await this.planCheckoutContextModel.findOne({
+      providerSubscriptionId: subId,
+    });
+    this.logger.log(
+      JSON.stringify({
+        scope: 'RazorpayService',
+        method: 'getPlanCheckoutContextByProviderSubscriptionId',
+        outcome: context ? 'found' : 'not_found',
+        providerSubscriptionId: subId,
+        pendingContextId: context?._id?.toString?.() ?? null,
+      }),
+    );
+    return context;
+  }
+
+  async markPlanCheckoutContextCompleted(input: {
+    providerSubscriptionId: string;
+    providerPaymentId?: string;
+  }): Promise<void> {
+    const subId = String(input.providerSubscriptionId || '').trim();
+    if (!subId) return;
+    await this.planCheckoutContextModel.updateOne(
+      { providerSubscriptionId: subId },
+      {
+        $set: {
+          status: PlanCheckoutContextStatus.COMPLETED,
+          ...(input.providerPaymentId
+            ? { providerPaymentId: String(input.providerPaymentId).trim() }
+            : {}),
+        },
+        $unset: { failureReason: 1 },
+      },
+    );
+    this.logger.log(
+      JSON.stringify({
+        scope: 'RazorpayService',
+        method: 'markPlanCheckoutContextCompleted',
+        providerSubscriptionId: subId,
+        providerPaymentId: input.providerPaymentId ?? null,
+      }),
+    );
+  }
+
+  async markPlanCheckoutContextFailed(input: {
+    providerSubscriptionId: string;
+    failureReason: string;
+    providerPaymentId?: string;
+  }): Promise<void> {
+    const subId = String(input.providerSubscriptionId || '').trim();
+    if (!subId) return;
+    await this.planCheckoutContextModel.updateOne(
+      { providerSubscriptionId: subId },
+      {
+        $set: {
+          status: PlanCheckoutContextStatus.FAILED,
+          failureReason: String(input.failureReason || 'unknown_failure').slice(
+            0,
+            500,
+          ),
+          ...(input.providerPaymentId
+            ? { providerPaymentId: String(input.providerPaymentId).trim() }
+            : {}),
+        },
+      },
+    );
+    this.logger.warn(
+      JSON.stringify({
+        scope: 'RazorpayService',
+        method: 'markPlanCheckoutContextFailed',
+        providerSubscriptionId: subId,
+        providerPaymentId: input.providerPaymentId ?? null,
+        failureReason: input.failureReason,
+      }),
+    );
+  }
 
   /** Single-field shape for logging Razorpay Node SDK rejections (non-Error objects). */
   private razorpaySdkFailureFields(err: unknown): {
@@ -264,6 +491,20 @@ export class RazorpayService {
           durationType: String(durationType),
         },
       });
+      await this.subscriptionService.setPendingRazorpaySubscriptionMeta(
+        adminId,
+        result.id,
+        typeof (result as { short_url?: string }).short_url === 'string'
+          ? (result as { short_url: string }).short_url
+          : undefined,
+      );
+      const pendingContext = await this.createPendingPlanCheckoutContext({
+        adminId,
+        planId,
+        durationType,
+        providerSubscriptionId: result.id,
+        idempotencyKey: opts?.idempotencyKey,
+      });
       this.logger.log(
         JSON.stringify({
           scope: 'RazorpayService',
@@ -274,6 +515,7 @@ export class RazorpayService {
           planId,
           durationType,
           subscriptionId: result.id,
+          pendingContextId: pendingContext?._id?.toString?.() ?? null,
           razorpayPlanId,
           idempotencyKey: opts?.idempotencyKey ?? null,
         }),
