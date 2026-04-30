@@ -4611,11 +4611,16 @@ export class AttendeesService {
    * Exact count of distinct non-empty attendee emails (global, all tenants).
    * Uses indexed email field, allowDiskUse for large $group working sets.
    */
-  async countDistinctAttendeeEmails(): Promise<number> {
+  async countDistinctAttendeeEmails(
+    startDate?: string,
+    endDate?: string,
+  ): Promise<number> {
+    const createdAtFilter = this.getCreatedAtFilter(startDate, endDate);
     const pipeline: PipelineStage[] = [
       {
         $match: {
           email: { $type: 'string', $nin: ['', null] },
+          ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
         },
       },
       { $group: { _id: '$email' } },
@@ -4627,5 +4632,153 @@ export class AttendeesService {
       .exec();
 
     return result[0]?.count ?? 0;
+  }
+
+  private getCreatedAtFilter(startDate?: string, endDate?: string) {
+    const createdAt: { $gte?: Date; $lte?: Date } = {};
+
+    if (startDate) {
+      const start = new Date(startDate);
+      if (!Number.isNaN(start.getTime())) {
+        createdAt.$gte = start;
+      }
+    }
+
+    if (endDate) {
+      const end = new Date(endDate);
+      if (!Number.isNaN(end.getTime())) {
+        end.setHours(23, 59, 59, 999);
+        createdAt.$lte = end;
+      }
+    }
+
+    return Object.keys(createdAt).length ? createdAt : null;
+  }
+
+  async getUniqueEmailCountByAdmin(
+    page = 1,
+    limit = 20,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{
+    data: {
+      adminId: string;
+      adminName: string;
+      adminEmail: string;
+      uniqueEmailCount: number;
+    }[];
+    total: number;
+    totalPages: number;
+    overallUniqueEmailCount: number;
+  }> {
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+    const safeLimit =
+      Number.isFinite(limit) && limit > 0 && limit <= 100 ? limit : 20;
+    const skip = (safePage - 1) * safeLimit;
+    const createdAtFilter = this.getCreatedAtFilter(startDate, endDate);
+    const baseMatch: Record<string, unknown> = {
+      email: { $type: 'string', $nin: ['', null] },
+      ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
+    };
+
+    const [overallUniqueEmailCount, groupedRows, countResult] =
+      await Promise.all([
+        this.countDistinctAttendeeEmails(startDate, endDate),
+        this.attendeeModel
+          .aggregate(
+            [
+              { $match: baseMatch },
+              {
+                $group: {
+                  _id: { adminId: '$adminId', email: '$email' },
+                },
+              },
+              {
+                $group: {
+                  _id: '$_id.adminId',
+                  uniqueEmailCount: { $sum: 1 },
+                },
+              },
+              { $sort: { uniqueEmailCount: -1 } },
+              { $skip: skip },
+              { $limit: safeLimit },
+              {
+                $lookup: {
+                  from: 'users',
+                  localField: '_id',
+                  foreignField: '_id',
+                  as: 'admin',
+                },
+              },
+              {
+                $unwind: {
+                  path: '$admin',
+                  preserveNullAndEmptyArrays: true,
+                },
+              },
+              {
+                $project: {
+                  _id: 0,
+                  adminId: '$_id',
+                  adminName: {
+                    $ifNull: [
+                      '$admin.userName',
+                      {
+                        $trim: {
+                          input: {
+                            $concat: [
+                              { $ifNull: ['$admin.firstName', ''] },
+                              ' ',
+                              { $ifNull: ['$admin.lastName', ''] },
+                            ],
+                          },
+                        },
+                      },
+                    ],
+                  },
+                  adminEmail: { $ifNull: ['$admin.email', '-'] },
+                  uniqueEmailCount: 1,
+                },
+              },
+            ],
+            { allowDiskUse: true },
+          )
+          .exec(),
+        this.attendeeModel
+          .aggregate(
+            [
+              { $match: baseMatch },
+              {
+                $group: {
+                  _id: { adminId: '$adminId', email: '$email' },
+                },
+              },
+              {
+                $group: {
+                  _id: '$_id.adminId',
+                },
+              },
+              { $count: 'total' },
+            ],
+            { allowDiskUse: true },
+          )
+          .exec(),
+      ]);
+
+    const total = countResult[0]?.total ?? 0;
+    const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+    const data = groupedRows.map((row) => ({
+      adminId: String(row.adminId ?? ''),
+      adminName: row.adminName || '-',
+      adminEmail: row.adminEmail || '-',
+      uniqueEmailCount: row.uniqueEmailCount ?? 0,
+    }));
+
+    return {
+      data,
+      total,
+      totalPages,
+      overallUniqueEmailCount,
+    };
   }
 }

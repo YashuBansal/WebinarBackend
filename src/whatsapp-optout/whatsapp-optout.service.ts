@@ -65,18 +65,45 @@ export class WhatsappOptoutService {
     projectId: string,
     page = 1,
     limit = 20,
+    startDate?: string,
+    endDate?: string,
   ): Promise<{ items: WhatsappOptoutDocument[]; total: number }> {
     const skip = (Math.max(page, 1) - 1) * Math.max(limit, 1);
     const projectObjectId = new Types.ObjectId(projectId);
+    const query: Record<string, unknown> = { projectId: projectObjectId };
+
+    if (startDate || endDate) {
+      const createdAt: Record<string, Date> = {};
+
+      if (startDate) {
+        const start = new Date(startDate);
+        if (!Number.isNaN(start.getTime())) {
+          createdAt.$gte = start;
+        }
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!Number.isNaN(end.getTime())) {
+          end.setHours(23, 59, 59, 999);
+          createdAt.$lte = end;
+        }
+      }
+
+      if (Object.keys(createdAt).length > 0) {
+        query.createdAt = createdAt;
+      }
+    }
+
     const [items, total] = await Promise.all([
       this.whatsappOptoutModel
-        .find({ projectId: projectObjectId })
+        .find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean()
         .exec(),
-      this.whatsappOptoutModel.countDocuments({ projectId: projectObjectId }),
+      this.whatsappOptoutModel.countDocuments(query),
     ]);
     return { items: items as WhatsappOptoutDocument[], total };
   }
