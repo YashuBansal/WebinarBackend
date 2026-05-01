@@ -57,6 +57,32 @@ export class RazorpayController {
     return new Date(asNumber * 1000);
   }
 
+  /**
+   * Razorpay callback hits this API; we respond with a redirect. The Location URL
+   * must be absolute. Set `FRONTEND_MAIN_PRODUCTION` in every environment (dev/stage/prod)
+   * to your SPA origin, e.g. `http://127.0.0.1:5174` or `https://dashboard.example.com`.
+   * If it is missing, `${undefined}/plans` becomes the literal "undefined/plans", which
+   * browsers resolve under `/api/v1/razorpay/` → 404.
+   */
+  private getFrontendOriginForPostPaymentRedirect(): string {
+    const raw = this.configService.get<string>('FRONTEND_MAIN_PRODUCTION');
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    if (!trimmed) {
+      this.logger.error(
+        JSON.stringify({
+          scope: 'RazorpayController',
+          phase: 'frontend_redirect_misconfiguration',
+          message:
+            'FRONTEND_MAIN_PRODUCTION is not set. Set it to your SPA base URL (absolute origin, no path suffix) for Razorpay post-payment redirects.',
+        }),
+      );
+      throw new InternalServerErrorException(
+        'Server misconfiguration: FRONTEND_MAIN_PRODUCTION is required for Razorpay redirects.',
+      );
+    }
+    return trimmed.replace(/\/+$/, '');
+  }
+
   @Post('/checkout')
   async createOrder(
     @Body() body: RazorPayCheckoutPlanDTO,
@@ -90,14 +116,8 @@ export class RazorpayController {
     @Body() body: RazorPayPaymentSuccessBodyDTO,
     @Query() query?: Partial<RazorPayUpdatePlanDTO>,
   ): Promise<any> {
-    const env = this.configService.get('NEST_ENV');
-    const frontendProductionUrl = this.configService.get(
-      'FRONTEND_MAIN_PRODUCTION',
-    );
-    const failedUrl =
-      env === 'development'
-        ? 'http://localhost:5174/failed'
-        : `${frontendProductionUrl}/failed`;
+    const frontendOrigin = this.getFrontendOriginForPostPaymentRedirect();
+    const failedUrl = `${frontendOrigin}/failed`;
 
     const isSubscriptionFlow = Boolean(body.razorpay_subscription_id);
     const isOrderFlow = Boolean(body.razorpay_order_id);
@@ -263,10 +283,7 @@ export class RazorpayController {
           }),
         );
         return {
-          url:
-            env === 'development'
-              ? 'http://localhost:5174/plans'
-              : `${frontendProductionUrl}/plans`,
+          url: `${frontendOrigin}/plans`,
         };
       } else {
         await this.razorpayService.markPlanCheckoutContextFailed({
@@ -289,10 +306,7 @@ export class RazorpayController {
           }),
         );
         return {
-          url:
-            env === 'development'
-              ? 'http://localhost:5174/failed'
-              : `${frontendProductionUrl}/failed`,
+          url: failedUrl,
         };
       }
     } catch (e) {
@@ -319,10 +333,7 @@ export class RazorpayController {
         }),
       );
       return {
-        url:
-          env === 'development'
-            ? 'http://localhost:5174/failed'
-            : `${frontendProductionUrl}/failed`,
+        url: failedUrl,
       };
     }
   }
@@ -356,14 +367,8 @@ export class RazorpayController {
     @Body() body: any,
     @Query() query: RazorPayAddOnDTO,
   ): Promise<any> {
-    const env = this.configService.get('NEST_ENV');
-    const frontendProductionUrl = this.configService.get(
-      'FRONTEND_MAIN_PRODUCTION',
-    );
-    const failedUrl =
-      env === 'development'
-        ? 'http://localhost:5174/failed'
-        : `${frontendProductionUrl}/failed`;
+    const frontendOrigin = this.getFrontendOriginForPostPaymentRedirect();
+    const failedUrl = `${frontendOrigin}/failed`;
 
     const signaturePayload = body.razorpay_subscription_id
       ? `${body.razorpay_payment_id}|${body.razorpay_subscription_id}`
@@ -393,17 +398,11 @@ export class RazorpayController {
 
     if (finalizeResult) {
       return {
-        url:
-          env === 'development'
-            ? `http://localhost:5174/addons/${query.adminId}?purchaseId=${finalizeResult.purchaseId}`
-            : `${frontendProductionUrl}/addons/${query.adminId}?purchaseId=${finalizeResult.purchaseId}`,
+        url: `${frontendOrigin}/addons/${query.adminId}?purchaseId=${finalizeResult.purchaseId}`,
       };
     } else {
       return {
-        url:
-          env === 'development'
-            ? 'http://localhost:5174/failed'
-            : `${frontendProductionUrl}/failed`,
+        url: failedUrl,
       };
     }
   }
