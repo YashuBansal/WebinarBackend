@@ -21,6 +21,8 @@ export class WhatsappOptoutController {
     @Query('projectId') projectId: string,
     @Query('page') page = '1',
     @Query('limit') limit = '20',
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
     if (!mongoose.isValidObjectId(projectId)) {
       throw new BadRequestException('Invalid project ID');
@@ -38,6 +40,8 @@ export class WhatsappOptoutController {
       projectId,
       safePage,
       safeLimit,
+      startDate,
+      endDate,
     );
 
     return {

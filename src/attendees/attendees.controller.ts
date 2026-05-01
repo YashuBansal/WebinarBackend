@@ -133,13 +133,49 @@ export class AttendeesController {
   }
 
   @Get('metrics/unique-email-count')
-  async getUniqueAttendeeEmailCount(): Promise<{
+  async getUniqueAttendeeEmailCount(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ): Promise<{
     success: boolean;
     uniqueEmailCount: number;
   }> {
     const uniqueEmailCount =
-      await this.attendeesService.countDistinctAttendeeEmails();
+      await this.attendeesService.countDistinctAttendeeEmails(
+        startDate,
+        endDate,
+      );
     return { success: true, uniqueEmailCount };
+  }
+
+  @Get('metrics/unique-email-count-by-admin')
+  async getUniqueAttendeeEmailCountByAdmin(
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const safePage = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
+    const safeLimit =
+      Number.isFinite(limitNum) && limitNum > 0 && limitNum <= 100
+        ? limitNum
+        : 20;
+
+    const metrics = await this.attendeesService.getUniqueEmailCountByAdmin(
+      safePage,
+      safeLimit,
+      startDate,
+      endDate,
+    );
+
+    return {
+      success: true,
+      page: safePage,
+      limit: safeLimit,
+      ...metrics,
+    };
   }
 
   @Get(':email')
