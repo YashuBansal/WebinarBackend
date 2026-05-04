@@ -14,10 +14,10 @@ export class ZoomProject {
   @Prop({ type: String })
   accountId?: string;
 
-  @Prop({ type: String })
+  @Prop({ type: String, select: false })
   accessToken?: string;
 
-  @Prop({ type: String })
+  @Prop({ type: String, select: false })
   refreshToken?: string;
 
   @Prop({ type: Date })
@@ -26,13 +26,13 @@ export class ZoomProject {
   @Prop({ type: Boolean, default: false })
   isConfigured: boolean;
 
-  @Prop({ type: String })
+  @Prop({ type: String, select: false })
   secretToken?: string;
 
   @Prop({ type: String })
   clientId?: string;
 
-  @Prop({ type: String })
+  @Prop({ type: String, select: false })
   clientSecret?: string;
 }
 

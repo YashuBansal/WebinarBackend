@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model, Types } from 'mongoose';
+import mongoose, { FilterQuery, Model, Types } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import {
   ZoomProject,
@@ -98,6 +98,16 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       service: 'ZoomService',
       action: 'Webhook queue processing worker registered',
     });
+  }
+
+  /** Fields hidden by schema `select: false` — include only for server-side token use. */
+  private static readonly ZOOM_PROJECT_SECRET_FIELDS =
+    '+accessToken +refreshToken +clientSecret +secretToken';
+
+  private findProjectWithSecrets(filter: FilterQuery<ZoomProjectDocument>) {
+    return this.zoomProjectModel
+      .findOne(filter)
+      .select(ZoomService.ZOOM_PROJECT_SECRET_FIELDS);
   }
 
   // ====== Webhook Processing Helper Methods ======
@@ -536,7 +546,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
   }
 
   async listAccounts(adminId: Types.ObjectId) {
-    return this.zoomProjectModel.find({ adminId }).select('-accessToken');
+    return this.zoomProjectModel.find({ adminId });
   }
 
   async disconnectAccount(adminId: Types.ObjectId, accountId: string) {
@@ -544,7 +554,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
   }
 
   async refreshAccessToken(adminId: Types.ObjectId, accountId: string) {
-    const doc = await this.zoomProjectModel.findOne({ adminId, accountId });
+    const doc = await this.findProjectWithSecrets({ adminId, accountId });
     if (!doc?.refreshToken)
       throw new NotAcceptableException('No refresh token found');
 
@@ -581,7 +591,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
   }
 
   async getZoomUserProfile(adminId: Types.ObjectId, accountId: string) {
-    const doc = await this.zoomProjectModel.findOne({ adminId, accountId });
+    const doc = await this.findProjectWithSecrets({ adminId, accountId });
     if (!doc?.accessToken)
       throw new NotAcceptableException('No access token found');
     try {
@@ -611,7 +621,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     type: 'scheduled' | 'upcoming' | 'live' | 'past' | 'pending' = 'upcoming',
     options?: { pageSize?: number; from?: string; to?: string },
   ) {
-    const project = await this.zoomProjectModel.findOne({
+    const project = await this.findProjectWithSecrets({
       _id: projectId,
       adminId,
     });
@@ -679,7 +689,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     type: 'upcoming' = 'upcoming',
     options?: { pageSize?: number; from?: string; to?: string },
   ) {
-    const project = await this.zoomProjectModel.findOne({
+    const project = await this.findProjectWithSecrets({
       _id: projectId,
       adminId,
     });
@@ -744,7 +754,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     projectId: Types.ObjectId,
     webinarId: string,
   ) {
-    const project = await this.zoomProjectModel.findOne({
+    const project = await this.findProjectWithSecrets({
       _id: projectId,
       adminId,
     });
@@ -788,7 +798,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     pageSize: number,
     occurrenceId?: string,
   ) {
-    const project = await this.zoomProjectModel.findOne({
+    const project = await this.findProjectWithSecrets({
       _id: projectId,
       adminId,
     });
@@ -2799,7 +2809,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     projectId: Types.ObjectId,
     meetingId: string,
   ) {
-    const project = await this.zoomProjectModel.findOne({
+    const project = await this.findProjectWithSecrets({
       _id: projectId,
       adminId,
     });
@@ -2844,7 +2854,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     occurrenceId?: string,
   ) {
     try {
-      const project = await this.zoomProjectModel.findOne({
+      const project = await this.findProjectWithSecrets({
         _id: zoomProjectId,
         adminId,
       });
@@ -2969,7 +2979,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       this.logger.log(
         `getAllMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${isWebinar ? 'webinar' : 'meeting'} ${status}`,
       );
-      const project = await this.zoomProjectModel.findOne({
+      const project = await this.findProjectWithSecrets({
         _id: zoomProjectId,
         adminId,
       });
@@ -3135,7 +3145,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       this.logger.log(
         `getAllMeetingRegistrants --------==================------------- ${adminId} ${zoomProjectId} ${meetingId} ${isWebinar ? 'webinar' : 'meeting'} ${status}`,
       );
-      const project = await this.zoomProjectModel.findOne({
+      const project = await this.findProjectWithSecrets({
         _id: zoomProjectId,
         adminId,
       });
@@ -3230,7 +3240,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     meetingId: string,
     body: { email: string; first_name?: string; last_name?: string },
   ) {
-    const project = await this.zoomProjectModel.findOne({
+    const project = await this.findProjectWithSecrets({
       _id: projectId,
       adminId,
     });
@@ -3284,7 +3294,6 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     const [projects, total] = await Promise.all([
       this.zoomProjectModel
         .find(query)
-        .select('-accessToken') // Exclude sensitive data
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -3306,7 +3315,6 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
   async getProject(adminId: Types.ObjectId, projectId: Types.ObjectId) {
     return this.zoomProjectModel
       .findOne({ _id: projectId, adminId })
-      .select('-accessToken -refreshToken') // Exclude sensitive data
       .lean();
   }
 
@@ -3326,10 +3334,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     });
 
     const savedProject = await project.save();
-    return this.zoomProjectModel
-      .findById(savedProject._id)
-      .select('-accessToken') // Exclude sensitive data
-      .lean();
+    return this.zoomProjectModel.findById(savedProject._id).lean();
   }
 
   async updateProject(
@@ -3349,7 +3354,6 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         { $set: updateProjectDto },
         { new: true },
       )
-      .select('-accessToken') // Exclude sensitive data
       .lean();
 
     return updatedProject;
@@ -3365,10 +3369,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
   }
 
   async getProjectByAccountId(adminId: Types.ObjectId, accountId: string) {
-    return this.zoomProjectModel
-      .findOne({ adminId, accountId })
-      .select('-accessToken') // Exclude sensitive data
-      .lean();
+    return this.zoomProjectModel.findOne({ adminId, accountId }).lean();
   }
 
   /**
@@ -3416,7 +3417,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
   ) {
-    const project = await this.zoomProjectModel.findOne({
+    const project = await this.findProjectWithSecrets({
       _id: projectId,
       adminId,
     });
@@ -3446,10 +3447,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       },
     );
 
-    return this.zoomProjectModel
-      .findById(projectId)
-      .select('-accessToken -refreshToken -clientSecret')
-      .lean();
+    return this.zoomProjectModel.findById(projectId).lean();
   }
 
   /**
@@ -3591,10 +3589,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     });
 
     const saved = await project.save();
-    return this.zoomProjectModel
-      .findById(saved._id)
-      .select('-accessToken -clientSecret')
-      .lean();
+    return this.zoomProjectModel.findById(saved._id).lean();
   }
 
   // Additional utility methods
@@ -3616,7 +3611,6 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
           $lte: endDate,
         },
       })
-      .select('-accessToken') // Exclude sensitive data
       .sort({ createdAt: -1 })
       .lean();
   }
@@ -3637,7 +3631,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
   ) {
-    const project = await this.zoomProjectModel.findOne({
+    const project = await this.findProjectWithSecrets({
       _id: projectId,
       adminId,
     });
@@ -3672,7 +3666,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
   ): Promise<{ isSubscribed: boolean }> {
-    const project = await this.zoomProjectModel.findOne({
+    const project = await this.findProjectWithSecrets({
       _id: projectId,
       adminId,
     });
