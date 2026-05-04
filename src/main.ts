@@ -12,6 +12,15 @@ async function bootstrap() {
   // Set Winston as the global logger
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
+  // Anti-clickjacking + baseline hardening on all HTTP responses (before CORS)
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
+
   app.enableCors({
     origin: (origin, callback) => {
       const allowedOrigins = [
