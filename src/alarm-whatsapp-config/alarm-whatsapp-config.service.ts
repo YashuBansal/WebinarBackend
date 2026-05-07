@@ -18,7 +18,7 @@ import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { ProjectsService } from 'src/projects/projects.service';
 import { WabaMessageType } from 'src/whatsapp-embed/waba-message/waba-message.schema';
 
-type AlarmMessageType = 'main' | 'reminder';
+type AlarmMessageType = 'main' | 'reminder15m' | 'reminder30m';
 
 @Injectable()
 export class AlarmWhatsappConfigService {
@@ -41,8 +41,40 @@ export class AlarmWhatsappConfigService {
     return this.model.findOne({}).sort({ updatedAt: -1 }).lean();
   }
 
+  private normalizeLegacyReminderConfig(cfg: any) {
+    if (!cfg) return cfg;
+
+    const legacyTemplateName = cfg.reminderTemplateName;
+    const legacyLanguage = cfg.reminderLanguage || 'en_US';
+    const legacyHeaderMediaAssetId = cfg.reminderHeaderMediaAssetId || null;
+    const legacyMappings = cfg.reminderVariableMappings || [];
+
+    return {
+      ...cfg,
+      reminder15mTemplateName:
+        cfg.reminder15mTemplateName || legacyTemplateName || '',
+      reminder15mLanguage: cfg.reminder15mLanguage || legacyLanguage,
+      reminder15mHeaderMediaAssetId:
+        cfg.reminder15mHeaderMediaAssetId || legacyHeaderMediaAssetId,
+      reminder15mVariableMappings:
+        cfg.reminder15mVariableMappings !== undefined
+          ? cfg.reminder15mVariableMappings
+          : legacyMappings,
+      reminder30mTemplateName:
+        cfg.reminder30mTemplateName || legacyTemplateName || '',
+      reminder30mLanguage: cfg.reminder30mLanguage || legacyLanguage,
+      reminder30mHeaderMediaAssetId:
+        cfg.reminder30mHeaderMediaAssetId || legacyHeaderMediaAssetId,
+      reminder30mVariableMappings:
+        cfg.reminder30mVariableMappings !== undefined
+          ? cfg.reminder30mVariableMappings
+          : legacyMappings,
+    };
+  }
+
   async getConfig(_projectId?: string) {
-    return this.getGlobalConfigDocument();
+    const cfg = await this.getGlobalConfigDocument();
+    return this.normalizeLegacyReminderConfig(cfg);
   }
 
   async upsert(adminId: string, ownerEmail: string, dto: UpsertAlarmWhatsappConfigDto) {
@@ -57,9 +89,17 @@ export class AlarmWhatsappConfigService {
     await this.whatsappService.checkVariableMappingLength({
       adminId,
       projectId: dto.projectId,
-      templateName: dto.reminderTemplateName,
-      givenVariableLength: dto.reminderVariableMappings?.length || 0,
-      headerMediaAssetId: dto.reminderHeaderMediaAssetId,
+      templateName: dto.reminder15mTemplateName,
+      givenVariableLength: dto.reminder15mVariableMappings?.length || 0,
+      headerMediaAssetId: dto.reminder15mHeaderMediaAssetId,
+    });
+
+    await this.whatsappService.checkVariableMappingLength({
+      adminId,
+      projectId: dto.projectId,
+      templateName: dto.reminder30mTemplateName,
+      givenVariableLength: dto.reminder30mVariableMappings?.length || 0,
+      headerMediaAssetId: dto.reminder30mHeaderMediaAssetId,
     });
 
     const current = await this.getGlobalConfigDocument();
@@ -74,10 +114,19 @@ export class AlarmWhatsappConfigService {
       mainAlarmLanguage: dto.mainAlarmLanguage || 'en_US',
       mainAlarmHeaderMediaAssetId: dto.mainAlarmHeaderMediaAssetId || null,
       mainAlarmVariableMappings: dto.mainAlarmVariableMappings || [],
-      reminderTemplateName: dto.reminderTemplateName,
-      reminderLanguage: dto.reminderLanguage || 'en_US',
-      reminderHeaderMediaAssetId: dto.reminderHeaderMediaAssetId || null,
-      reminderVariableMappings: dto.reminderVariableMappings || [],
+      reminder15mTemplateName: dto.reminder15mTemplateName,
+      reminder15mLanguage: dto.reminder15mLanguage || 'en_US',
+      reminder15mHeaderMediaAssetId: dto.reminder15mHeaderMediaAssetId || null,
+      reminder15mVariableMappings: dto.reminder15mVariableMappings || [],
+      reminder30mTemplateName: dto.reminder30mTemplateName,
+      reminder30mLanguage: dto.reminder30mLanguage || 'en_US',
+      reminder30mHeaderMediaAssetId: dto.reminder30mHeaderMediaAssetId || null,
+      reminder30mVariableMappings: dto.reminder30mVariableMappings || [],
+      // Legacy mirror fields retained temporarily for backward compatibility.
+      reminderTemplateName: dto.reminder15mTemplateName,
+      reminderLanguage: dto.reminder15mLanguage || 'en_US',
+      reminderHeaderMediaAssetId: dto.reminder15mHeaderMediaAssetId || null,
+      reminderVariableMappings: dto.reminder15mVariableMappings || [],
     };
 
     if (current?._id) {
@@ -94,12 +143,15 @@ export class AlarmWhatsappConfigService {
       projectId ? doc?.projectId?.toString() === projectId : true,
     );
 
-    return docs.map((doc: any) => ({
-      ...doc,
-      id: doc._id?.toString(),
-      adminId: doc.adminId?.toString(),
-      projectId: doc.projectId?.toString(),
-    }));
+    return docs.map((doc: any) => {
+      const normalized = this.normalizeLegacyReminderConfig(doc);
+      return {
+        ...normalized,
+        id: doc._id?.toString(),
+        adminId: doc.adminId?.toString(),
+        projectId: doc.projectId?.toString(),
+      };
+    });
   }
 
   private resolveVariables(
@@ -125,25 +177,37 @@ export class AlarmWhatsappConfigService {
   }
 
   private getTemplateByType(cfg: any, type: AlarmMessageType) {
+    const normalized = this.normalizeLegacyReminderConfig(cfg);
     if (type === 'main') {
       return {
-        templateName: cfg.mainAlarmTemplateName,
-        language: cfg.mainAlarmLanguage || 'en_US',
-        headerMediaAssetId: cfg.mainAlarmHeaderMediaAssetId,
-        variableMappings: cfg.mainAlarmVariableMappings || [],
+        templateName: normalized.mainAlarmTemplateName,
+        language: normalized.mainAlarmLanguage || 'en_US',
+        headerMediaAssetId: normalized.mainAlarmHeaderMediaAssetId,
+        variableMappings: normalized.mainAlarmVariableMappings || [],
+      };
+    }
+
+    if (type === 'reminder15m') {
+      return {
+        templateName: normalized.reminder15mTemplateName,
+        language: normalized.reminder15mLanguage || 'en_US',
+        headerMediaAssetId: normalized.reminder15mHeaderMediaAssetId,
+        variableMappings: normalized.reminder15mVariableMappings || [],
       };
     }
 
     return {
-      templateName: cfg.reminderTemplateName,
-      language: cfg.reminderLanguage || 'en_US',
-      headerMediaAssetId: cfg.reminderHeaderMediaAssetId,
-      variableMappings: cfg.reminderVariableMappings || [],
+      templateName: normalized.reminder30mTemplateName,
+      language: normalized.reminder30mLanguage || 'en_US',
+      headerMediaAssetId: normalized.reminder30mHeaderMediaAssetId,
+      variableMappings: normalized.reminder30mVariableMappings || [],
     };
   }
 
   async sendTest(dto: TestSendAlarmWhatsappConfigDto) {
-    const cfg = await this.getGlobalConfigDocument();
+    const cfg = this.normalizeLegacyReminderConfig(
+      await this.getGlobalConfigDocument(),
+    );
     if (!cfg || !cfg.enabled) {
       throw new NotFoundException('Alarm WhatsApp configuration not found');
     }
@@ -192,7 +256,9 @@ export class AlarmWhatsappConfigService {
     };
   }) {
     const { type, contact } = params;
-    const cfg = await this.getGlobalConfigDocument();
+    const cfg = this.normalizeLegacyReminderConfig(
+      await this.getGlobalConfigDocument(),
+    );
     if (!cfg || !cfg.enabled) {
       this.logger.warn(
         `Alarm WhatsApp global config missing/disabled.`,
@@ -251,7 +317,9 @@ export class AlarmWhatsappConfigService {
       const successUpdate =
         type === 'main'
           ? { $inc: { mainAlarmSent: 1 } }
-          : { $inc: { reminderSent: 1 } };
+          : type === 'reminder15m'
+            ? { $inc: { reminder15mSent: 1, reminderSent: 1 } }
+            : { $inc: { reminder30mSent: 1, reminderSent: 1 } };
 
       await this.model.updateOne(
         { _id: cfg._id },
@@ -266,7 +334,9 @@ export class AlarmWhatsappConfigService {
       const failUpdate =
         type === 'main'
           ? { $inc: { mainAlarmFailed: 1 } }
-          : { $inc: { reminderFailed: 1 } };
+          : type === 'reminder15m'
+            ? { $inc: { reminder15mFailed: 1, reminderFailed: 1 } }
+            : { $inc: { reminder30mFailed: 1, reminderFailed: 1 } };
 
       await this.model.updateOne(
         { _id: cfg._id },

@@ -255,6 +255,16 @@ export class AlarmService {
         );
         let sentCount = 0;
         for (const phoneNumber of recipients) {
+          let configType: 'reminder15m' | 'reminder30m' | null = null;
+          if (reminderType === '15min') configType = 'reminder15m';
+          if (reminderType === '30min') configType = 'reminder30m';
+          if (!configType) {
+            this.logger.warn(
+              `Unknown reminder type "${reminderType}" for alarm ${alarm?._id}; skipping template send.`,
+            );
+            continue;
+          }
+
           const contactPayload = await this.buildAlarmTemplateContact(
             alarm,
             phoneNumber,
@@ -263,7 +273,7 @@ export class AlarmService {
           );
           const templateSendResult =
             await this.alarmWhatsappConfigService.sendForAlarm({
-              type: 'reminder',
+              type: configType,
               contact: contactPayload,
             });
 
