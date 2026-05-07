@@ -58,20 +58,37 @@ export class UpsertAlarmWhatsappConfigDto {
 
   @IsString()
   @IsNotEmpty()
-  reminderTemplateName: string;
+  reminder15mTemplateName: string;
 
   @IsOptional()
   @IsString()
-  reminderLanguage?: string;
+  reminder15mLanguage?: string;
 
   @IsOptional()
   @IsString()
-  reminderHeaderMediaAssetId?: string;
+  reminder15mHeaderMediaAssetId?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => VariableMappingDto)
-  reminderVariableMappings: VariableMappingDto[];
+  reminder15mVariableMappings: VariableMappingDto[];
+
+  @IsString()
+  @IsNotEmpty()
+  reminder30mTemplateName: string;
+
+  @IsOptional()
+  @IsString()
+  reminder30mLanguage?: string;
+
+  @IsOptional()
+  @IsString()
+  reminder30mHeaderMediaAssetId?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VariableMappingDto)
+  reminder30mVariableMappings: VariableMappingDto[];
 
   @IsOptional()
   @IsBoolean()
@@ -95,7 +112,7 @@ export class TestSendAlarmWhatsappConfigDto {
 
   @IsString()
   @IsNotEmpty()
-  type: 'main' | 'reminder';
+  type: 'main' | 'reminder15m' | 'reminder30m';
 }
 
 export class DeleteAlarmWhatsappConfigDto {
