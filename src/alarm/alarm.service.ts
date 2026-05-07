@@ -263,7 +263,6 @@ export class AlarmService {
           );
           const templateSendResult =
             await this.alarmWhatsappConfigService.sendForAlarm({
-              adminId,
               type: 'reminder',
               contact: contactPayload,
             });
@@ -331,7 +330,6 @@ export class AlarmService {
           );
           const templateSendResult =
             await this.alarmWhatsappConfigService.sendForAlarm({
-              adminId,
               type: 'main',
               contact: contactPayload,
             });

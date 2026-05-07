@@ -24,6 +24,9 @@ export class VariableMapping {
 
 @Schema({ timestamps: true })
 export class AlarmWhatsappConfig extends Document {
+  @Prop({ type: String, default: 'global', unique: true, index: true })
+  scope: string;
+
   @Prop({ type: Types.ObjectId, ref: User.name, required: true, index: true })
   adminId: Types.ObjectId;
 
@@ -76,8 +79,10 @@ export class AlarmWhatsappConfig extends Document {
 
   @Prop({ type: String, required: false })
   lastError?: string;
+
+  @Prop({ type: String, required: false })
+  ownerEmail?: string;
 }
 
 export const AlarmWhatsappConfigSchema =
   SchemaFactory.createForClass(AlarmWhatsappConfig);
-AlarmWhatsappConfigSchema.index({ adminId: 1, projectId: 1 }, { unique: true });
