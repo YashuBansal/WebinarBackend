@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -32,16 +31,21 @@ export class AlarmWhatsappConfigService {
     private readonly projectsService: ProjectsService,
   ) {}
 
-  async getConfig(adminId: string, projectId: string) {
-    return this.model
-      .findOne({
-        adminId: new Types.ObjectId(adminId),
-        projectId: new Types.ObjectId(projectId),
-      })
+  private async getGlobalConfigDocument() {
+    const globalByScope = await this.model
+      .findOne({ scope: 'global' })
+      .sort({ updatedAt: -1 })
       .lean();
+    if (globalByScope) return globalByScope;
+
+    return this.model.findOne({}).sort({ updatedAt: -1 }).lean();
   }
 
-  async upsert(adminId: string, dto: UpsertAlarmWhatsappConfigDto) {
+  async getConfig(_projectId?: string) {
+    return this.getGlobalConfigDocument();
+  }
+
+  async upsert(adminId: string, ownerEmail: string, dto: UpsertAlarmWhatsappConfigDto) {
     await this.whatsappService.checkVariableMappingLength({
       adminId,
       projectId: dto.projectId,
@@ -58,13 +62,13 @@ export class AlarmWhatsappConfigService {
       headerMediaAssetId: dto.reminderHeaderMediaAssetId,
     });
 
-    const filter = {
-      adminId: new Types.ObjectId(adminId),
-      projectId: new Types.ObjectId(dto.projectId),
-    };
+    const current = await this.getGlobalConfigDocument();
 
     const update = {
-      ...filter,
+      scope: 'global',
+      adminId: new Types.ObjectId(adminId),
+      projectId: new Types.ObjectId(dto.projectId),
+      ownerEmail: ownerEmail.trim().toLowerCase(),
       enabled: dto.enabled ?? true,
       mainAlarmTemplateName: dto.mainAlarmTemplateName,
       mainAlarmLanguage: dto.mainAlarmLanguage || 'en_US',
@@ -76,29 +80,19 @@ export class AlarmWhatsappConfigService {
       reminderVariableMappings: dto.reminderVariableMappings || [],
     };
 
-    return this.model.findOneAndUpdate(filter, update, {
-      upsert: true,
-      new: true,
-    });
+    if (current?._id) {
+      return this.model.findByIdAndUpdate(current._id, update, { new: true });
+    }
+
+    return this.model.create(update);
   }
 
-  async list(adminId: string, projectId?: string) {
-    if (!adminId || !Types.ObjectId.isValid(adminId)) {
-      throw new BadRequestException('Invalid adminId provided');
-    }
-
-    const filter: any = {
-      adminId: new Types.ObjectId(adminId),
-    };
-
-    if (projectId) {
-      if (!Types.ObjectId.isValid(projectId)) {
-        throw new BadRequestException('Invalid projectId provided');
-      }
-      filter.projectId = new Types.ObjectId(projectId);
-    }
-
-    const docs = await this.model.find(filter).sort({ updatedAt: -1 }).lean();
+  async list(projectId?: string) {
+    const docs = (
+      await this.model.find({}).sort({ updatedAt: -1 }).limit(1).lean()
+    ).filter((doc: any) =>
+      projectId ? doc?.projectId?.toString() === projectId : true,
+    );
 
     return docs.map((doc: any) => ({
       ...doc,
@@ -148,10 +142,16 @@ export class AlarmWhatsappConfigService {
     };
   }
 
-  async sendTest(adminId: string, dto: TestSendAlarmWhatsappConfigDto) {
-    const cfg = await this.getConfig(adminId, dto.projectId);
+  async sendTest(dto: TestSendAlarmWhatsappConfigDto) {
+    const cfg = await this.getGlobalConfigDocument();
     if (!cfg || !cfg.enabled) {
       throw new NotFoundException('Alarm WhatsApp configuration not found');
+    }
+
+    const senderAdminId = cfg?.adminId?.toString();
+    const senderProjectId = cfg?.projectId?.toString();
+    if (!senderAdminId || !senderProjectId) {
+      throw new NotFoundException('Alarm WhatsApp sender context not configured');
     }
 
     const selected = this.getTemplateByType(cfg, dto.type);
@@ -161,10 +161,10 @@ export class AlarmWhatsappConfigService {
     );
 
     return this.whatsappService.sendTemplateMessagev2({
-      adminId,
+      adminId: senderAdminId,
       messageType: WabaMessageType.ALARM,
       sendTemplateDto: {
-        projectId: dto.projectId,
+        projectId: senderProjectId,
         recipients: [
           {
             recipientPhoneNumber: dto.phoneNumber,
@@ -180,8 +180,6 @@ export class AlarmWhatsappConfigService {
   }
 
   async sendForAlarm(params: {
-    adminId: string;
-    projectId?: string;
     type: AlarmMessageType;
     contact: {
       phoneNumber: string;
@@ -193,51 +191,31 @@ export class AlarmWhatsappConfigService {
       alarmDate?: string;
     };
   }) {
-    const { adminId, type, contact } = params;
-    let { projectId } = params;
-
-    if (!projectId) {
-      const configs = await this.model
-        .find({
-          adminId: new Types.ObjectId(adminId),
-          enabled: true,
-        })
-        .sort({ updatedAt: -1 })
-        .limit(2)
-        .lean();
-
-      if (!configs.length) {
-        this.logger.warn(
-          `No enabled alarm WhatsApp config found for admin ${adminId}.`,
-        );
-        return null;
-      }
-
-      projectId = configs[0]?.projectId?.toString();
-
-      if (configs.length > 1) {
-        this.logger.warn(
-          `Multiple enabled alarm configs found for admin ${adminId}; using latest project ${projectId}.`,
-        );
-      }
-    }
-
-    if (!projectId) return null;
-    const cfg = await this.getConfig(adminId, projectId);
+    const { type, contact } = params;
+    const cfg = await this.getGlobalConfigDocument();
     if (!cfg || !cfg.enabled) {
       this.logger.warn(
-        `Alarm WhatsApp config missing/disabled for admin ${adminId} project ${projectId}.`,
+        `Alarm WhatsApp global config missing/disabled.`,
+      );
+      return null;
+    }
+
+    const senderAdminId = cfg?.adminId?.toString();
+    const senderProjectId = cfg?.projectId?.toString();
+    if (!senderAdminId || !senderProjectId) {
+      this.logger.warn(
+        `Alarm WhatsApp sender context missing in global configuration.`,
       );
       return null;
     }
 
     const project = await this.projectsService.findOne(
-      new Types.ObjectId(adminId),
-      new Types.ObjectId(projectId),
+      new Types.ObjectId(senderAdminId),
+      new Types.ObjectId(senderProjectId),
     );
     if (!project || (project as any).isDeleted) {
       this.logger.warn(
-        `Skipping alarm template send for project ${projectId} because project is deleted or not accessible`,
+        `Skipping alarm template send for project ${senderProjectId} because project is deleted or not accessible`,
       );
       return null;
     }
@@ -250,13 +228,13 @@ export class AlarmWhatsappConfigService {
 
     try {
       this.logger.log(
-        `Sending ${type} alarm template "${selected.templateName}" for admin ${adminId}, project ${projectId}, phone ${contact.phoneNumber}.`,
+        `Sending ${type} alarm template "${selected.templateName}" for admin ${senderAdminId}, project ${senderProjectId}, phone ${contact.phoneNumber}.`,
       );
       const res = await this.whatsappService.sendTemplateMessagev2({
-        adminId,
+        adminId: senderAdminId,
         messageType: WabaMessageType.ALARM,
         sendTemplateDto: {
-          projectId,
+          projectId: senderProjectId,
           recipients: [
             {
               recipientPhoneNumber: contact.phoneNumber,
@@ -298,16 +276,15 @@ export class AlarmWhatsappConfigService {
         },
       );
       this.logger.error(
-        `Failed to send ${type} alarm template message for admin ${adminId}, project ${projectId}: ${error?.message}`,
+        `Failed to send ${type} alarm template message for admin ${senderAdminId}, project ${senderProjectId}: ${error?.message}`,
       );
       return null;
     }
   }
 
-  async delete(adminId: string, _id: string) {
+  async delete(_id: string) {
     const filter = {
       _id: new Types.ObjectId(_id),
-      adminId: new Types.ObjectId(adminId),
     };
 
     const result = await this.model.findOneAndDelete(filter);
@@ -317,10 +294,9 @@ export class AlarmWhatsappConfigService {
     return { message: 'Configuration deleted successfully' };
   }
 
-  async toggle(adminId: string, _id: string, enabled: boolean) {
+  async toggle(_id: string, enabled: boolean) {
     const filter = {
       _id: new Types.ObjectId(_id),
-      adminId: new Types.ObjectId(adminId),
     };
 
     const result = await this.model.findOneAndUpdate(
