@@ -534,11 +534,19 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     const doc = await this.zoomProjectModel.findOneAndUpdate(
       { _id: projectId, adminId },
       {
-        accountId: accountId || undefined,
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
-        accessTokenExpiresAt: expiresAt,
-        isConfigured: true,
+        $set: {
+          accountId: accountId || undefined,
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          accessTokenExpiresAt: expiresAt,
+          isConfigured: true,
+          usesMarketplaceGeneralApp: true,
+        },
+        $unset: {
+          clientSecret: 1,
+          clientId: 1,
+          secretToken: 1,
+        },
       },
       { new: true },
     );
@@ -546,7 +554,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
   }
 
   async listAccounts(adminId: Types.ObjectId) {
-    return this.zoomProjectModel.find({ adminId });
+    return this.zoomProjectModel.find({ adminId }).lean();
   }
 
   async disconnectAccount(adminId: Types.ObjectId, accountId: string) {
@@ -899,42 +907,6 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         ),
       );
     }
-  }
-
-  async validateWebhook(payload: any, projectId: Types.ObjectId) {
-    const { plainToken } = payload.payload;
-
-    if (!plainToken) {
-      // Or handle the error as you see fit
-      throw new Error('plainToken is missing in the validation payload.');
-    }
-
-    let realSecretToken: any;
-
-    const secretToken = await this.zoomProjectModel
-      .findOne({ _id: projectId })
-      .select('secretToken');
-    if (secretToken && secretToken.secretToken) {
-      realSecretToken = secretToken.secretToken;
-    } else {
-      realSecretToken = this.config.get<string>('ZOOM_CLIENT_SECRET_TOKEN');
-    }
-
-    if (!realSecretToken) {
-      throw new Error('Zoom webhook secret token is not configured.');
-    }
-
-    const hash = crypto
-      .createHmac('sha256', realSecretToken)
-      .update(plainToken)
-      .digest('hex');
-
-    const response = {
-      plainToken: plainToken,
-      encryptedToken: hash,
-    };
-
-    return response;
   }
 
   /**
@@ -3291,7 +3263,13 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       ];
     }
 
-    const [projects, total] = await Promise.all([
+    /** Projects not on general Marketplace OAuth (`usesMarketplaceGeneralApp !== true`). */
+    const legacyOrNotGeneralMatch: FilterQuery<ZoomProjectDocument> = {
+      adminId,
+      usesMarketplaceGeneralApp: { $ne: true },
+    };
+
+    const [rawProjects, total, legacyCount] = await Promise.all([
       this.zoomProjectModel
         .find(query)
         .sort({ createdAt: -1 })
@@ -3299,7 +3277,12 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         .limit(limit)
         .lean(),
       this.zoomProjectModel.countDocuments(query),
+      this.zoomProjectModel.countDocuments(legacyOrNotGeneralMatch),
     ]);
+
+    const projects = rawProjects;
+
+    const hasAnyLegacyZoomProjects = legacyCount > 0;
 
     return {
       projects,
@@ -3309,6 +3292,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
         total,
         pages: Math.ceil(total / limit),
       },
+      hasAnyLegacyZoomProjects,
     };
   }
 
@@ -3331,32 +3315,14 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     const project = new this.zoomProjectModel({
       adminId,
       ...createProjectDto,
+      usesMarketplaceGeneralApp: true,
     });
 
     const savedProject = await project.save();
-    return this.zoomProjectModel.findById(savedProject._id).lean();
-  }
-
-  async updateProject(
-    adminId: Types.ObjectId,
-    projectId: Types.ObjectId,
-    updateProjectDto: {
-      projectName?: string;
-      accountId?: string;
-      accessToken?: string;
-      refreshToken?: string;
-      accessTokenExpiresAt?: Date;
-    },
-  ) {
-    const updatedProject = await this.zoomProjectModel
-      .findOneAndUpdate(
-        { _id: projectId, adminId },
-        { $set: updateProjectDto },
-        { new: true },
-      )
+    const raw = await this.zoomProjectModel
+      .findById(savedProject._id)
       .lean();
-
-    return updatedProject;
+    return raw;
   }
 
   async deleteProject(adminId: Types.ObjectId, projectId: Types.ObjectId) {
@@ -3437,17 +3403,24 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       {
         $set: {
           isConfigured: false,
+          usesMarketplaceGeneralApp: false,
         },
         $unset: {
           accessToken: 1,
           refreshToken: 1,
           accessTokenExpiresAt: 1,
           accountId: 1,
+          clientId: 1,
+          clientSecret: 1,
+          secretToken: 1,
         },
       },
     );
 
-    return this.zoomProjectModel.findById(projectId).lean();
+    const raw = await this.zoomProjectModel
+      .findById(projectId)
+      .lean();
+    return raw;
   }
 
   /**
@@ -3479,12 +3452,15 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     const result = await this.zoomProjectModel.updateMany(
       { accountId },
       {
-        $set: { isConfigured: false },
+        $set: { isConfigured: false, usesMarketplaceGeneralApp: false },
         $unset: {
           accessToken: 1,
           refreshToken: 1,
           accessTokenExpiresAt: 1,
           accountId: 1,
+          clientId: 1,
+          clientSecret: 1,
+          secretToken: 1,
         },
       },
     );
@@ -3580,13 +3556,17 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
       refreshToken: tokenData.refresh_token, // may be undefined for some grants
       accessTokenExpiresAt: expiresAt,
       isConfigured: true,
+      usesMarketplaceGeneralApp: false,
       clientId: payload.clientId,
       clientSecret: payload.clientSecret,
       secretToken: payload.secretToken,
     });
 
     const saved = await project.save();
-    return this.zoomProjectModel.findById(saved._id).lean();
+    const raw = await this.zoomProjectModel
+      .findById(saved._id)
+      .lean();
+    return raw;
   }
 
   // Additional utility methods
