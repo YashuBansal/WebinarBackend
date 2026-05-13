@@ -79,6 +79,7 @@ import { HealthModule } from './health/health.module';
 import { OtelWinstonTransport } from './logger/otel-winston-transport';
 import { PabblyTokenBlacklistModule } from './auth/pabbly-token-blacklist.module';
 import { WhatsappOptoutModule } from './whatsapp-optout/whatsapp-optout.module';
+import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 
 @Module({
   imports: [
@@ -228,6 +229,7 @@ import { WhatsappOptoutModule } from './whatsapp-optout/whatsapp-optout.module';
     ProgramModule,
     InterestPoolSettingsModule,
     PaymentsModule,
+    QuickRepliesModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService, FileStorageService],

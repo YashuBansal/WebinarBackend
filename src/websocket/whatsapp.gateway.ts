@@ -179,11 +179,15 @@ export class WhatsAppGateway
     payload: {
       phoneNumber: string;
       textBody?: string;
+      displayText?: string;
       direction: 'inbound' | 'outbound';
       createdAt?: string;
       messageFormat?: 'text' | 'template' | 'media';
       mimeType?: string;
       mediaUrl?: string;
+      templateComponents?: any[];
+      status?: string;
+      _id?: string;
     },
   ) {
     const room = `user:${String(userId)}`;
