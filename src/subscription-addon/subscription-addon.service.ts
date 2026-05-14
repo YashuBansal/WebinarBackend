@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import {
@@ -7,11 +7,36 @@ import {
 } from 'src/schemas/SubscriptionAddon.schema';
 
 @Injectable()
-export class SubscriptionAddonService {
+export class SubscriptionAddonService implements OnModuleInit {
   constructor(
     @InjectModel(SubscriptionAddOn.name)
     private SubscriptionAddOnModel: Model<SubscriptionAddOn>,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // Legacy TTL on `expiryDate` was removed from the schema; drop it if MongoDB still has it.
+    try {
+      const specs = await this.SubscriptionAddOnModel.collection.indexes();
+      for (const spec of specs) {
+        if (spec.expireAfterSeconds === undefined || !spec.name) continue;
+        const key = spec.key as Record<string, number>;
+        const keyNames = Object.keys(key);
+        if (
+          keyNames.length === 1 &&
+          keyNames[0] === 'expiryDate' &&
+          key.expiryDate === 1
+        ) {
+          try {
+            await this.SubscriptionAddOnModel.collection.dropIndex(spec.name);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    try {
+      await this.SubscriptionAddOnModel.syncIndexes();
+    } catch (_) {}
+  }
 
   async createSubscriptionAddon(
     subscriptionId: string,
