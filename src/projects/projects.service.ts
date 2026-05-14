@@ -89,7 +89,10 @@ export class ProjectsService {
       adminId.toString(),
     );
 
-    const projectCount = await this.projectModel.countDocuments({ adminId });
+    const projectCount = await this.projectModel.countDocuments({
+      adminId,
+      isDeleted: { $ne: true },
+    });
 
     const whatsappProjectLimit =
       (userSubscription.whatsappProjectLimit ||
@@ -105,6 +108,7 @@ export class ProjectsService {
     const project = await this.projectModel.findOne({
       adminId,
       projectName,
+      isDeleted: { $ne: true },
     });
 
     if (project) {

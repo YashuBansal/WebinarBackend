@@ -1,6 +1,6 @@
 {
   "description": "Zoom Webhook Test Payloads for Postman",
-  "endpoint": "POST http://localhost:3000/api/v1/zoom/webhook-v2?projectId=YOUR_PROJECT_ID",
+  "endpoint": "POST http://localhost:3000/api/v1/zoom/webhook-v3",
   "headers": {
     "Content-Type": "application/json"
   },

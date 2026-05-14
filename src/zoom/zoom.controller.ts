@@ -7,7 +7,6 @@ import {
   Param,
   Post,
   Delete,
-  Put,
   Query,
   Headers,
   BadRequestException,
@@ -20,7 +19,6 @@ import { Id } from 'src/decorators/custom.decorator';
 import { ZoomService } from './zoom.service';
 import { CreateZoomProjectDto } from './dto/create-zoom-project.dto';
 import { ValidateZoomConfigDto } from './dto/validate-zoom-config.dto';
-import { UpdateZoomProjectDto } from './dto/update-zoom-project.dto';
 import { QueryZoomProjectsDto } from './dto/query-zoom-projects.dto';
 import { WebhookQueueService } from './webhook-queue.service';
 
@@ -165,50 +163,6 @@ export class ZoomController {
     };
   }
 
-  @Post('webhook-v2')
-  @HttpCode(HttpStatus.OK)
-  async webhook(@Body() body: any, @Query('projectId') projectId: string) {
-    this.logger.log(
-      ` ========================= ${body?.event} ========================= `,
-    );
-
-    // Handle validation synchronously (needs to return response)
-    if (body.event === 'endpoint.url_validation') {
-      if (!mongoose.isValidObjectId(projectId))
-        throw new BadRequestException('Invalid projectId');
-      return await this.zoomService.validateWebhook(
-        body,
-        new Types.ObjectId(`${projectId}`),
-      );
-    }
-
-    // Generate deduplication ID for idempotency
-    const deduplicationId = this.generateDeduplicationId(body, projectId);
-    this.logger.log(
-      `Deduplication ID:::::::::::::::::::::::: ${deduplicationId}`,
-    );
-
-    // Enqueue webhook for processing
-    // Return 200 OK immediately to prevent Zoom from retrying
-    const enqueued = await this.webhookQueueService.enqueue(
-      body,
-      projectId,
-      deduplicationId,
-    );
-
-    if (!enqueued) {
-      this.logger.error('Failed to enqueue webhook event - queue is full', {
-        event: body?.event,
-        projectId,
-        deduplicationId,
-      });
-      // Still return 200 OK to prevent Zoom from retrying
-      // The event is lost, but we log it for monitoring
-    }
-
-    return { statusCode: HttpStatus.OK, message: 'Webhook received' };
-  }
-
   @Post('webhook-v3')
   @HttpCode(HttpStatus.OK)
   async webhookV3(@Body() body: any) {
@@ -245,51 +199,7 @@ export class ZoomController {
   }
 
   /**
-   * Generate a deterministic deduplication ID from webhook payload
-   * This ensures the same event from Zoom (retries) will be identified as duplicates
-   */
-  private generateDeduplicationId(body: any, projectId: string): string {
-    const parts: string[] = [
-      projectId || '',
-      body?.event || '',
-      body?.event_ts || body?.payload?.event_ts || '',
-    ];
-
-    // Add entity ID (meeting/webinar ID)
-    const objectId = body?.payload?.object?.id || body?.object?.id || '';
-    if (objectId) {
-      parts.push(objectId);
-    }
-
-    // Add registrant/participant identifier for granular uniqueness
-    // This ensures different registrations are treated as separate events
-    const registrantId =
-      body?.payload?.object?.registrant?.id ||
-      body?.payload?.object?.registrant?.email ||
-      body?.object?.registrant?.id ||
-      body?.object?.registrant?.email ||
-      '';
-    if (registrantId) {
-      parts.push(registrantId);
-    }
-
-    const participantId =
-      body?.payload?.object?.participant?.user_id ||
-      body?.payload?.object?.participant?.id ||
-      body?.object?.participant?.user_id ||
-      body?.object?.participant?.id ||
-      '';
-    if (participantId) {
-      parts.push(participantId);
-    }
-
-    // Join all parts with a delimiter and create a hash-like string
-    // Using a simple concatenation since we need deterministic IDs
-    return parts.filter((p) => p).join('|');
-  }
-
-  /**
-   * Same as v2 dedupe, but without projectId (v3 has no query param).
+   * Deterministic deduplication ID for webhook-v3 (no projectId query param).
    */
   private generateDeduplicationIdV3(body: any): string {
     const parts: string[] = [
@@ -330,7 +240,7 @@ export class ZoomController {
     return parts.filter((p) => p).join('|');
   }
 
-  @Get('webhook-v2/queue/health')
+  @Get('webhook-v3/queue/health')
   @HttpCode(HttpStatus.OK)
   async getQueueHealth() {
     const health = this.webhookQueueService.getHealthStatus();
@@ -440,38 +350,6 @@ export class ZoomController {
       statusCode: HttpStatus.CREATED,
       message: 'Zoom project configured',
       data,
-    };
-  }
-
-  @Put('projects/:id')
-  async updateProject(
-    @Id() adminId: string,
-    @Param('id') id: string,
-    @Body() updateProjectDto: UpdateZoomProjectDto,
-  ) {
-    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
-      return {
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: 'Invalid request',
-        data: null,
-      };
-    }
-    const project = await this.zoomService.updateProject(
-      new Types.ObjectId(`${adminId}`),
-      new Types.ObjectId(`${id}`),
-      updateProjectDto,
-    );
-    if (!project) {
-      return {
-        statusCode: HttpStatus.NOT_FOUND,
-        message: 'Project not found',
-        data: null,
-      };
-    }
-    return {
-      statusCode: HttpStatus.OK,
-      message: 'Project updated',
-      data: project,
     };
   }
 

@@ -1283,6 +1283,55 @@ export class WhatsappService extends BaseLoggerService {
   }
 
   /**
+   * Masks a token/secret so it can be safely included in logs.
+   * Returns "<first4>...<last4>" for tokens >= 8 chars, otherwise a
+   * placeholder. Never returns the full token.
+   */
+  private maskToken(token?: string | null): string {
+    if (typeof token !== 'string' || token.length === 0) {
+      return '<missing>';
+    }
+    if (token.length < 8) {
+      return '<short:' + token.length + '>';
+    }
+    return `${token.slice(0, 4)}...${token.slice(-4)} (len=${token.length})`;
+  }
+
+  /**
+   * Pulls the most useful diagnostic fields out of a Meta Graph API error
+   * so we can log a single, compact object instead of a noisy AxiosError.
+   * Safe to call with any value.
+   */
+  private extractMetaError(error: unknown): {
+    status?: number;
+    metaCode?: number | string;
+    metaSubcode?: number | string;
+    metaType?: string;
+    metaMessage?: string;
+    fbtraceId?: string;
+    axiosMessage?: string;
+    raw?: unknown;
+  } {
+    const axiosError = error as AxiosError<any>;
+    const responseData = axiosError?.response?.data as any;
+    const metaErr = responseData?.error ?? {};
+
+    return {
+      status: axiosError?.response?.status,
+      metaCode: metaErr?.code,
+      metaSubcode: metaErr?.error_subcode,
+      metaType: metaErr?.type,
+      metaMessage:
+        metaErr?.error_user_msg ||
+        metaErr?.message ||
+        (typeof responseData === 'string' ? responseData : undefined),
+      fbtraceId: metaErr?.fbtrace_id,
+      axiosMessage: axiosError?.message,
+      raw: responseData,
+    };
+  }
+
+  /**
    * Main public method to handle the full WABA connection flow.
    * @param code The authorization code from the frontend.
    * @param adminId The ID of the admin user initiating the connection.
@@ -1293,17 +1342,85 @@ export class WhatsappService extends BaseLoggerService {
     adminId: Types.ObjectId,
     projectId: Types.ObjectId,
   ) {
-    this.logger.log(`Starting WABA connection process for admin: ${adminId}`);
-    try {
-      const accessToken = await this.getAccessTokenFromCode(code);
-      const wabaId = await this.getWabaIdFromToken(accessToken);
+    const ctx = {
+      adminId: adminId?.toString?.() ?? String(adminId),
+      projectId: projectId?.toString?.() ?? String(projectId),
+      codeLength: typeof code === 'string' ? code.length : 0,
+    };
+    this.logger.log('[WABA][Step 0/6] Starting WABA connection process', ctx);
 
+    try {
+      this.logger.log(
+        '[WABA][Step 1/6] Exchanging authorization code for access token',
+        ctx,
+      );
+      const accessToken = await this.getAccessTokenFromCode(code);
+      const tokenMasked = this.maskToken(accessToken);
+      this.logger.log('[WABA][Step 1/6] Access token acquired', {
+        ...ctx,
+        tokenMasked,
+      });
+
+      this.logger.log(
+        '[WABA][Step 2/6] Resolving WABA id from access token',
+        { ...ctx, tokenMasked },
+      );
+      const wabaId = await this.getWabaIdFromToken(accessToken);
+      this.logger.log('[WABA][Step 2/6] WABA id resolved', {
+        ...ctx,
+        wabaId,
+      });
+
+      this.logger.log('[WABA][Step 3/6] Fetching WABA details from Meta', {
+        ...ctx,
+        wabaId,
+        tokenMasked,
+      });
       const wabaDetails = await this.getWabaDetails(wabaId, accessToken);
 
-      const phoneNumberId = wabaDetails?.phone_numbers.data[0]?.id;
-      const phoneNumber =
-        wabaDetails?.phone_numbers.data[0]?.display_phone_number;
-      this.logger.log(`Saving connection details for WABA ID: ${wabaId}`);
+      const phones = wabaDetails?.phone_numbers?.data;
+      const firstPhone = Array.isArray(phones) ? phones[0] : undefined;
+      const phoneNumberId = firstPhone?.id;
+      const phoneNumber = firstPhone?.display_phone_number;
+
+      if (!phoneNumberId || !phoneNumber) {
+        this.logger.error(
+          '[WABA][Step 3/6] WABA has no usable phone number; aborting save',
+          {
+            ...ctx,
+            wabaId,
+            phoneCount: Array.isArray(phones) ? phones.length : 0,
+            phones,
+          },
+        );
+        throw new BadRequestException(
+          'WhatsApp Business Account has no phone number added yet. Add a phone number in Meta Business Manager and retry.',
+        );
+      }
+
+      this.logger.log('[WABA][Step 3/6] WABA details OK', {
+        ...ctx,
+        wabaId,
+        phoneNumberId,
+        phoneNumber,
+        wabaName: wabaDetails?.name,
+      });
+
+      const appId = this.configService.get('META_APP_ID');
+      const appSecret = this.configService.get('META_APP_SECRET');
+
+      this.logger.log(
+        '[WABA][Step 4/6] Saving connection details to project',
+        {
+          ...ctx,
+          wabaId,
+          phoneNumberId,
+          phoneNumber,
+          appId,
+          hasAppSecret: !!appSecret,
+          tokenMasked,
+        },
+      );
       const newWabaConnection = await this.projectService.update(
         adminId,
         projectId,
@@ -1312,54 +1429,103 @@ export class WhatsappService extends BaseLoggerService {
           wabaId: wabaId,
           phoneNumberId: phoneNumberId,
           phone: phoneNumber,
-          appId: this.configService.get('META_APP_ID'),
-          appSecret: this.configService.get('META_APP_SECRET'),
+          appId: appId,
+          appSecret: appSecret,
         },
       );
 
+      if (!newWabaConnection) {
+        this.logger.error(
+          '[WABA][Step 4/6] projectService.update returned no document',
+          { ...ctx, wabaId, phoneNumberId },
+        );
+        throw new InternalServerErrorException(
+          'Failed to save WhatsApp connection details to the project.',
+        );
+      }
       this.logger.log(
-        `Successfully connected WABA ${wabaId} for admin ${adminId}`,
+        `[WABA][Step 4/6] Saved WABA ${wabaId} for project ${ctx.projectId}`,
+        { ...ctx, wabaId, phoneNumberId },
       );
 
-      if (newWabaConnection) {
-        try {
-          // Register the phone number with PIN
-          const registrationData = await this.registerPhoneNumber(
-            phoneNumberId,
-            accessToken,
-            '123456',
-          );
-          this.logger.log('Phone number registration data:', registrationData);
-
-          // Subscribe the app to the WABA for webhook notifications
-          const subscriptionData = await this.subscribeAppToWaba(
+      try {
+        this.logger.log(
+          '[WABA][Step 5/6] Registering phone number with WhatsApp Cloud API',
+          {
+            ...ctx,
             wabaId,
-            accessToken,
-          );
-          this.logger.log('App subscription data:', subscriptionData);
+            phoneNumberId,
+            phoneNumber,
+            tokenMasked,
+          },
+        );
+        const registrationData = await this.registerPhoneNumber(
+          phoneNumberId,
+          accessToken,
+          '123456',
+        );
+        this.logger.log('[WABA][Step 5/6] Phone number registered', {
+          ...ctx,
+          wabaId,
+          phoneNumberId,
+          registrationData,
+        });
 
-          this.logger.log(
-            `Successfully completed WABA setup: registration and app subscription for WABA ${wabaId}`,
-          );
-        } catch (error) {
-          this.logger.error(
-            `Failed to complete WABA setup for WABA ${wabaId}`,
-            error.message,
-          );
-          // Don't throw the error here as the main connection was successful
-          // The registration and subscription can be retried later
-        }
+        this.logger.log(
+          '[WABA][Step 6/6] Subscribing app to WABA for webhook notifications',
+          { ...ctx, wabaId, tokenMasked },
+        );
+        const subscriptionData = await this.subscribeAppToWaba(
+          wabaId,
+          accessToken,
+        );
+        this.logger.log('[WABA][Step 6/6] App subscribed to WABA', {
+          ...ctx,
+          wabaId,
+          subscriptionData,
+        });
+
+        this.logger.log(
+          `[WABA][Done] WABA setup completed for ${wabaId} (admin ${ctx.adminId}, project ${ctx.projectId})`,
+        );
+      } catch (error) {
+        const meta = this.extractMetaError(error);
+        this.logger.error(
+          `[WABA][Step 5-6] Post-save setup failed for WABA ${wabaId}; main connection is saved and can be retried`,
+          { ...ctx, wabaId, phoneNumberId, ...meta },
+        );
+        // Don't throw the error here as the main connection was successful
+        // The registration and subscription can be retried later
       }
 
       return newWabaConnection;
     } catch (error) {
-      const axiosError = error as AxiosError;
+      if (
+        error instanceof BadRequestException ||
+        error instanceof UnauthorizedException ||
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException ||
+        error instanceof InternalServerErrorException
+      ) {
+        const meta = this.extractMetaError(error);
+        this.logger.error(
+          `[WABA] Failed to complete WABA connection for admin ${ctx.adminId}`,
+          { ...ctx, errorName: (error as Error).name, ...meta },
+        );
+        throw error;
+      }
+      const meta = this.extractMetaError(error);
       this.logger.error(
-        `Failed to complete WABA connection process for admin ${adminId}. Error: ${axiosError.message}`,
-        axiosError.response?.data, // Log the detailed error from Meta
+        `[WABA] Failed to complete WABA connection for admin ${ctx.adminId}`,
+        {
+          ...ctx,
+          errorName: (error as Error)?.name,
+          errorMessage: (error as Error)?.message,
+          ...meta,
+        },
       );
       throw new InternalServerErrorException(
-        'Could not connect the WhatsApp account.',
+        meta.metaMessage || 'Could not connect the WhatsApp account.',
       );
     }
   }
@@ -1370,23 +1536,86 @@ export class WhatsappService extends BaseLoggerService {
    * @returns The long-lived access token.
    */
   private async getAccessTokenFromCode(code: string): Promise<string> {
-    const hardcoded = 'https://localhost:5174/whatsapp';
-    const url = `https://graph.facebook.com/${this.configService.get('GRAPH_API_VERSION')}/oauth/access_token`;
+    const apiVersion =
+      this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const url = `https://graph.facebook.com/${apiVersion}/oauth/access_token`;
+    const appId = this.configService.get('META_APP_ID');
+    const appSecret = this.configService.get('META_APP_SECRET');
+
+    this.logger.log('[WABA][getAccessTokenFromCode] Exchanging code', {
+      url,
+      apiVersion,
+      appId,
+      hasAppSecret: !!appSecret,
+      codeLength: typeof code === 'string' ? code.length : 0,
+    });
+
+    if (typeof code !== 'string' || code.length === 0) {
+      throw new BadRequestException(
+        'Authorization code is required to exchange for an access token.',
+      );
+    }
+    if (!appId || !appSecret) {
+      this.logger.error(
+        '[WABA][getAccessTokenFromCode] Missing META_APP_ID or META_APP_SECRET in config',
+        { hasAppId: !!appId, hasAppSecret: !!appSecret },
+      );
+      throw new InternalServerErrorException(
+        'WhatsApp app credentials are not configured on the server.',
+      );
+    }
+
     const params = {
-      client_id: this.configService.get('META_APP_ID'),
-      client_secret: this.configService.get('META_APP_SECRET'),
+      client_id: appId,
+      client_secret: appSecret,
       code: code,
       redirect_uri: '',
     };
 
-    const response = await this.axiosInstance.get<{ access_token: string }>(
-      url,
-      {
+    try {
+      const response = await this.axiosInstance.get<{
+        access_token?: string;
+        token_type?: string;
+        expires_in?: number;
+      }>(url, {
         params,
         timeout: 15000,
-      },
-    );
-    return response.data.access_token;
+      });
+
+      const accessToken = response.data?.access_token;
+      if (typeof accessToken !== 'string' || accessToken.length === 0) {
+        this.logger.error(
+          '[WABA][getAccessTokenFromCode] Unexpected response shape (no access_token)',
+          { raw: response.data },
+        );
+        throw new InternalServerErrorException(
+          'Meta did not return an access_token. Check the authorization code and app credentials.',
+        );
+      }
+
+      this.logger.log(
+        '[WABA][getAccessTokenFromCode] Got access token from Meta',
+        {
+          tokenMasked: this.maskToken(accessToken),
+          tokenType: response.data?.token_type,
+          expiresIn: response.data?.expires_in,
+        },
+      );
+      return accessToken;
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      const meta = this.extractMetaError(error);
+      this.logger.error(
+        '[WABA][getAccessTokenFromCode] Failed to exchange code',
+        meta,
+      );
+      throw new InternalServerErrorException(
+        meta.metaMessage ||
+          'Could not exchange authorization code for access token.',
+      );
+    }
   }
 
   /**
@@ -1396,28 +1625,65 @@ export class WhatsappService extends BaseLoggerService {
    */
   private async getAppAccessToken(): Promise<string> {
     const url = `https://graph.facebook.com/oauth/access_token`;
+    const appId = this.configService.get('META_APP_ID');
+    const appSecret = this.configService.get('META_APP_SECRET');
+
+    this.logger.log('[WABA][getAppAccessToken] Requesting app access token', {
+      url,
+      appId,
+      hasAppSecret: !!appSecret,
+    });
+
+    if (!appId || !appSecret) {
+      this.logger.error(
+        '[WABA][getAppAccessToken] Missing META_APP_ID or META_APP_SECRET in config',
+        { hasAppId: !!appId, hasAppSecret: !!appSecret },
+      );
+      throw new InternalServerErrorException(
+        'WhatsApp app credentials are not configured on the server.',
+      );
+    }
+
     const params = {
-      client_id: this.configService.get('META_APP_ID'),
-      client_secret: this.configService.get('META_APP_SECRET'),
+      client_id: appId,
+      client_secret: appSecret,
       grant_type: 'client_credentials',
     };
 
     try {
-      const response = await this.axiosInstance.get<{ access_token: string }>(
-        url,
-        {
-          params,
-          timeout: 15000,
-        },
-      );
-      return response.data.access_token;
+      const response = await this.axiosInstance.get<{
+        access_token?: string;
+      }>(url, {
+        params,
+        timeout: 15000,
+      });
+
+      const appAccessToken = response.data?.access_token;
+      if (typeof appAccessToken !== 'string' || appAccessToken.length === 0) {
+        this.logger.error(
+          '[WABA][getAppAccessToken] Unexpected response shape (no access_token)',
+          { raw: response.data },
+        );
+        throw new InternalServerErrorException(
+          'Meta did not return an app access_token.',
+        );
+      }
+
+      this.logger.log('[WABA][getAppAccessToken] Got app access token', {
+        tokenMasked: this.maskToken(appAccessToken),
+      });
+      return appAccessToken;
     } catch (error) {
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      const meta = this.extractMetaError(error);
       this.logger.error(
-        'Failed to generate App Access Token',
-        error.response?.data,
+        '[WABA][getAppAccessToken] Failed to generate App Access Token',
+        meta,
       );
       throw new InternalServerErrorException(
-        'Could not generate App Access Token.',
+        meta.metaMessage || 'Could not generate App Access Token.',
       );
     }
   }
@@ -1428,6 +1694,16 @@ export class WhatsappService extends BaseLoggerService {
    * @returns The WhatsApp Business Account ID.
    */
   private async getWabaIdFromToken(userAccessToken: string): Promise<string> {
+    this.logger.log('[WABA][getWabaIdFromToken] Resolving WABA id', {
+      userTokenMasked: this.maskToken(userAccessToken),
+    });
+
+    if (typeof userAccessToken !== 'string' || userAccessToken.length === 0) {
+      throw new InternalServerErrorException(
+        'User access token is required to resolve WABA id.',
+      );
+    }
+
     const appAccessToken = await this.getAppAccessToken();
 
     const url = 'https://graph.facebook.com/debug_token';
@@ -1436,19 +1712,79 @@ export class WhatsappService extends BaseLoggerService {
       access_token: appAccessToken, // Your App Token to authorize the inspection.
     };
 
-    const response = await this.axiosInstance.get(url, {
-      params,
-      timeout: 15000,
-    });
-    const wabaId = response.data.data.granular_scopes.find(
-      (scope) => scope.scope === 'whatsapp_business_management',
-    )?.target_ids[0];
+    let response: { data?: any };
+    try {
+      response = await this.axiosInstance.get(url, {
+        params,
+        timeout: 15000,
+      });
+    } catch (error) {
+      const meta = this.extractMetaError(error);
+      this.logger.error(
+        '[WABA][getWabaIdFromToken] debug_token call failed',
+        meta,
+      );
+      throw new InternalServerErrorException(
+        meta.metaMessage ||
+          'Could not inspect the access token to resolve WABA id.',
+      );
+    }
 
-    if (!wabaId) {
+    const debugData = response?.data?.data;
+    if (!debugData || typeof debugData !== 'object') {
+      this.logger.error(
+        '[WABA][getWabaIdFromToken] debug_token returned unexpected shape',
+        { raw: response?.data },
+      );
+      throw new InternalServerErrorException(
+        'Meta debug_token returned an unexpected response.',
+      );
+    }
+
+    const granularScopes = debugData.granular_scopes;
+    if (!Array.isArray(granularScopes)) {
+      this.logger.error(
+        '[WABA][getWabaIdFromToken] granular_scopes missing or not an array',
+        {
+          isValid: debugData.is_valid,
+          appId: debugData.app_id,
+          scopes: debugData.scopes,
+          error: debugData.error,
+          raw: debugData,
+        },
+      );
+      throw new InternalServerErrorException(
+        'Token has no granular_scopes. Re-run Embedded Signup with whatsapp_business_management permission.',
+      );
+    }
+
+    this.logger.log('[WABA][getWabaIdFromToken] debug_token granular_scopes', {
+      count: granularScopes.length,
+      scopes: granularScopes.map((s: any) => s?.scope),
+    });
+
+    const wabaScope = granularScopes.find(
+      (s: any) => s?.scope === 'whatsapp_business_management',
+    );
+    const targetIds = wabaScope?.target_ids;
+    if (!Array.isArray(targetIds) || targetIds.length === 0) {
+      this.logger.error(
+        '[WABA][getWabaIdFromToken] whatsapp_business_management target_ids missing',
+        {
+          wabaScope,
+          granularScopes,
+        },
+      );
       throw new InternalServerErrorException(
         'Could not extract WABA ID from token. Permissions may be missing.',
       );
     }
+
+    const wabaId = targetIds[0];
+    this.logger.log(
+      `[WABA][getWabaIdFromToken] Resolved WABA id ${wabaId} (${targetIds.length} target(s))`,
+      { wabaId, allTargetIds: targetIds },
+    );
     return wabaId;
   }
 
@@ -1479,20 +1815,61 @@ export class WhatsappService extends BaseLoggerService {
       access_token: userAccessToken, // Use the User's token, as it has the granted permissions
     };
 
-    this.logger.log(`Fetching WABA details from URL: ${url}`);
+    this.logger.log(`[WABA][getWabaDetails] Fetching WABA details`, {
+      wabaId,
+      url,
+      apiVersion,
+      tokenMasked: this.maskToken(userAccessToken),
+      fields,
+    });
 
     try {
       const response = await this.axiosInstance.get(url, {
         params,
         timeout: 15000,
       });
-      return response.data;
-    } catch (error) {
-      this.logger.error(
-        `Failed to get WABA details for ID ${wabaId}`,
-        error.response?.data,
+      const data = response?.data;
+      if (!data || typeof data !== 'object') {
+        this.logger.error(
+          `[WABA][getWabaDetails] Unexpected response shape for WABA ${wabaId}`,
+          { raw: data },
+        );
+        throw new InternalServerErrorException(
+          'WABA details response was empty or malformed.',
+        );
+      }
+
+      const phones = data?.phone_numbers?.data;
+      if (!Array.isArray(phones)) {
+        this.logger.error(
+          `[WABA][getWabaDetails] phone_numbers.data missing for WABA ${wabaId}`,
+          { raw: data },
+        );
+        throw new InternalServerErrorException(
+          'WABA response missing phone_numbers. Cannot continue.',
+        );
+      }
+
+      this.logger.log(
+        `[WABA][getWabaDetails] WABA ${wabaId} returned ${phones.length} phone number(s)`,
+        {
+          wabaId,
+          name: data?.name,
+          messageTemplateNamespace: data?.message_template_namespace,
+          phoneIds: phones.map((p: any) => p?.id),
+          phoneNumbers: phones.map((p: any) => p?.display_phone_number),
+        },
       );
-      // Re-throw the original error to be handled by the calling function
+      return data;
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      const meta = this.extractMetaError(error);
+      this.logger.error(
+        `[WABA][getWabaDetails] Failed to get WABA details for ID ${wabaId}`,
+        { wabaId, ...meta },
+      );
       throw error;
     }
   }

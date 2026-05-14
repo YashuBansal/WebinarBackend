@@ -26,6 +26,10 @@ export class ZoomProject {
   @Prop({ type: Boolean, default: false })
   isConfigured: boolean;
 
+  /** General Zoom Marketplace OAuth app (SPA flow); false for legacy server-app credentials and pre-migration rows. */
+  @Prop({ type: Boolean, default: false })
+  usesMarketplaceGeneralApp: boolean;
+
   @Prop({ type: String, select: false })
   secretToken?: string;
 
