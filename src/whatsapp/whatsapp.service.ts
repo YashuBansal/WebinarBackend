@@ -52,9 +52,13 @@ import { WabaTemplateService } from 'src/whatsapp-embed/waba-template/waba-templ
 import { WabaTemplateDocument } from 'src/whatsapp-embed/waba-template/waba-template.schema';
 import { BaseLoggerService } from 'src/logger/base-logger.service';
 import { WhatsappOptoutService } from 'src/whatsapp-optout/whatsapp-optout.service';
+import { SubscriptionService } from 'src/subscription/subscription.service';
 
 @Injectable()
 export class WhatsappService extends BaseLoggerService {
+  private static readonly WABA_SUBSCRIPTION_EXPIRED_MESSAGE =
+    'Your subscription has expired. Please renew your plan to send WhatsApp messages.';
+
   private readonly webhookVerifyToken: string;
   private readonly axiosInstance: AxiosInstance;
   private readonly optOutKeywords = new Set([
@@ -73,6 +77,8 @@ export class WhatsappService extends BaseLoggerService {
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => SubscriptionService))
+    private readonly subscriptionService: SubscriptionService,
     private readonly projectService: ProjectsService,
     @InjectModel(MediaAsset.name)
     private readonly mediaAssetModel: Model<MediaAssetDocument>,
@@ -127,6 +133,47 @@ export class WhatsappService extends BaseLoggerService {
         this.apiKey = superAdmin.whatsappToken;
       }
     });
+  }
+
+  private async assertAdminCanSendWabaMessages(
+    adminId: string | Types.ObjectId,
+  ): Promise<void> {
+    const id = String(adminId);
+    const user = await this.usersService.getUserById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.isActive) {
+      throw new ForbiddenException(
+        WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE,
+      );
+    }
+
+    // try {
+    //   const subscription = await this.subscriptionService.getSubscription(id);
+    //   const expiryDate = subscription?.expiryDate
+    //     ? new Date(subscription.expiryDate)
+    //     : null;
+    //   if (
+    //     !expiryDate ||
+    //     Number.isNaN(expiryDate.getTime()) ||
+    //     expiryDate.getTime() <= Date.now()
+    //   ) {
+    //     throw new ForbiddenException(
+    //       WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE,
+    //     );
+    //   }
+    // } catch (error) {
+    //   if (error instanceof ForbiddenException) {
+    //     throw error;
+    //   }
+    //   if (error instanceof NotFoundException) {
+    //     throw new ForbiddenException(
+    //       WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE,
+    //     );
+    //   }
+    //   throw error;
+    // }
   }
 
   /**
@@ -998,6 +1045,8 @@ export class WhatsappService extends BaseLoggerService {
     contactId?: Types.ObjectId,
     options?: { skipOptOutCheck?: boolean },
   ) {
+    await this.assertAdminCanSendWabaMessages(adminId);
+
     // Send via Meta Graph API using project's phoneNumberId and token
     const project = await this.projectService.findOne(adminId, projectId);
     if (!project?.phoneNumberId || !project?.permanentAccessToken) {
@@ -3779,6 +3828,22 @@ export class WhatsappService extends BaseLoggerService {
       return buildErrorResponse('VALIDATION_ERROR', 'Admin ID is required');
     }
 
+    try {
+      await this.assertAdminCanSendWabaMessages(adminId);
+    } catch (error) {
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException
+      ) {
+        return buildErrorResponse(
+          'SUBSCRIPTION_EXPIRED',
+          error.message ||
+            WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE,
+        );
+      }
+      throw error;
+    }
+
     // Validate template structure consistency
     if (!templateStructure.name) {
       return buildErrorResponse(
@@ -4171,6 +4236,8 @@ export class WhatsappService extends BaseLoggerService {
 
     const { projectId, recipients, templateName, headerMediaAssetId } =
       sendTemplateDto;
+
+    await this.assertAdminCanSendWabaMessages(adminId);
 
     const account = await this.projectService.findOne(
       new Types.ObjectId(adminId),
