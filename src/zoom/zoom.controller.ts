@@ -18,6 +18,7 @@ import mongoose, { Types } from 'mongoose';
 import { Id } from 'src/decorators/custom.decorator';
 import { ZoomService } from './zoom.service';
 import { CreateZoomProjectDto } from './dto/create-zoom-project.dto';
+import { UpdateZoomProjectDto } from './dto/update-zoom-project.dto';
 import { ValidateZoomConfigDto } from './dto/validate-zoom-config.dto';
 import { QueryZoomProjectsDto } from './dto/query-zoom-projects.dto';
 import { WebhookQueueService } from './webhook-queue.service';
@@ -325,6 +326,31 @@ export class ZoomController {
     return {
       statusCode: HttpStatus.CREATED,
       message: 'Project created',
+      data: project,
+    };
+  }
+
+  @Post('projects/:id')
+  async updateProject(
+    @Id() adminId: string,
+    @Param('id') id: string,
+    @Body() updateProjectDto: UpdateZoomProjectDto,
+  ) {
+    if (!mongoose.isValidObjectId(adminId) || !mongoose.isValidObjectId(id)) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Invalid request',
+        data: null,
+      };
+    }
+    const project = await this.zoomService.updateProject(
+      new Types.ObjectId(`${adminId}`),
+      new Types.ObjectId(`${id}`),
+      updateProjectDto,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Project updated',
       data: project,
     };
   }
