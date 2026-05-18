@@ -31,7 +31,6 @@ async function bootstrap() {
         'http://127.0.0.1:5173',
         'http://localhost:5174',
         'http://localhost:5175',
-        // Vite network URLs (zoom dev server)
         'http://192.168.1.3:5175',
         'http://172.27.48.1:5175',
         'https://localhost:5174',

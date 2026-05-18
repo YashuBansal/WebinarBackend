@@ -2,6 +2,7 @@
 export default () => {
   return {
     appRoles: JSON.parse(process.env.ROLES),
+    apiUrl: process.env.API_BASE_URL,
   };
 };
 

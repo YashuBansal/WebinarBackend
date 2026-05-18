@@ -58,19 +58,39 @@ export class UsersController {
   }
 
   @Patch()
-  @UseInterceptors(FileFieldsInterceptor([{ name: 'document' }]))
+  @UseInterceptors(
+    FileFieldsInterceptor([{ name: 'document' }, { name: 'profileImage' }]),
+  )
   async updateUser(
-    @UploadedFiles() files: { document: Express.Multer.File[] },
+    @UploadedFiles()
+    files: {
+      document?: Express.Multer.File[];
+      profileImage?: Express.Multer.File[];
+    },
     @Id() id: string,
     @Role() role: string,
     @Body() updateUserInfoDto: UpdateUserInfoDto,
   ): Promise<any> {
-    // console.log(files, '================== files ======================');
+    console.log('Files received:', files);
+    console.log('Update Data:', updateUserInfoDto);
+
     if (files?.document && role === this.configService.get('appRoles').ADMIN) {
       updateUserInfoDto.documents = files.document;
     }
+
+    if (files?.profileImage) {
+      const apiUrl = this.configService.get('apiUrl');
+      const filename = files.profileImage[0].filename;
+      updateUserInfoDto.profileImageUrl = `${apiUrl}/uploads/${filename}`;
+      console.log('Generated Profile Image URL:', updateUserInfoDto.profileImageUrl);
+    }
+
     const client = await this.usersService.updateUser(id, updateUserInfoDto);
-    return client;
+    return {
+      status: true,
+      message: 'User updated successfully',
+      data: client,
+    };
   }
 
   @Delete('document/:filename')

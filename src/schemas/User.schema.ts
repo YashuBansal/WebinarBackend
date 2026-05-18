@@ -204,6 +204,12 @@ export class User extends Document {
 
   @Prop({ nullable: true })
   twoFactorAuthenticationSecret?: string;
+  
+  @Prop({
+    type: String,
+    required: false,
+  })
+  profileImageUrl?: string;
 }
 
 const UserSchema = SchemaFactory.createForClass(User);

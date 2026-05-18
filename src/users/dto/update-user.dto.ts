@@ -69,4 +69,8 @@ export class UpdateUserInfoDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  profileImageUrl?: string;
 }
