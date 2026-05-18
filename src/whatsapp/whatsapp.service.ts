@@ -1737,6 +1737,159 @@ export class WhatsappService extends BaseLoggerService {
     }
   }
 
+  private extractWabaIdsFromGranularScopes(granularScopes: any[]): string[] {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    const addIds = (targetIds: unknown) => {
+      if (!Array.isArray(targetIds)) return;
+      for (const id of targetIds) {
+        const normalized = id != null ? String(id).trim() : '';
+        if (normalized && !seen.has(normalized)) {
+          seen.add(normalized);
+          ids.push(normalized);
+        }
+      }
+    };
+
+    const priorityScopes = [
+      'whatsapp_business_management',
+      'whatsapp_business_messaging',
+    ];
+    for (const scopeName of priorityScopes) {
+      const entry = granularScopes.find((s) => s?.scope === scopeName);
+      addIds(entry?.target_ids);
+    }
+    for (const entry of granularScopes) {
+      if (
+        typeof entry?.scope === 'string' &&
+        entry.scope.includes('whatsapp')
+      ) {
+        addIds(entry.target_ids);
+      }
+    }
+    return ids;
+  }
+
+  private async fetchWabaIdsFromGraphList(
+    url: string,
+    userAccessToken: string,
+    logLabel: string,
+  ): Promise<string[]> {
+    try {
+      const response = await this.axiosInstance.get(url, {
+        params: {
+          fields: 'id,name',
+          access_token: userAccessToken,
+        },
+        timeout: 15000,
+      });
+      const data = response?.data?.data;
+      if (!Array.isArray(data) || data.length === 0) {
+        this.logger.warn(`[WABA][getWabaIdFromToken] ${logLabel} returned no WABAs`);
+        return [];
+      }
+      const ids = data
+        .map((row: { id?: string }) =>
+          row?.id != null ? String(row.id).trim() : '',
+        )
+        .filter(Boolean);
+      this.logger.log(`[WABA][getWabaIdFromToken] ${logLabel} resolved WABA(s)`, {
+        count: ids.length,
+        wabaIds: ids,
+      });
+      return ids;
+    } catch (error) {
+      const meta = this.extractMetaError(error);
+      this.logger.warn(
+        `[WABA][getWabaIdFromToken] ${logLabel} failed`,
+        meta,
+      );
+      return [];
+    }
+  }
+
+  private async fetchWabaIdsFromAssignedAccounts(
+    userAccessToken: string,
+    userId?: string,
+  ): Promise<string[]> {
+    const apiVersion =
+      this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const pathUserId =
+      userId != null && String(userId).trim() ? String(userId).trim() : 'me';
+    const url = `https://graph.facebook.com/${apiVersion}/${pathUserId}/assigned_whatsapp_business_accounts`;
+    return this.fetchWabaIdsFromGraphList(
+      url,
+      userAccessToken,
+      'assigned_whatsapp_business_accounts',
+    );
+  }
+
+  private async fetchWabaIdsFromBusinessPortfolio(
+    userAccessToken: string,
+    businessPortfolioId: string,
+  ): Promise<string[]> {
+    const apiVersion =
+      this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const base = `https://graph.facebook.com/${apiVersion}/${businessPortfolioId}`;
+    const clientIds = await this.fetchWabaIdsFromGraphList(
+      `${base}/client_whatsapp_business_accounts`,
+      userAccessToken,
+      'client_whatsapp_business_accounts',
+    );
+    if (clientIds.length > 0) {
+      return clientIds;
+    }
+    return this.fetchWabaIdsFromGraphList(
+      `${base}/owned_whatsapp_business_accounts`,
+      userAccessToken,
+      'owned_whatsapp_business_accounts',
+    );
+  }
+
+  private async fetchWabaIdsFromUserBusinesses(
+    userAccessToken: string,
+  ): Promise<string[]> {
+    const apiVersion =
+      this.configService.get('GRAPH_API_VERSION') || 'v23.0';
+    const businessesUrl = `https://graph.facebook.com/${apiVersion}/me/businesses`;
+    try {
+      const response = await this.axiosInstance.get(businessesUrl, {
+        params: {
+          fields: 'id,name',
+          access_token: userAccessToken,
+        },
+        timeout: 15000,
+      });
+      const businesses = response?.data?.data;
+      if (!Array.isArray(businesses) || businesses.length === 0) {
+        this.logger.warn(
+          '[WABA][getWabaIdFromToken] me/businesses returned no portfolios',
+        );
+        return [];
+      }
+      for (const business of businesses) {
+        const businessId =
+          business?.id != null ? String(business.id).trim() : '';
+        if (!businessId) continue;
+        const wabaIds = await this.fetchWabaIdsFromBusinessPortfolio(
+          userAccessToken,
+          businessId,
+        );
+        if (wabaIds.length > 0) {
+          return wabaIds;
+        }
+      }
+      return [];
+    } catch (error) {
+      const meta = this.extractMetaError(error);
+      this.logger.warn(
+        '[WABA][getWabaIdFromToken] me/businesses failed',
+        meta,
+      );
+      return [];
+    }
+  }
+
   /**
    * Uses a valid access token to find the WABA ID it's authorized for.
    * @param accessToken A valid user access token.
@@ -1757,8 +1910,8 @@ export class WhatsappService extends BaseLoggerService {
 
     const url = 'https://graph.facebook.com/debug_token';
     const params = {
-      input_token: userAccessToken, // The user's token you want to inspect.
-      access_token: appAccessToken, // Your App Token to authorize the inspection.
+      input_token: userAccessToken,
+      access_token: appAccessToken,
     };
 
     let response: { data?: any };
@@ -1790,49 +1943,73 @@ export class WhatsappService extends BaseLoggerService {
       );
     }
 
-    const granularScopes = debugData.granular_scopes;
-    if (!Array.isArray(granularScopes)) {
-      this.logger.error(
-        '[WABA][getWabaIdFromToken] granular_scopes missing or not an array',
-        {
-          isValid: debugData.is_valid,
-          appId: debugData.app_id,
-          scopes: debugData.scopes,
-          error: debugData.error,
-          raw: debugData,
-        },
-      );
+    if (debugData.is_valid === false) {
       throw new InternalServerErrorException(
-        'Token has no granular_scopes. Re-run Embedded Signup with whatsapp_business_management permission.',
+        'Meta access token is invalid or expired. Re-run Embedded Signup.',
       );
     }
+
+    const granularScopes = Array.isArray(debugData.granular_scopes)
+      ? debugData.granular_scopes
+      : [];
 
     this.logger.log('[WABA][getWabaIdFromToken] debug_token granular_scopes', {
       count: granularScopes.length,
       scopes: granularScopes.map((s: any) => s?.scope),
+      userId: debugData.user_id,
     });
 
-    const wabaScope = granularScopes.find(
-      (s: any) => s?.scope === 'whatsapp_business_management',
-    );
-    const targetIds = wabaScope?.target_ids;
-    if (!Array.isArray(targetIds) || targetIds.length === 0) {
+    let wabaIds = this.extractWabaIdsFromGranularScopes(granularScopes);
+    let resolutionSource = 'debug_token.granular_scopes';
+
+    if (wabaIds.length === 0) {
+      this.logger.warn(
+        '[WABA][getWabaIdFromToken] target_ids missing on granular_scopes; trying assigned_whatsapp_business_accounts',
+        { granularScopes },
+      );
+      wabaIds = await this.fetchWabaIdsFromAssignedAccounts(
+        userAccessToken,
+        debugData.user_id,
+      );
+      resolutionSource = 'assigned_whatsapp_business_accounts';
+    }
+
+    if (wabaIds.length === 0) {
+      const portfolioId = this.configService.get<string>(
+        'META_BUSINESS_PORTFOLIO_ID',
+      );
+      if (portfolioId?.trim()) {
+        wabaIds = await this.fetchWabaIdsFromBusinessPortfolio(
+          userAccessToken,
+          portfolioId.trim(),
+        );
+        resolutionSource = 'META_BUSINESS_PORTFOLIO_ID';
+      }
+    }
+
+    if (wabaIds.length === 0) {
+      wabaIds = await this.fetchWabaIdsFromUserBusinesses(userAccessToken);
+      resolutionSource = 'me/businesses';
+    }
+
+    if (wabaIds.length === 0) {
       this.logger.error(
-        '[WABA][getWabaIdFromToken] whatsapp_business_management target_ids missing',
+        '[WABA][getWabaIdFromToken] Could not resolve WABA id from any source',
         {
-          wabaScope,
           granularScopes,
+          userId: debugData.user_id,
+          scopes: debugData.scopes,
         },
       );
       throw new InternalServerErrorException(
-        'Could not extract WABA ID from token. Permissions may be missing.',
+        'Could not extract WABA ID from token. Complete Embedded Signup again and ensure whatsapp_business_management is granted, or set META_BUSINESS_PORTFOLIO_ID for your Business portfolio.',
       );
     }
 
-    const wabaId = targetIds[0];
+    const wabaId = wabaIds[0];
     this.logger.log(
-      `[WABA][getWabaIdFromToken] Resolved WABA id ${wabaId} (${targetIds.length} target(s))`,
-      { wabaId, allTargetIds: targetIds },
+      `[WABA][getWabaIdFromToken] Resolved WABA id ${wabaId} via ${resolutionSource}`,
+      { wabaId, allWabaIds: wabaIds, resolutionSource },
     );
     return wabaId;
   }
