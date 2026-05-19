@@ -61,6 +61,7 @@ import { WhatsappEmbedModule } from './whatsapp-embed/whatsapp-embed.module';
 import { ProfileModule } from './profile/profile.module';
 import { FileStorageService } from './file-storage/file-storage.service';
 import { ZoomModule } from './zoom/zoom.module';
+import { AffiliateModule } from './affiliate/affiliate.module';
 import { AutomationsModule } from './automations/automations.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebinarAutoMessageModule } from './webinar-auto-message/webinar-auto-message.module';
@@ -218,6 +219,7 @@ import { QuickRepliesModule } from './quick-replies/quick-replies.module';
     WhatsappEmbedModule,
     ProfileModule,
     ZoomModule,
+    AffiliateModule,
     AutomationsModule,
     WebhooksModule,
     WebinarAutoMessageModule,
