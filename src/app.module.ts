@@ -61,6 +61,7 @@ import { WhatsappEmbedModule } from './whatsapp-embed/whatsapp-embed.module';
 import { ProfileModule } from './profile/profile.module';
 import { FileStorageService } from './file-storage/file-storage.service';
 import { ZoomModule } from './zoom/zoom.module';
+import { AffiliateModule } from './affiliate/affiliate.module';
 import { AutomationsModule } from './automations/automations.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebinarAutoMessageModule } from './webinar-auto-message/webinar-auto-message.module';
@@ -79,6 +80,7 @@ import { HealthModule } from './health/health.module';
 import { OtelWinstonTransport } from './logger/otel-winston-transport';
 import { PabblyTokenBlacklistModule } from './auth/pabbly-token-blacklist.module';
 import { WhatsappOptoutModule } from './whatsapp-optout/whatsapp-optout.module';
+import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 
 @Module({
   imports: [
@@ -217,6 +219,7 @@ import { WhatsappOptoutModule } from './whatsapp-optout/whatsapp-optout.module';
     WhatsappEmbedModule,
     ProfileModule,
     ZoomModule,
+    AffiliateModule,
     AutomationsModule,
     WebhooksModule,
     WebinarAutoMessageModule,
@@ -228,6 +231,7 @@ import { WhatsappOptoutModule } from './whatsapp-optout/whatsapp-optout.module';
     ProgramModule,
     InterestPoolSettingsModule,
     PaymentsModule,
+    QuickRepliesModule,
   ],
   controllers: [AppController],
   providers: [AppService, CalendarService, FileStorageService],

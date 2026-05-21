@@ -476,6 +476,7 @@ export class WhatsappController {
     @Body('phoneNumber') phoneNumber: string,
     @Body('text') text: string,
     @Body('contactId') contactId?: string,
+    @Body('components') components?: any[],
   ) {
     if (!mongoose.isValidObjectId(projectId)) {
       throw new BadRequestException('Invalid project ID');
@@ -493,6 +494,7 @@ export class WhatsappController {
       phoneNumber,
       text,
       contactId ? new Types.ObjectId(contactId) : undefined,
+      { components },
     );
 
     return {

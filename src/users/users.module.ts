@@ -29,9 +29,14 @@ import { ApiAccessTokenModule } from 'src/api-access-token/api-access-token.modu
   imports: [
     MulterModule.register({
       storage: diskStorage({
-        destination: './documents',
+        destination: (req, file, cb) => {
+          const dest = file.fieldname === 'profileImage' ? './uploads' : './documents';
+          cb(null, dest);
+        },
         filename: (req, file, cb) => {
-          const filename = `${Date.now()}-${file.originalname}`;
+          // Replace spaces with underscores to avoid URL issues
+          const sanitizedOriginalName = file.originalname.replace(/\s+/g, '_');
+          const filename = `${Date.now()}-${sanitizedOriginalName}`;
           cb(null, filename);
         },
       }),

@@ -3319,10 +3319,26 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     });
 
     const savedProject = await project.save();
-    const raw = await this.zoomProjectModel
-      .findById(savedProject._id)
-      .lean();
+    const raw = await this.zoomProjectModel.findById(savedProject._id).lean();
     return raw;
+  }
+
+  async updateProject(
+    adminId: Types.ObjectId,
+    projectId: Types.ObjectId,
+    payload: { projectName: string },
+  ) {
+    const project = await this.zoomProjectModel.findOneAndUpdate(
+      { _id: projectId, adminId },
+      { $set: { projectName: payload.projectName } },
+      { new: true },
+    );
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    return project;
   }
 
   async deleteProject(adminId: Types.ObjectId, projectId: Types.ObjectId) {

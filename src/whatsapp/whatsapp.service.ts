@@ -481,10 +481,22 @@ export class WhatsappService extends BaseLoggerService {
             messageFormat = 'text';
           } else {
             // Preserve the user-visible label, but keep payload for downstream parsing/debugging.
-            // (If your chatbot logic depends on payloads, it can detect the suffix.)
             textBody = buttonPayload
               ? `${buttonText || '[Button]'} (payload:${buttonPayload})`
               : buttonText || '[Button]';
+            messageFormat = 'text';
+          }
+        } else if (messageType === 'interactive') {
+          // Template buttons or List/Button interactive replies
+          const interactive = msg.interactive;
+          if (interactive?.type === 'button_reply') {
+            textBody = interactive.button_reply?.title || '[Button Reply]';
+            messageFormat = 'text';
+          } else if (interactive?.type === 'list_reply') {
+            textBody = interactive.list_reply?.title || '[List Reply]';
+            messageFormat = 'text';
+          } else {
+            textBody = '[Interactive Message]';
             messageFormat = 'text';
           }
         } else if (messageType === 'image' || messageType === 'video') {
@@ -500,11 +512,19 @@ export class WhatsappService extends BaseLoggerService {
           }
 
           messageFormat = 'media';
+        } else if (messageType === 'document' || messageType === 'audio' || messageType === 'sticker') {
+          const media = msg[messageType];
+          textBody = media?.caption || `[${messageType.charAt(0).toUpperCase() + messageType.slice(1)}]`;
+          mimeType = media?.mime_type;
+          mediaId = media?.id;
+          messageFormat = 'media';
         } else {
-          // Fallback for unsupported/other types - log and skip for now
+          // Fallback for unsupported/other types
           this.logger.warn(
             `Unsupported inbound message type: ${messageType} for message ID: ${msgId}, from: ${from}`,
           );
+          textBody = `[Unsupported message: ${messageType}]`;
+          messageFormat = 'text';
         }
 
         // Validate required fields
@@ -1043,7 +1063,7 @@ export class WhatsappService extends BaseLoggerService {
     recipientPhoneNumber: string,
     text: string,
     contactId?: Types.ObjectId,
-    options?: { skipOptOutCheck?: boolean },
+    options?: { skipOptOutCheck?: boolean; components?: any[] },
   ) {
     await this.assertAdminCanSendWabaMessages(adminId);
 
@@ -1071,12 +1091,114 @@ export class WhatsappService extends BaseLoggerService {
         throw new BadRequestException('opted out');
       }
     }
-    const payload = {
+
+    let payload: any = {
       messaging_product: 'whatsapp',
       to: normalizedRecipientPhoneNumber,
-      type: 'text',
-      text: { body: text },
     };
+
+    let messageFormat: 'text' | 'template' | 'media' = 'text';
+    let displayText = text;
+    let mediaUrl: string | undefined;
+
+    let finalComponents = options?.components ? JSON.parse(JSON.stringify(options.components)) : [];
+
+    const componentsExist = finalComponents && finalComponents.length > 0;
+    if (componentsExist) {
+      const header = finalComponents.find((c) => c.type === 'HEADER');
+      const body = finalComponents.find((c) => c.type === 'BODY');
+      const footer = finalComponents.find((c) => c.type === 'FOOTER');
+      let buttonsComp = finalComponents.find((c) => c.type === 'BUTTONS');
+
+      const hasButtons = buttonsComp && buttonsComp.buttons && buttonsComp.buttons.length > 0;
+      const hasTextHeader = header && header.format === 'TEXT' && header.text;
+      const hasMediaHeader = header && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(header.format);
+      const hasFooter = footer && footer.text;
+
+      // Interactive mode needed ONLY for: buttons, text-header, or footer
+      // Media-only headers do NOT need interactive mode — send as direct media message
+      const needsInteractive = hasButtons || hasTextHeader || hasFooter || (hasMediaHeader && hasButtons);
+
+      if (needsInteractive) {
+        messageFormat = 'template';
+        payload.type = 'interactive';
+        
+        let interactiveButtons;
+        if (hasButtons) {
+          interactiveButtons = buttonsComp.buttons.slice(0, 3).map((btn: any, index: number) => ({
+            type: 'reply',
+            reply: {
+              id: btn.reply?.payload || `btn_${index}`,
+              title: btn.reply?.text || btn.text || 'Button',
+            },
+          }));
+        } else {
+          // Text header or footer without buttons → inject default OK button
+          interactiveButtons = [{
+            type: 'reply',
+            reply: {
+              id: 'ok_ack',
+              title: 'OK',
+            },
+          }];
+          
+          // Also update the stored components so frontend shows the button
+          if (!buttonsComp) {
+            buttonsComp = { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'OK' }] };
+            finalComponents.push(buttonsComp);
+          } else {
+            buttonsComp.buttons = [{ type: 'QUICK_REPLY', text: 'OK' }];
+          }
+        }
+
+        payload.interactive = {
+          type: 'button',
+          body: { text: body?.text || text },
+          action: {
+            buttons: interactiveButtons,
+          },
+        };
+
+        if (header) {
+          if (header.format === 'TEXT') {
+            payload.interactive.header = { type: 'text', text: header.text };
+          } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(header.format) && header.text) {
+            const mediaType = header.format.toLowerCase();
+            payload.interactive.header = {
+              type: mediaType,
+              [mediaType]: { link: header.text },
+            };
+            mediaUrl = header.text;
+          }
+        }
+
+        if (footer && footer.text) {
+          payload.interactive.footer = { text: footer.text };
+        }
+        displayText = body?.text || text;
+      } else if (hasMediaHeader && header.text) {
+        // Media-only message (no buttons, no text header, no footer)
+        // Send as direct image/video/document — NO button required
+        messageFormat = 'media';
+        const mediaType = header.format.toLowerCase();
+        payload.type = mediaType;
+        payload[mediaType] = {
+          link: header.text,
+          caption: body?.text || text,
+        };
+        mediaUrl = header.text;
+        displayText = body?.text || text;
+      } else {
+        // Plain text fallback
+        payload.type = 'text';
+        payload.text = { body: body?.text || text };
+        displayText = body?.text || text;
+      }
+    } else {
+      // Standard text message
+      payload.type = 'text';
+      payload.text = { body: text };
+    }
 
     const response = await this.axiosInstance.post(url, payload, {
       headers,
@@ -1084,7 +1206,7 @@ export class WhatsappService extends BaseLoggerService {
     });
 
     const sentId = response.data?.messages?.[0]?.id || uuidv4();
-    await this.wabaMessageService.create({
+    const savedMessage = await this.wabaMessageService.create({
       projectId: String(projectId),
       adminId: String(adminId),
       phoneNumber: normalizedRecipientPhoneNumber,
@@ -1094,20 +1216,32 @@ export class WhatsappService extends BaseLoggerService {
       templateName: '',
       status: 'sent',
       direction: 'outbound' as any,
-      messageFormat: 'text',
+      messageFormat: messageFormat,
+      templateComponents: finalComponents,
       textBody: text,
-      displayText: text,
+      displayText: displayText,
+      mediaUrl: mediaUrl,
     } as any);
+
+    // Use the MongoDB _id (not wamid) so the frontend can match the
+    // optimistic placeholder against both the socket echo and polling results.
+    const mongoId = String(savedMessage._id || sentId);
 
     // Emit websocket event to admin via gateway
     this.whatsAppGateway.emitToUser(String(adminId), {
       phoneNumber: recipientPhoneNumber,
       textBody: text,
+      displayText: displayText,
       direction: 'outbound',
       createdAt: new Date().toISOString(),
+      messageFormat: messageFormat,
+      templateComponents: finalComponents,
+      mediaUrl: mediaUrl,
+      status: 'sent',
+      _id: mongoId,
     });
 
-    return { id: sentId };
+    return { id: mongoId };
   }
 
   /**
