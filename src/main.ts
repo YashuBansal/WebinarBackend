@@ -45,6 +45,7 @@ async function bootstrap() {
         'https://msg.ajaybansal.com',
         'https://live.ajaybansal.com',
         'https://webinar-frontend-tau.vercel.app',
+        "https://app.webinarleadshub.com"
       ];
 
       // allow requests with no origin (e.g., Postman)
