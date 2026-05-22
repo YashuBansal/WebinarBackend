@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { registerUserCacheHooks } from 'src/users/user-cache.hooks';
 
 export enum DateFormat {
   DD_MM_YYYY = 'dd-MM-yyyy',
@@ -207,6 +208,9 @@ export class User extends Document {
 }
 
 const UserSchema = SchemaFactory.createForClass(User);
+
+// Register before Mongoose compiles the model (onModuleInit is too late).
+registerUserCacheHooks(UserSchema);
 
 UserSchema.pre('save', function (next) {
   if (typeof this.adminId === 'string') {
