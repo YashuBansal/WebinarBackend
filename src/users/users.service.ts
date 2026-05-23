@@ -39,6 +39,7 @@ import { ApiAccessTokenService } from 'src/api-access-token/api-access-token.ser
 import { SocketEvents } from 'src/websocket/dto/socket.dto';
 import { RolesService } from 'src/roles/roles.service';
 import { PlansService } from 'src/plans/plans.service';
+import { CachedUserRecord, UserCacheService } from './user-cache.service';
 
 @Injectable()
 export class UsersService {
@@ -61,6 +62,7 @@ export class UsersService {
     private readonly socketGateway: WebsocketGateway,
     private readonly twofaService: TwoFactorAuthenticationService,
     private readonly apiTokenService: ApiAccessTokenService,
+    private readonly userCacheService: UserCacheService,
   ) {}
 
   async getUserSubscription(userId: string) {
@@ -627,6 +629,7 @@ export class UsersService {
       updateUserInfoDto,
       { new: true },
     );
+    await this.invalidateUserCache(id, 'updateClient');
     if (result && updateUserInfoDto.isActive === false) {
       await this.notificationService.createNotification({
         recipient: result._id.toString(),
@@ -645,6 +648,10 @@ export class UsersService {
         await this.userModel.findByIdAndUpdate(employee._id, {
           $set: { isActive: false },
         });
+        await this.invalidateUserCache(
+          String(employee._id),
+          'updateClient:deactivateEmployee',
+        );
 
         await this.notificationService.createNotification({
           recipient: employee._id.toString(),
@@ -793,8 +800,45 @@ export class UsersService {
     return user ? String(user._id) : null;
   }
 
+  private async invalidateUserCache(
+    userIds: string | Types.ObjectId | Array<string | Types.ObjectId | null | undefined>,
+    trigger: string,
+  ): Promise<void> {
+    const ids = (Array.isArray(userIds) ? userIds : [userIds])
+      .map((id) => (id ? String(id) : ''))
+      .filter(Boolean);
+    if (!ids.length) return;
+    await this.userCacheService.invalidate(ids, trigger);
+  }
+
   async getUserById(id: string) {
-    return await this.userModel.findById(id).select('-password');
+    const cached = await this.userCacheService.get(id);
+    if (cached === UserCacheService.getMissingSentinel()) {
+      this.logger.log(`getUserById: userId=${id} source=redis (not-found sentinel)`);
+      return null;
+    }
+    if (cached) {
+      this.logger.log(
+        `getUserById: userId=${id} source=redis (cache hit) isActive=${cached.isActive}`,
+      );
+      return this.userModel.hydrate(cached);
+    }
+
+    this.logger.log(`getUserById: userId=${id} source=mongodb (cache miss)`);
+    const user = await this.userModel.findById(id).select('-password');
+    if (!user) {
+      await this.userCacheService.set(id, null);
+      this.logger.log(
+        `getUserById: userId=${id} source=mongodb (user not found, cached sentinel)`,
+      );
+      return null;
+    }
+
+    await this.userCacheService.set(id, user.toObject() as unknown as CachedUserRecord);
+    this.logger.log(
+      `getUserById: userId=${id} source=mongodb (loaded, written to redis) isActive=${user.isActive}`,
+    );
+    return user;
   }
 
   async updateUser(
@@ -837,6 +881,7 @@ export class UsersService {
       updateUserInfoDto,
       { new: true },
     );
+    await this.invalidateUserCache(id, 'updateUser');
     return result;
   }
 
@@ -965,11 +1010,12 @@ export class UsersService {
 
     const newPassword = await bcrypt.hash(updatePasswordDto.password, 10);
 
-    const result = await this.userModel.findByIdAndUpdate(
+    await this.userModel.findByIdAndUpdate(
       id,
       { password: newPassword },
       { new: true },
     );
+    await this.invalidateUserCache(id, 'updatePassword');
     return { message: 'Password updated successfully!' };
   }
 
@@ -1027,6 +1073,7 @@ export class UsersService {
       },
       { new: true },
     );
+    await this.invalidateUserCache(id, 'updateEmployee');
     return result;
   }
 
@@ -1072,6 +1119,7 @@ export class UsersService {
 
     user.isActive = status;
     await user.save();
+    await this.invalidateUserCache(userId, 'changeEmployeeStatus');
 
     subscription.toggleLimit = subscription.toggleLimit - 1;
     subscription.employeeLimit = subscription.employeeLimit || 0;
@@ -1421,6 +1469,10 @@ export class UsersService {
     const result = await this.userModel.bulkWrite(operations, {
       ordered: false, // Process updates even if some fail (optional)
     });
+    await this.userCacheService.invalidateAfterBulkWrite(
+      operations,
+      'bulkWrite:updateEmployeeAssignmentCounts',
+    );
     return result;
   }
 
@@ -1464,18 +1516,28 @@ export class UsersService {
 
     const operations = [...updateAssignments, resetUnassigned];
 
-    return this.userModel.bulkWrite(operations, { ordered: false, session });
+    const result = await this.userModel.bulkWrite(operations, {
+      ordered: false,
+      session,
+    });
+    await this.userCacheService.invalidateAfterBulkWrite(
+      operations,
+      'bulkWrite:updateDailyContactCount',
+    );
+    return result;
   }
 
   async updateDailyContactCountSingle(
     totalAssignments: number,
     empId: Types.ObjectId,
   ) {
-    return await this.userModel.findByIdAndUpdate(empId, {
+    const result = await this.userModel.findByIdAndUpdate(empId, {
       $set: {
         dailyContactCount: totalAssignments,
       },
     });
+    await this.invalidateUserCache(empId, 'updateDailyContactCountSingle');
+    return result;
   }
 
   async bulkUpdateUsersDailyContactCount(
@@ -1506,6 +1568,10 @@ export class UsersService {
       // Use the injected Mongoose userModel to perform the bulk write operation
       // Pass the array of update operations and the session object
       const result = await this.userModel.bulkWrite(updates, { session });
+      await this.userCacheService.invalidateAfterBulkWrite(
+        updates,
+        'bulkWrite:bulkUpdateUsersDailyContactCount',
+      );
 
       // Log the result or perform other checks if necessary
       // console.log('User dailyContactCount bulk write operation completed:', result);
@@ -1533,9 +1599,18 @@ export class UsersService {
     admin.statusChangeNote = 'Account deactivated by super admin.';
     await admin.save();
 
+    const employees = await this.userModel
+      .find({ adminId: admin._id })
+      .select('_id')
+      .lean();
     await this.userModel.updateMany(
       { adminId: admin._id },
       { $set: { isActive: false } },
+    );
+
+    await this.invalidateUserCache(
+      [String(admin._id), ...employees.map((e) => String(e._id))],
+      'deactivateUserByAdminId',
     );
 
     return {
@@ -1557,6 +1632,7 @@ export class UsersService {
 
     user.isDeleted = true;
     await user.save();
+    await this.invalidateUserCache(adminId, 'softDeleteUser:admin');
 
     this.socketGateway.emitSocketEvent(`${user._id}`, SocketEvents.LOG_OUT, {});
 
@@ -1583,6 +1659,11 @@ export class UsersService {
         {},
       );
     });
+
+    await this.invalidateUserCache(
+      employeesForLogout.map((e) => String(e._id)),
+      'softDeleteUser:employees',
+    );
 
     return {
       success: true,

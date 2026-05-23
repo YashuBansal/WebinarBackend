@@ -24,11 +24,13 @@ import { WabaTemplateModule } from 'src/whatsapp-embed/waba-template/waba-templa
 import { ChatbotTriggerModule } from 'src/chatbot-trigger/chatbot-trigger.module';
 import { ChatbotTriggerController } from 'src/chatbot-trigger/chatbot-trigger.controller';
 import { WhatsappOptoutModule } from 'src/whatsapp-optout/whatsapp-optout.module';
+import { SubscriptionModule } from 'src/subscription/subscription.module';
 
 @Module({
   imports: [
     HttpModule,
     forwardRef(() => UsersModule),
+    forwardRef(() => SubscriptionModule),
     ProjectsModule,
     WabaMessageModule,
     ContactsModule,
