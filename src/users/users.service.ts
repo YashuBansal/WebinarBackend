@@ -1589,4 +1589,176 @@ export class UsersService {
       message: `1 Admin and ${employeesUpdateResult.modifiedCount} Employees Soft Deleted Successfully`,
     };
   }
+
+  async signUp(payload: any): Promise<any> {
+    const { name, email, password, phone } = payload;
+    if (!email) {
+      throw new BadRequestException('E-Mail is required');
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check if user already exists
+    const existingUser = await this.userModel.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      throw new BadRequestException('User with this E-Mail already exists.');
+    }
+
+    const roleId = this.configService.get('appRoles').ADMIN;
+    const hashPassword = await bcrypt.hash(password, 10);
+
+    // Find the first active plan in the system as a default plan for new signups
+    let plan = await this.userModel.db.model('Plans').findOne({ isActive: true });
+    
+    // Fallback default duration values
+    let durationType = 'MONTHLY';
+    let currentPlanExpiry = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days default
+
+    if (plan) {
+      // planDurationConfig is a Map on the Plans schema
+      const planDurationConfig = plan.planDurationConfig;
+      if (planDurationConfig instanceof Map) {
+        for (const [key, value] of planDurationConfig.entries()) {
+          if (value && value.isEnabled) {
+            durationType = key;
+            currentPlanExpiry = Date.now() + (value.duration || 30) * 24 * 60 * 60 * 1000;
+            break;
+          }
+        }
+      }
+    }
+
+    // Create Admin user
+    const userData = await this.userModel.create({
+      email: normalizedEmail,
+      userName: name || normalizedEmail.split('@')[0],
+      password: hashPassword,
+      phone: phone || '',
+      role: new Types.ObjectId(roleId),
+      isActive: true,
+    });
+
+    // Generate Pabbly Token
+    const tokenPayload = {
+      id: userData?._id,
+      role: userData?.role,
+      adminId: userData?.adminId,
+    };
+    const token = await this.jwtService.signAsync(tokenPayload, {
+      secret: this.configService.get('PABBLY_CLIENT_ACCESS_TOKEN_SECRET'),
+    });
+
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        String(userData?._id),
+        { pabblyToken: token },
+        { new: true },
+      )
+      .select('-password');
+
+    // Create Subscription
+    if (plan) {
+      const subscriptionPayload: SubscriptionDto = {
+        admin: String(user._id),
+        plan: String(plan._id),
+        contactLimit: plan.contactLimit || 1000,
+        employeeLimit: plan.employeeCount || 5,
+        toggleLimit: plan.toggleLimit || 10,
+        webinarLimit: plan.webinarLimit || 5,
+        whatsappProjectLimit: plan.whatsappProjectLimit || 0,
+        zoomProjectLimit: plan.zoomProjectLimit || 0,
+        expiryDate: currentPlanExpiry,
+      };
+
+      await this.subscriptionService.addSubscription(subscriptionPayload);
+
+      // Create Billing History
+      let totalWithGST = 0;
+      let itemAmount = 0;
+      let discountAmount = 0;
+      let gst = 0;
+
+      if (plan.planDurationConfig instanceof Map) {
+        const durationConfig = plan.planDurationConfig.get(durationType);
+        if (durationConfig) {
+          const generated = this.subscriptionService.generatePriceForPlan(durationConfig);
+          totalWithGST = generated.totalWithGST;
+          itemAmount = generated.itemAmount;
+          discountAmount = generated.discountAmount;
+          gst = generated.gst;
+        }
+      }
+
+      await this.billingHistoryService.addBillingHistory(
+        {
+          admin: String(user._id),
+          plan: String(plan._id),
+          amount: totalWithGST,
+          itemAmount: itemAmount,
+          discountAmount: discountAmount,
+          taxPercent: this.subscriptionService.GST_VALUE || 0,
+          taxAmount: gst,
+          durationType: durationType as any,
+          startDate: new Date(),
+          expiryDate: new Date(currentPlanExpiry),
+        },
+        BillingType.NEW_PLAN,
+      );
+    }
+
+    // Default Configuration setup
+    await this.customLeadTypeService.createDefaultLeadTypes(`${user._id}`);
+    await this.productsService.createDefaultProductLevels(
+      user._id as Types.ObjectId,
+    );
+
+    // Track Affiliate referrals
+    if (payload.ref) {
+      try {
+        const affiliateModel = this.userModel.db.model('Affiliate');
+        const referralModel = this.userModel.db.model('Referral');
+
+        // Find the referrer affiliate by their referral code
+        const referrerAffiliate = await affiliateModel.findOne({
+          referralCode: payload.ref,
+        });
+
+        if (referrerAffiliate) {
+          // 1. Create Tier 1 Referral
+          await referralModel.create({
+            referrerId: referrerAffiliate.userId,
+            referredId: user._id,
+            tier: 1,
+            status: 'signup',
+            commission: 0,
+          });
+
+          // 2. Check for Tier 2: see if the referrer themselves has a referrer
+          const parentReferral = await referralModel.findOne({
+            referredId: referrerAffiliate.userId,
+            tier: 1,
+          });
+
+          if (parentReferral) {
+            await referralModel.create({
+              referrerId: parentReferral.referrerId,
+              referredId: user._id,
+              tier: 2,
+              status: 'signup',
+              commission: 0,
+            });
+          }
+        }
+      } catch (err) {
+        // Safe catch to ensure signup does not crash if affiliate tracking fails
+        this.logger.error('Failed to register affiliate referral details', err.stack);
+      }
+    }
+
+    return {
+      status: true,
+      message: 'New Account Created Successfully',
+      data: user,
+    };
+  }
 }

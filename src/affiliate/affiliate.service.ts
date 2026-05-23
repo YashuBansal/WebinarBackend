@@ -14,7 +14,7 @@ export class AffiliateService {
     @InjectModel(Referral.name) private readonly referralModel: Model<Referral>,
     @InjectModel(Payout.name) private readonly payoutModel: Model<Payout>,
     @InjectModel(User.name) private readonly userModel: Model<User>,
-  ) {}
+  ) { }
 
   /**
    * Helper to generate a unique random referral code.
@@ -73,7 +73,9 @@ export class AffiliateService {
 
     return {
       referralCode: affiliate.referralCode,
-      referralLink: `https://webinarleadshub.com/signup?ref=${affiliate.referralCode}`,
+      // referralLink: `https://webinar-frontend-tau.vercel.app/signup?ref=${affiliate.referralCode}`,
+      referralLink: `https://dashboard.ajaybansal.com/signup?ref=${affiliate.referralCode}`,
+      // referralLink: `http://localhost:5174/signup?ref=${affiliate.referralCode}`,
       tier1CommissionRate: affiliate.tier1Rate,
       tier2CommissionRate: affiliate.tier2Rate,
       totalReferralIncome: affiliate.totalEarned,
@@ -85,29 +87,32 @@ export class AffiliateService {
     };
   }
 
-  /**
-   * Retrieves the referrals list (both signups and customers).
-   */
   async getReferrals(userId: string) {
     const userObjectId = new Types.ObjectId(userId);
-    
-    // We fetch all referrals for this referrer
-    const referrals = await this.referralModel.find({ referrerId: userObjectId }).sort({ createdAt: -1 });
+
+    // We fetch all referrals for this referrer and populate the referred user's credentials
+    const referrals = await this.referralModel
+      .find({ referrerId: userObjectId })
+      .populate('referredId', 'userName email phone')
+      .sort({ createdAt: -1 });
 
     // Map to structure matching frontend table expectations
-    return referrals.map((r, idx) => ({
-      id: r._id.toString(),
-      name: `User ${idx + 1}`, // In a real system, we'd populate and fetch the referred user's username/email
-      email: r.status === 'customer' ? `referred_${idx}@wlh-customer.com` : `signup_${idx}@wlh-lead.com`,
-      number: `+91 99999 ${10000 + idx}`,
-      invoiceId: r.invoiceId,
-      purchaseDate: r.purchaseDate ? r.purchaseDate.toISOString().split('T')[0] : null,
-      planPurchased: r.planPurchased,
-      commissionAmount: r.commission,
-      tier: r.tier,
-      status: r.status,
-      registrationDate: r.createdAt.toISOString().split('T')[0],
-    }));
+    return referrals.map((r) => {
+      const referredUser = r.referredId as any;
+      return {
+        id: r._id.toString(),
+        name: referredUser ? referredUser.userName : 'N/A',
+        email: referredUser ? referredUser.email : 'N/A',
+        number: referredUser ? (referredUser.phone || 'N/A') : 'N/A',
+        invoiceId: r.invoiceId,
+        purchaseDate: r.purchaseDate ? r.purchaseDate.toISOString().split('T')[0] : null,
+        planPurchased: r.planPurchased,
+        commissionAmount: r.commission,
+        tier: r.tier,
+        status: r.status,
+        registrationDate: r.createdAt.toISOString().split('T')[0],
+      };
+    });
   }
 
   /**
@@ -142,7 +147,7 @@ export class AffiliateService {
     }
 
     const payoutAmount = affiliate.requestablePayout;
-    
+
     // Get count of payouts to generate unique reference number
     const count = await this.payoutModel.countDocuments({ userId: userObjectId });
     const invoiceRef = `WLH-AFF-2026-${String(count + 1).padStart(3, '0')}`;

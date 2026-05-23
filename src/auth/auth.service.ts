@@ -512,6 +512,10 @@ export class AuthService {
     return await bcrypt.compare(plainTextPassword, hashedPassword);
   }
 
+  async signUp(payload: any): Promise<any> {
+    return this.usersService.signUp(payload);
+  }
+
   async verifyAdmin(
     id: string,
     role: string,

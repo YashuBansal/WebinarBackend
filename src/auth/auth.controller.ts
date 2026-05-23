@@ -53,6 +53,11 @@ export class AuthController {
     return this.getCookieOptions(3600000 * 24);
   }
 
+  @Post('signup')
+  async signUp(@Body() signUpDto: any) {
+    return this.authService.signUp(signUpDto);
+  }
+
   @Post('login')
   async signIn(
     @Body() signInDto: SignInDto,
