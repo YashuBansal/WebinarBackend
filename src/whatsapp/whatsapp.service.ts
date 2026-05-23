@@ -135,17 +135,34 @@ export class WhatsappService extends BaseLoggerService {
     });
   }
 
-  private async assertAdminCanSendWabaMessages(
+  private async getAdminWabaSendEligibility(
     adminId: string | Types.ObjectId,
-  ): Promise<void> {
+  ): Promise<{ canSend: boolean; reason?: string }> {
     const id = String(adminId);
     const user = await this.usersService.getUserById(id);
     if (!user) {
-      throw new NotFoundException('User not found');
+      return { canSend: false, reason: 'User not found' };
     }
     if (!user.isActive) {
+      return {
+        canSend: false,
+        reason: WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE,
+      };
+    }
+    return { canSend: true };
+  }
+
+  private async assertAdminCanSendWabaMessages(
+    adminId: string | Types.ObjectId,
+  ): Promise<void> {
+    const eligibility = await this.getAdminWabaSendEligibility(adminId);
+    if (!eligibility.canSend) {
+      if (eligibility.reason === 'User not found') {
+        throw new NotFoundException('User not found');
+      }
       throw new ForbiddenException(
-        WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE,
+        eligibility.reason ||
+          WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE,
       );
     }
 
@@ -4139,20 +4156,39 @@ export class WhatsappService extends BaseLoggerService {
       return buildErrorResponse('VALIDATION_ERROR', 'Admin ID is required');
     }
 
-    try {
-      await this.assertAdminCanSendWabaMessages(adminId);
-    } catch (error) {
-      if (
-        error instanceof ForbiddenException ||
-        error instanceof NotFoundException
-      ) {
-        return buildErrorResponse(
-          'SUBSCRIPTION_EXPIRED',
-          error.message ||
-            WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE,
+    const eligibility = await this.getAdminWabaSendEligibility(adminId);
+    if (!eligibility.canSend) {
+      const blockMessage =
+        eligibility.reason ||
+        WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE;
+      try {
+        await this.createErrorMessage({
+          projectId,
+          adminId: String(adminId),
+          normalizedRecipientPhoneNumber: formattedPhoneData.phoneNumber,
+          contactId: payload.contactId,
+          templateName,
+          error: { message: blockMessage },
+          language: language || templateStructure?.language || 'en_US',
+          templateStructure,
+          campaignId: payload.campaignId,
+          attendeeId: payload.attendeeId,
+          meetingId: payload.meetingId,
+          occurrenceId: payload.occurrenceId,
+          apiCampaignId: payload.apiCampaignId,
+          messageType: payload.messageType,
+          messageFormat: 'template',
+          programId: payload.programId,
+          programAssignmentId: payload.programAssignmentId,
+          programSlotId: payload.programSlotId,
+        });
+      } catch (errorLogError) {
+        this.logger.error(
+          'Failed to create error message for inactive admin',
+          errorLogError,
         );
       }
-      throw error;
+      return buildErrorResponse('SUBSCRIPTION_EXPIRED', blockMessage);
     }
 
     // Validate template structure consistency
@@ -4548,8 +4584,6 @@ export class WhatsappService extends BaseLoggerService {
     const { projectId, recipients, templateName, headerMediaAssetId } =
       sendTemplateDto;
 
-    await this.assertAdminCanSendWabaMessages(adminId);
-
     const account = await this.projectService.findOne(
       new Types.ObjectId(adminId),
       new Types.ObjectId(projectId),
@@ -4696,6 +4730,62 @@ export class WhatsappService extends BaseLoggerService {
       invalidButQueued: 0,
       errors: [] as string[],
     };
+
+    const eligibility = await this.getAdminWabaSendEligibility(adminId);
+    if (!eligibility.canSend) {
+      const blockMessage =
+        eligibility.reason ||
+        WhatsappService.WABA_SUBSCRIPTION_EXPIRED_MESSAGE;
+      const uniqueForInactive = new Set<string>();
+
+      for (const recipient of recipients) {
+        const { recipientPhoneNumber, contactId, bodyVariables } = recipient;
+        const formatted = this.formatIndianRecipient(recipientPhoneNumber);
+
+        if (uniqueForInactive.has(formatted.phoneNumber)) {
+          results.duplicates++;
+          continue;
+        }
+        uniqueForInactive.add(formatted.phoneNumber);
+
+        results.failed++;
+        results.errors.push(
+          `${recipientPhoneNumber}: subscription expired`,
+        );
+
+        const recipientTemplateStructure =
+          buildTemplateStructureForRecipient(bodyVariables);
+
+        await this.createErrorMessage({
+          projectId,
+          adminId,
+          normalizedRecipientPhoneNumber: formatted.phoneNumber,
+          contactId,
+          templateName,
+          error: { message: blockMessage },
+          language: template.language || 'en_US',
+          templateStructure: recipientTemplateStructure,
+          messageType,
+          messageFormat: 'template',
+          meetingId,
+          occurrenceId,
+          campaignId,
+          attendeeId,
+          apiCampaignId,
+          programId,
+          programAssignmentId,
+          programSlotId,
+        });
+      }
+
+      this.logger.log(' Send Template Message Stats: ', results);
+
+      return {
+        success: true,
+        message: `Processing completed. Enqueued: ${results.enqueued}, Duplicates: ${results.duplicates}, Invalid: ${results.invalid}, InvalidButQueued: ${results.invalidButQueued}, Failed: ${results.failed}`,
+        stats: results,
+      };
+    }
 
     // Process recipients in chunks to optimize enqueueing speed while managing memory/load
     const CHUNK_SIZE = 50;
