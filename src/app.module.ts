@@ -252,6 +252,7 @@ export class AppModule {
         { path: 'users', method: RequestMethod.GET },
         { path: 'users/clients', method: RequestMethod.GET },
         '/documents*',
+        '/superadmin-affiliate*',
       );
   }
 }
