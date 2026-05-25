@@ -24,12 +24,10 @@ import { ProductsModule } from 'src/products/products.module';
 import { WebsocketModule } from 'src/websocket/websocket.module';
 import { TwoFactorAuthenticationModule } from 'src/two-factor-authentication/two-factor-authentication.module';
 import { ApiAccessTokenModule } from 'src/api-access-token/api-access-token.module';
-import { RedisModule } from 'src/redis/redis.module';
 import { UserCacheService } from './user-cache.service';
 
 @Module({
   imports: [
-    RedisModule,
     MulterModule.register({
       storage: diskStorage({
         destination: './documents',

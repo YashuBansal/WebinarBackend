@@ -1,8 +1,9 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { REDIS_CONNECTION } from 'src/redis/redis.module';
+import { CacheService } from 'src/cache/cache.service';
+import { buildKey } from 'src/cache/cache-key.util';
 import { User } from 'src/schemas/User.schema';
 import {
   invalidateAfterBulkWrite,
@@ -10,18 +11,7 @@ import {
 } from './user-cache-invalidation.util';
 import { setUserCacheInvalidator } from './user-cache.registry';
 
-const CACHE_KEY_PREFIX = 'user:by-id:v1:';
 const MISSING_SENTINEL = '__missing__';
-
-type RedisLike = {
-  get(key: string): Promise<string | null>;
-  set(
-    key: string,
-    value: string,
-    ...args: Array<string | number>
-  ): Promise<unknown>;
-  del(...keys: string[]): Promise<number>;
-};
 
 export type CachedUserRecord = Record<string, unknown> & {
   _id?: unknown;
@@ -36,7 +26,7 @@ export class UserCacheService implements OnModuleInit {
   private readonly notFoundTtlSeconds: number;
 
   constructor(
-    @Inject(REDIS_CONNECTION) private readonly redis: RedisLike,
+    private readonly cacheService: CacheService,
     @InjectModel(User.name) private readonly userModel: Model<User>,
     private readonly configService: ConfigService,
   ) {
@@ -53,7 +43,7 @@ export class UserCacheService implements OnModuleInit {
   }
 
   private getKey(userId: string): string {
-    return `${CACHE_KEY_PREFIX}${userId}`;
+    return buildKey('user', 'by-id', 'v1', userId);
   }
 
   async get(
@@ -61,46 +51,35 @@ export class UserCacheService implements OnModuleInit {
   ): Promise<CachedUserRecord | null | typeof MISSING_SENTINEL> {
     if (!userId) return MISSING_SENTINEL;
 
-    try {
-      const raw = await this.redis.get(this.getKey(userId));
-      if (raw === null) return null;
-      const parsed = JSON.parse(raw) as { __missing?: boolean } & CachedUserRecord;
-      if (parsed?.__missing === true) {
-        return MISSING_SENTINEL;
-      }
-      return parsed as CachedUserRecord;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`User cache get failed for ${userId}: ${message}`);
+    const parsed = await this.cacheService.getJson<
+      { __missing?: boolean } & CachedUserRecord
+    >(this.getKey(userId));
+
+    if (parsed === null) {
       return null;
     }
+
+    if (parsed?.__missing === true) {
+      return MISSING_SENTINEL;
+    }
+
+    return parsed as CachedUserRecord;
   }
 
   async set(userId: string, user: CachedUserRecord | null): Promise<void> {
     if (!userId) return;
 
-    try {
-      const key = this.getKey(userId);
-      if (!user) {
-        await this.redis.set(
-          key,
-          JSON.stringify({ __missing: true }),
-          'EX',
-          this.notFoundTtlSeconds,
-        );
-        return;
-      }
-
-      await this.redis.set(
+    const key = this.getKey(userId);
+    if (!user) {
+      await this.cacheService.setJson(
         key,
-        JSON.stringify(user),
-        'EX',
-        this.ttlSeconds,
+        { __missing: true },
+        this.notFoundTtlSeconds,
       );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`User cache set failed for ${userId}: ${message}`);
+      return;
     }
+
+    await this.cacheService.setJson(key, user, this.ttlSeconds);
   }
 
   async invalidate(
@@ -112,16 +91,9 @@ export class UserCacheService implements OnModuleInit {
       .filter(Boolean);
     if (ids.length === 0) return;
 
-    try {
-      const keys = ids.map((id) => this.getKey(id));
-      const deleted = await this.redis.del(...keys);
-      logUserCacheInvalidated(trigger, ids, { keys, deleted });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(
-        `User cache invalidate failed (${trigger}): ${message}`,
-      );
-    }
+    const keys = ids.map((id) => this.getKey(id));
+    const deleted = await this.cacheService.del(...keys);
+    logUserCacheInvalidated(trigger, ids, { keys, deleted });
   }
 
   async invalidateAfterBulkWrite(

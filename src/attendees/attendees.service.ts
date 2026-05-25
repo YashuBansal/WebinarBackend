@@ -32,6 +32,7 @@ import {
 } from 'src/schemas/notification.schema';
 import { NotificationService } from 'src/notification/notification.service';
 import { WebinarService } from 'src/webinar/webinar.service';
+import { WebinarStatsService } from 'src/webinar/webinar-stats.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { WebsocketGateway } from 'src/websocket/websocket.gateway';
 import { ClientSession } from 'mongoose';
@@ -72,6 +73,7 @@ export class AttendeesService {
     private readonly notificationService: NotificationService,
     @Inject(forwardRef(() => WebinarService))
     private readonly webinarService: WebinarService,
+    private readonly webinarStatsService: WebinarStatsService,
     @Inject(forwardRef(() => AssignmentService))
     private readonly assignService: AssignmentService,
     @Inject(forwardRef(() => SubscriptionService))
@@ -144,7 +146,41 @@ export class AttendeesService {
 
   async addAttendees(attendees: [PreWebinarPostAttendeeDTO]): Promise<any> {
     const result = await this.attendeeModel.create(attendees);
+    const deltasByWebinar = new Map<string, { totalRegistrations: number; totalParticipants: number; totalAttendees: number }>();
+
+    for (const attendee of result) {
+      const webinarId = attendee.webinar?.toString();
+      if (!webinarId) continue;
+      const buckets = this.webinarStatsService.buckets(attendee);
+      const existing = deltasByWebinar.get(webinarId) ?? {
+        totalRegistrations: 0,
+        totalParticipants: 0,
+        totalAttendees: 0,
+      };
+      deltasByWebinar.set(webinarId, {
+        totalRegistrations:
+          existing.totalRegistrations + buckets.totalRegistrations,
+        totalParticipants:
+          existing.totalParticipants + buckets.totalParticipants,
+        totalAttendees: existing.totalAttendees + buckets.totalAttendees,
+      });
+    }
+
+    for (const [webinarId, delta] of deltasByWebinar) {
+      await this.webinarStatsService.applyDelta(webinarId, delta);
+    }
+
     return result;
+  }
+
+
+  async countAttendeesCreatedInRange(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<number> {
+    return this.attendeeModel.countDocuments({
+      createdAt: { $gte: startDate, $lte: endDate },
+    });
   }
 
   checkLength(arr?: string[]): boolean {
@@ -557,6 +593,10 @@ export class AttendeesService {
             }
           },
         );
+        await this.webinarStatsService.recomputeForWebinar(
+          webinar,
+          currentSession,
+        );
         updateProgress(90);
       });
       await this.subscriptionService.revalidateUsedContactCountsOfAdmin(
@@ -795,6 +835,12 @@ export class AttendeesService {
 
         const attendeeIds = attendeeData.map((a) => a._id as Types.ObjectId);
         const attendeeEmails = attendeeData.map((a) => a.email);
+
+        await this.webinarStatsService.applyDeleteDeltas(
+          attendeeData,
+          currentSession,
+        );
+
         DeletedAttendees = await this.attendeeModel.deleteMany(
           {
             adminId,
@@ -861,6 +907,11 @@ export class AttendeesService {
 
         const attendeeIds: Types.ObjectId[] = attendeeData.map(
           (a) => a._id as Types.ObjectId,
+        );
+
+        await this.webinarStatsService.applyDeleteDeltas(
+          attendeeData,
+          currentSession,
         );
 
         DeletedAttendees = await this.attendeeModel.deleteMany(
@@ -1838,6 +1889,8 @@ export class AttendeesService {
       );
     }
 
+    await this.webinarStatsService.recomputeForWebinar(webinarId);
+
     const webinarName = webinar.webinarName;
     const webinarType = isAttended ? 'Sales' : 'Reminder';
 
@@ -1924,6 +1977,20 @@ export class AttendeesService {
       // or if the document was deleted concurrently.
       throw new NotFoundException(
         'No record found or authorized to be updated.',
+      );
+    }
+
+    if (
+      updateAttendeeDto.isAttended !== undefined ||
+      updateAttendeeDto.timeInSession !== undefined
+    ) {
+      const statsDelta = this.webinarStatsService.delta(
+        attendeeBeforeUpdate,
+        resultWithAdminFilter,
+      );
+      await this.webinarStatsService.applyDelta(
+        attendeeBeforeUpdate.webinar,
+        statsDelta,
       );
     }
 
@@ -3672,6 +3739,11 @@ export class AttendeesService {
         : result.modifiedCount && result.modifiedCount > 0
           ? 'updated'
           : 'unchanged';
+
+    if (action === 'created' && attendee) {
+      const buckets = this.webinarStatsService.buckets(attendee);
+      await this.webinarStatsService.applyDelta(webinarId, buckets);
+    }
 
     return { action, attendee };
   }

@@ -32,6 +32,7 @@ import {
   AttendeeFilterConditionDto,
   GetAttendeeCountDto,
 } from './dto/attendee-count.dto';
+import { WebinarListCacheService } from './webinar-list-cache.service';
 
 @Injectable()
 export class WebinarService {
@@ -52,6 +53,7 @@ export class WebinarService {
     @Inject(forwardRef(() => SubscriptionService))
     private readonly subscriptionService: SubscriptionService,
     private readonly meetingEventConfigService: MeetingEventConfigService,
+    private readonly webinarListCacheService: WebinarListCacheService,
   ) {}
 
   async createWebiar(createWebinarDto: CreateWebinarDto): Promise<any> {
@@ -120,6 +122,10 @@ export class WebinarService {
     });
 
     if (result) {
+      await this.webinarListCacheService.bumpVersion(
+        `${adminId}`,
+        'createWebinar',
+      );
       createWebinarDto.assignedEmployees.forEach(async (employeeId) => {
         // Create a notification for each assigned employee
         await this.notificationService.createNotification({
@@ -198,6 +204,11 @@ export class WebinarService {
 
     await webinar.save();
 
+    await this.webinarListCacheService.bumpVersion(
+      adminId.toString(),
+      'updateWebinarSettings',
+    );
+
     return webinar;
   }
 
@@ -208,6 +219,18 @@ export class WebinarService {
     filters: WebinarFilterDTO = {},
     usePagination: boolean = true, // Flag to enable/disable pagination
   ): Promise<any> {
+    if (usePagination) {
+      const cached = await this.webinarListCacheService.get(
+        adminId,
+        page,
+        limit,
+        filters,
+      );
+      if (cached) {
+        return cached;
+      }
+    }
+
     const skip = (page - 1) * limit;
 
     const query = { adminId: new Types.ObjectId(`${adminId}`) };
@@ -245,11 +268,11 @@ export class WebinarService {
         },
       },
       {
-        $lookup: {
-          from: 'attendees',
-          localField: '_id',
-          foreignField: 'webinar',
-          as: 'attendees',
+        $addFields: {
+          totalRegistrations: { $ifNull: ['$totalRegistrations', 0] },
+          totalParticipants: { $ifNull: ['$totalParticipants', 0] },
+          totalAttendees: { $ifNull: ['$totalAttendees', 0] },
+          totalUnAttended: { $ifNull: ['$totalUnAttended', 0] },
         },
       },
       {
@@ -261,58 +284,11 @@ export class WebinarService {
           adminId: 1,
           createdAt: 1,
           updatedAt: 1,
-          totalAttendees: {
-            $size: {
-              $filter: {
-                input: '$attendees',
-                as: 'attendee',
-                cond: {
-                  $and: [
-                    { $eq: ['$$attendee.isAttended', true] },
-                    { $gt: ['$$attendee.timeInSession', 0] },
-                    { $ne: ['$$attendee.isDeleted', true] },
-                  ],
-                },
-              },
-            },
-          },
-          totalRegistrations: {
-            $size: {
-              $filter: {
-                input: '$attendees',
-                as: 'attendee',
-                cond: {
-                  $and: [
-                    { $eq: ['$$attendee.isAttended', false] },
-                    { $ne: ['$$attendee.isDeleted', true] },
-                  ],
-                },
-              },
-            },
-          },
-
-          totalParticipants: {
-            $size: {
-              $filter: {
-                input: '$attendees',
-                as: 'attendee',
-                cond: {
-                  $and: [
-                    { $eq: ['$$attendee.isAttended', true] },
-                    { $ne: ['$$attendee.isDeleted', true] },
-                  ],
-                },
-              },
-            },
-          },
+          totalRegistrations: 1,
+          totalParticipants: 1,
+          totalAttendees: 1,
+          totalUnAttended: 1,
           productIds: 1,
-        },
-      },
-      {
-        $addFields: {
-          totalUnAttended: {
-            $subtract: ['$totalParticipants', '$totalAttendees'],
-          },
         },
       },
       {
@@ -367,12 +343,23 @@ export class WebinarService {
       );
 
       const result = await this.webinarModel.aggregate(basePipeline);
-      return result.length > 0
-        ? result[0]
-        : {
-            result: [],
-            pagination: { totalPages: 0, page: 1, total: 0, limit: limit },
-          };
+      const response =
+        result.length > 0
+          ? result[0]
+          : {
+              result: [],
+              pagination: { totalPages: 0, page: 1, total: 0, limit: limit },
+            };
+
+      await this.webinarListCacheService.set(
+        adminId,
+        page,
+        limit,
+        filters,
+        response,
+      );
+
+      return response;
     } else {
       // Add skip and limit directly for consistent output without $facet
       basePipeline.push({ $skip: skip }, ...(limit ? [{ $limit: limit }] : []));
@@ -445,6 +432,8 @@ export class WebinarService {
       },
       { new: true }, // return the updated document
     );
+
+    await this.webinarListCacheService.bumpVersion(adminId, 'updateWebinar');
 
     return result;
   }
@@ -524,6 +513,11 @@ export class WebinarService {
 
         return { message: 'Webinar deleted successfully' };
       });
+
+      await this.webinarListCacheService.bumpVersion(
+        adminId.toString(),
+        'deleteWebinar',
+      );
     } catch (error) {
       console.error('Transaction failed during hideAttendees:', error);
       throw new BadRequestException(error.message);
