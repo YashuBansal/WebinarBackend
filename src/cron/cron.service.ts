@@ -41,11 +41,8 @@ export class CronService implements OnModuleInit {
     await this.everyWeekJobs();
   }
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async handleAddonExpirySync(): Promise<void> {
-    this.logger.log('Running addon expiry sync...');
-    await this.subscriptionService.expireAndRecomputeAffectedSubscriptionAddons();
-  }
+  // Add-on entitlements should not expire on a fixed timer.
+  // They remain active until provider webhooks mark the parent subscription as cancelled/completed.
 
   @Cron(CronExpression.EVERY_10_MINUTES) // Every 10 minutes
   async handleAutoAssignments() {
@@ -214,5 +211,8 @@ export class CronService implements OnModuleInit {
 
     this.logger.log('Backfilling missing addon billing histories...');
     await this.addonPurchaseService.reconcileMissingAddonBilling(200);
+
+    this.logger.log('Applying Razorpay grace expiry actions...');
+    await this.subscriptionService.processRazorpayGraceExpiries();
   }
 }

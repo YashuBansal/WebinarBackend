@@ -9,10 +9,37 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { PlanType } from 'src/schemas/Plans.schema';
+import { PlanType } from '../Plans.schema';
+
+export class PlanDurationConfigDto {
+  @IsNumber()
+  duration: number;
+
+  @IsString()
+  discountType: string;
+
+  @IsNumber()
+  discountValue: number;
+
+  @IsNumber()
+  price: number;
+
+  @IsBoolean()
+  isEnabled: boolean;
+
+  @ValidateIf((o) => o.isEnabled === true)
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^plan_[A-Za-z0-9]+$/i, {
+    message: 'razorpayPlanId must be a Razorpay Subscriptions plan id (e.g. plan_xxx)',
+  })
+  razorpayPlanId?: string;
+}
 
 export class CreatePlansDto {
   @IsString()
@@ -101,7 +128,7 @@ export class CreatePlansDto {
 
   @IsObject()
   @IsNotEmpty()
-  planDurationConfig: Map<string, any>;
+  planDurationConfig: Map<string, PlanDurationConfigDto>;
 }
 
 class PlanDTO {

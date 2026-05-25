@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Plans, PlanType } from 'src/schemas/Plans.schema';
+import { Plans, PlanType } from './Plans.schema';
 import { CreatePlansDto, PlanOrderDTO } from './dto/createPlans.dto';
 import { UpdatePlansDto } from './dto/updatePlans.dto';
 import { SubscriptionService } from 'src/subscription/subscription.service';

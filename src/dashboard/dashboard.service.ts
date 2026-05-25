@@ -6,7 +6,7 @@ import { AssignmentService } from 'src/assignment/assignment.service';
 import { NotesService } from 'src/notes/notes.service';
 import { Attendee } from 'src/schemas/Attendee.schema';
 import { BillingHistory } from 'src/schemas/BillingHistory.schema';
-import { Subscription } from 'src/schemas/Subscription.schema';
+import { Subscription } from 'src/subscription/Subscription.schema';
 import { User } from 'src/schemas/User.schema';
 
 @Injectable()

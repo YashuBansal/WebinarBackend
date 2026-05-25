@@ -10,7 +10,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import {
   Subscription,
   SubscriptionSchema,
-} from 'src/schemas/Subscription.schema';
+} from './Subscription.schema';
 import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
 import { UsersModule } from 'src/users/users.module';
@@ -21,9 +21,13 @@ import { PlansModule } from 'src/plans/plans.module';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 import { AttendeesModule } from 'src/attendees/attendees.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
+import { AddonPurchaseModule } from 'src/addon-purchase/addon-purchase.module';
+import { RazorpayModule } from 'src/razorpay/razorpay.module';
 
 @Module({
   imports: [
+    forwardRef(() => AddonPurchaseModule),
+    forwardRef(() => RazorpayModule),
     MongooseModule.forFeature([
       {
         name: Subscription.name,

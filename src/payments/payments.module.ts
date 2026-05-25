@@ -1,9 +1,9 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AddonPurchaseModule } from 'src/addon-purchase/addon-purchase.module';
 import { RazorpayWebhookController } from './razorpay-webhook.controller';
 
 @Module({
-  imports: [AddonPurchaseModule],
+  imports: [forwardRef(() => AddonPurchaseModule)],
   controllers: [RazorpayWebhookController],
 })
 export class PaymentsModule {}

@@ -9,7 +9,7 @@ import { PlansService } from './plans.service';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Plans, PlansSchema } from 'src/schemas/Plans.schema';
+import { Plans, PlansSchema } from './Plans.schema';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { UsersModule } from 'src/users/users.module';
 

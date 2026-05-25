@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { BillingHistory, BillingType } from 'src/schemas/BillingHistory.schema';
@@ -10,7 +10,7 @@ import {
 import { Counter } from 'src/schemas/counter.schema';
 
 @Injectable()
-export class BillingHistoryService {
+export class BillingHistoryService implements OnModuleInit {
   private readonly INVOICE_PREFIX = 'WLH';
   private readonly INVOICE_COUNTER_ID = 'invoiceNumber';
 
@@ -20,6 +20,20 @@ export class BillingHistoryService {
     @InjectModel(Counter.name)
     private readonly counterModel: Model<Counter>,
   ) {}
+
+  async onModuleInit() {
+    // Allow multiple billing rows per addon purchase (recurring); replace legacy unique index.
+    try {
+      await this.BillingHistoryModel.collection.dropIndex('addonPurchase_1');
+    } catch (_) {
+      /* index missing or already non-unique */
+    }
+    try {
+      await this.BillingHistoryModel.syncIndexes();
+    } catch (_) {
+      /* best-effort */
+    }
+  }
 
   private async generateNextInvoiceNumber(): Promise<string> {
     // FIX: Use findOneAndUpdate and query by the 'name' field
@@ -52,6 +66,15 @@ export class BillingHistoryService {
     return result;
   }
 
+  async findByRazorpayPaymentId(
+    paymentId: string,
+  ): Promise<BillingHistory | null> {
+    if (!paymentId || typeof paymentId !== 'string') {
+      return null;
+    }
+    return this.BillingHistoryModel.findOne({ razorpayPaymentId: paymentId });
+  }
+
   async updateBillingHistory(
     id: string,
     updateBillingHistory: UpdateBillingHistory,
@@ -69,6 +92,10 @@ export class BillingHistoryService {
     taxPercent: number,
     addonPurchaseId?: string,
     dates?: { startDate?: Date; expiryDate?: Date },
+    extras?: {
+      razorpayPaymentId?: string | null;
+      billingType?: BillingType;
+    },
   ): Promise<BillingHistory> {
     const invoiceNumber = await this.generateNextInvoiceNumber();
 
@@ -81,12 +108,15 @@ export class BillingHistoryService {
       addonPurchase: addonPurchaseId
         ? new Types.ObjectId(`${addonPurchaseId}`)
         : undefined,
-      billingType: BillingType.ADD_ON,
+      billingType: extras?.billingType ?? BillingType.ADD_ON,
       amount: parseFloat(totalAmount.toFixed(2)),
       itemAmount: parseFloat(itemAmount.toFixed(2)),
       taxAmount: parseFloat(taxAmount.toFixed(2)),
       taxPercent: taxPercent,
       invoiceNumber,
+      ...(extras?.razorpayPaymentId
+        ? { razorpayPaymentId: extras.razorpayPaymentId }
+        : {}),
     });
     return billingHistory.save();
   }

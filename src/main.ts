@@ -69,6 +69,10 @@ async function bootstrap() {
     '/api/v1/payments/razorpay/webhook',
     express.raw({ type: 'application/json' }),
   );
+  app.use(
+    '/api/v1/razorpay/webhook',
+    express.raw({ type: 'application/json' }),
+  );
 
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());

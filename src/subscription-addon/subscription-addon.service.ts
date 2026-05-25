@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import {
@@ -7,11 +7,36 @@ import {
 } from 'src/schemas/SubscriptionAddon.schema';
 
 @Injectable()
-export class SubscriptionAddonService {
+export class SubscriptionAddonService implements OnModuleInit {
   constructor(
     @InjectModel(SubscriptionAddOn.name)
     private SubscriptionAddOnModel: Model<SubscriptionAddOn>,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // Legacy TTL on `expiryDate` was removed from the schema; drop it if MongoDB still has it.
+    try {
+      const specs = await this.SubscriptionAddOnModel.collection.indexes();
+      for (const spec of specs) {
+        if (spec.expireAfterSeconds === undefined || !spec.name) continue;
+        const key = spec.key as Record<string, number>;
+        const keyNames = Object.keys(key);
+        if (
+          keyNames.length === 1 &&
+          keyNames[0] === 'expiryDate' &&
+          key.expiryDate === 1
+        ) {
+          try {
+            await this.SubscriptionAddOnModel.collection.dropIndex(spec.name);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    try {
+      await this.SubscriptionAddOnModel.syncIndexes();
+    } catch (_) {}
+  }
 
   async createSubscriptionAddon(
     subscriptionId: string,
@@ -112,11 +137,37 @@ export class SubscriptionAddonService {
         },
       },
       {
+        $lookup: {
+          from: 'addonpurchases',
+          localField: 'purchase',
+          foreignField: '_id',
+          as: 'purchaseDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$purchaseDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
         $project: {
           addonName: {
             $ifNull: ['$benefitsSnapshot.addonName', '$addOnDetails.addonName'],
           },
           expiryDate: '$expiryDate',
+          providerRazorpaySubscriptionId:
+            '$purchaseDetails.providerRazorpaySubscriptionId',
+          providerRazorpaySubscriptionStatus:
+            '$purchaseDetails.providerRazorpaySubscriptionStatus',
+          providerRazorpaySubscriptionShortUrl:
+            '$purchaseDetails.providerRazorpaySubscriptionShortUrl',
+          validityInDays: {
+            $ifNull: [
+              '$benefitsSnapshot.validityInDays',
+              '$addOnDetails.validityInDays',
+            ],
+          },
           employeeLimit: {
             $ifNull: [
               '$benefitsSnapshot.employeeLimit',
@@ -155,6 +206,7 @@ export class SubscriptionAddonService {
           },
           addOnId: '$addOn',
           status: '$status',
+          startAt: '$startAt',
         },
       },
     ]).exec();
@@ -168,5 +220,35 @@ export class SubscriptionAddonService {
     )
       .lean()
       .exec();
+  }
+
+  async setSubscriptionAddonExpiryByPurchaseId(
+    purchaseId: string,
+    expiryDate: Date,
+  ): Promise<void> {
+    if (!Types.ObjectId.isValid(purchaseId)) return;
+    await this.SubscriptionAddOnModel.updateOne(
+      { purchase: new Types.ObjectId(purchaseId) },
+      { $set: { expiryDate, status: UserAddonStatus.ACTIVE } },
+    ).exec();
+  }
+
+  async cancelSubscriptionAddonsByPurchaseIds(
+    purchaseIds: string[],
+    now: Date = new Date(),
+  ): Promise<void> {
+    const ids = purchaseIds.filter((id) => Types.ObjectId.isValid(id));
+    if (!ids.length) return;
+    await this.SubscriptionAddOnModel.updateMany(
+      {
+        purchase: { $in: ids.map((id) => new Types.ObjectId(id)) },
+      },
+      {
+        $set: {
+          status: UserAddonStatus.CANCELLED,
+          expiryDate: now,
+        },
+      },
+    ).exec();
   }
 }

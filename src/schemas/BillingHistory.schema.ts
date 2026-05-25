@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { Plans } from './Plans.schema';
+import { Plans } from '../plans/Plans.schema';
 import { User } from './User.schema';
 import { AddOn } from './addon.schema';
 import { AddonPurchase } from './AddonPurchase.schema';
@@ -123,6 +123,14 @@ export class BillingHistory extends Document {
     required: false,
   })
   addonPurchase?: Types.ObjectId | null;
+
+  /** Razorpay payment id (`pay_…`) — one invoice per captured payment. */
+  @Prop({
+    type: String,
+    required: false,
+    default: null,
+  })
+  razorpayPaymentId?: string | null;
 }
 
 const BillingHistorySchema = SchemaFactory.createForClass(BillingHistory);
@@ -130,8 +138,10 @@ const BillingHistorySchema = SchemaFactory.createForClass(BillingHistory);
 BillingHistorySchema.index({ date: 1 });
 BillingHistorySchema.index({ admin: 1, date: 1 });
 BillingHistorySchema.index({ invoiceNumber: 1 }, { unique: true });
+// Non-unique: multiple invoices may reference the same addon purchase (recurring renewals).
+BillingHistorySchema.index({ addonPurchase: 1 }, { sparse: true });
 BillingHistorySchema.index(
-  { addonPurchase: 1 },
+  { razorpayPaymentId: 1 },
   { unique: true, sparse: true },
 );
 

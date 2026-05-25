@@ -1,6 +1,9 @@
 import {
   BadRequestException,
+  forwardRef,
+  Inject,
   Injectable,
+  Logger,
   NotAcceptableException,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,6 +14,7 @@ import {
   AddonPurchaseStatus,
   PaymentProvider,
 } from 'src/schemas/AddonPurchase.schema';
+import { BillingType } from 'src/schemas/BillingHistory.schema';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 import { AddOnService } from 'src/addon/addon.service';
 import { RazorpayService } from 'src/razorpay/razorpay.service';
@@ -19,17 +23,22 @@ import { Connection } from 'mongoose';
 import { SubscriptionAddonService } from 'src/subscription-addon/subscription-addon.service';
 import { BillingHistoryService } from 'src/billing-history/billing-history.service';
 import { UsersService } from 'src/users/users.service';
+import { sanitizeRazorpayPlanId } from 'src/razorpay/razorpay-plan-id.util';
 
 @Injectable()
 export class AddonPurchaseService {
+  private readonly logger = new Logger(AddonPurchaseService.name);
   constructor(
     @InjectModel(AddonPurchase.name)
     private readonly addonPurchaseModel: Model<AddonPurchase>,
+    @Inject(forwardRef(() => SubscriptionService))
     private readonly subscriptionService: SubscriptionService,
     private readonly addonService: AddOnService,
+    @Inject(forwardRef(() => RazorpayService))
     private readonly razorpayService: RazorpayService,
     private readonly subscriptionAddonService: SubscriptionAddonService,
     private readonly billingHistoryService: BillingHistoryService,
+    @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
     @InjectConnection() private readonly connection: Connection,
   ) {}
@@ -51,6 +60,77 @@ export class AddonPurchaseService {
     try {
       await this.addonPurchaseModel.syncIndexes();
     } catch (_) {}
+  }
+
+  /**
+   * Persist Razorpay subscription.status for add-on checkout (subscription.charged, cancelled, etc.).
+   */
+  async syncProviderSubscriptionStatus(
+    razorpaySubscriptionId: string,
+    status?: string,
+  ): Promise<void> {
+    const subId =
+      typeof razorpaySubscriptionId === 'string'
+        ? razorpaySubscriptionId.trim()
+        : '';
+    if (!subId || !status || typeof status !== 'string' || !status.trim()) {
+      return;
+    }
+    const normalized = status.trim().toLowerCase();
+    await this.addonPurchaseModel.updateMany(
+      {
+        provider: PaymentProvider.RAZORPAY,
+        providerRazorpaySubscriptionId: subId,
+      },
+      { $set: { providerRazorpaySubscriptionStatus: normalized } },
+    );
+  }
+
+  async cancelAddonEntitlementsByProviderSubscriptionId(
+    razorpaySubscriptionId: string,
+  ): Promise<void> {
+    const subId =
+      typeof razorpaySubscriptionId === 'string'
+        ? razorpaySubscriptionId.trim()
+        : '';
+    if (!subId) return;
+    const purchases = await this.addonPurchaseModel
+      .find(
+        {
+          provider: PaymentProvider.RAZORPAY,
+          providerRazorpaySubscriptionId: subId,
+        },
+        { _id: 1 },
+      )
+      .lean();
+    const purchaseIds = purchases
+      .map((doc) => doc?._id?.toString())
+      .filter((id): id is string => Boolean(id));
+    if (!purchaseIds.length) {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'AddonPurchaseService',
+          flowStage: 'addon_entitlements_cancelled',
+          outcome: 'no_matching_purchase',
+          providerSubscriptionId: subId,
+          cancelledCount: 0,
+        }),
+      );
+      return;
+    }
+    await this.subscriptionAddonService.cancelSubscriptionAddonsByPurchaseIds(
+      purchaseIds,
+      new Date(),
+    );
+    this.logger.log(
+      JSON.stringify({
+        scope: 'AddonPurchaseService',
+        flowStage: 'addon_entitlements_cancelled',
+        outcome: 'ok',
+        providerSubscriptionId: subId,
+        cancelledCount: purchaseIds.length,
+      }),
+    );
   }
 
   async createRazorpayPurchaseOrder({
@@ -90,6 +170,18 @@ export class AddonPurchaseService {
 
     const addon = await this.addonService.getAddOnById(addonId);
 
+    if (!addon.isActive) {
+      throw new NotAcceptableException('This add-on is not available.');
+    }
+    const razorpayPlanId = sanitizeRazorpayPlanId(
+      String((addon as any).razorpayPlanId || ''),
+    );
+    if (!razorpayPlanId) {
+      throw new NotAcceptableException(
+        'This add-on is not configured for subscription checkout. Set razorpayPlanId (Razorpay plan id) in admin.',
+      );
+    }
+
     const { totalAmount } = this.subscriptionService.generatePriceForAddon(
       addon.addOnPrice,
     );
@@ -104,15 +196,22 @@ export class AddonPurchaseService {
     });
 
     if (existing) {
-      return {
-        purchase: existing,
-        order: existing.providerOrderId
+      const result = existing.providerRazorpaySubscriptionId
+        ? { id: existing.providerRazorpaySubscriptionId, entity: 'subscription' }
+        : existing.providerOrderId
           ? {
               id: existing.providerOrderId,
               amount: Math.floor((existing.amount || 0) * 100),
               currency: existing.currency || 'INR',
             }
-          : null,
+          : null;
+      return {
+        purchase: existing,
+        result,
+        checkoutMode: existing.providerRazorpaySubscriptionId
+          ? 'subscription'
+          : 'order',
+        order: result,
         addon,
       };
     }
@@ -128,17 +227,37 @@ export class AddonPurchaseService {
       currency: 'INR',
     });
 
-    // Create Razorpay order and store its ID on the purchase.
-    const { result: order } = await this.razorpayService.createAddonOrder(
+    const { result } = await this.razorpayService.createAddonSubscription({
       addonId,
       adminId,
-      { purchaseId: created._id.toString() },
-    );
+      purchaseId: created._id.toString(),
+      razorpayPlanId,
+    });
 
-    created.providerOrderId = order.id;
+    created.providerRazorpaySubscriptionId = result.id;
+    const rzpStatus =
+      result && typeof (result as { status?: string }).status === 'string'
+        ? String((result as { status?: string }).status).toLowerCase()
+        : undefined;
+    const rzpShortUrl =
+      result && typeof (result as { short_url?: string }).short_url === 'string'
+        ? String((result as { short_url: string }).short_url)
+        : undefined;
+    if (rzpStatus) {
+      created.providerRazorpaySubscriptionStatus = rzpStatus;
+    }
+    if (rzpShortUrl) {
+      created.providerRazorpaySubscriptionShortUrl = rzpShortUrl;
+    }
     await created.save();
 
-    return { purchase: created, order, addon };
+    return {
+      purchase: created,
+      result,
+      checkoutMode: 'subscription' as const,
+      order: result,
+      addon,
+    };
   }
 
   async getPurchaseById(purchaseId: string) {
@@ -154,54 +273,278 @@ export class AddonPurchaseService {
    * Finalize a purchase from a provider event/webhook.
    * Idempotent under retries and duplicate deliveries.
    */
+  async tryFinalizeAddonFromSubscriptionCharged(
+    razorpaySubscriptionId: string,
+    payId: string,
+  ): Promise<boolean> {
+    if (!razorpaySubscriptionId || !payId) {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'AddonPurchaseService',
+          flowStage: 'addon_finalize_from_subscription_charged',
+          outcome: 'noop',
+          reason: 'missing_subscription_or_payment',
+          providerSubscriptionId: razorpaySubscriptionId || null,
+          providerPaymentId: payId || null,
+        }),
+      );
+      return false;
+    }
+    const purchase = await this.addonPurchaseModel
+      .findOne({
+        provider: PaymentProvider.RAZORPAY,
+        providerRazorpaySubscriptionId: razorpaySubscriptionId,
+      })
+      .select('_id');
+    if (!purchase) {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'AddonPurchaseService',
+          flowStage: 'addon_finalize_from_subscription_charged',
+          outcome: 'noop',
+          reason: 'purchase_not_found',
+          providerSubscriptionId: razorpaySubscriptionId,
+          providerPaymentId: payId,
+        }),
+      );
+      return false;
+    }
+    await this.finalizeRazorpayAddonPurchase({
+      providerRazorpaySubscriptionId: razorpaySubscriptionId,
+      providerPaymentId: payId,
+      purchaseId: purchase._id.toString(),
+    });
+    return true;
+  }
+
+  /**
+   * Extend add-on period and record billing for a recurring Razorpay subscription charge.
+   */
+  async applyAddonRenewalFromSubscriptionCharge(
+    purchase: AddonPurchase,
+    payId: string,
+  ): Promise<{
+    ok: boolean;
+    purchaseId: string;
+    status: string;
+    renewed?: boolean;
+  }> {
+    const dup = await this.billingHistoryService.findByRazorpayPaymentId(payId);
+    if (dup) {
+      this.logger.log(
+        JSON.stringify({
+          scope: 'AddonPurchaseService',
+          flowStage: 'apply_addon_renewal',
+          outcome: 'noop',
+          reason: 'duplicate_payment_id',
+          purchaseId: purchase._id.toString(),
+          providerPaymentId: payId,
+        }),
+      );
+      return {
+        ok: true,
+        purchaseId: purchase._id.toString(),
+        status: purchase.status,
+        renewed: false,
+      };
+    }
+
+    const subscription = await this.subscriptionService.getSubscription(
+      purchase.admin.toString(),
+    );
+    if (!subscription) {
+      throw new NotFoundException('Subscription not found');
+    }
+    const addon = await this.addonService.getAddOnById(
+      purchase.addon.toString(),
+    );
+    const userAddon =
+      await this.subscriptionAddonService.getUserAddonByPurchaseId(
+        purchase._id.toString(),
+      );
+    if (!userAddon?.expiryDate) {
+      throw new NotFoundException(
+        'Subscription add-on row not found for this purchase',
+      );
+    }
+
+    const now = new Date();
+    const currentExpiry = new Date(userAddon.expiryDate);
+    const validityMs = addon.validityInDays * 24 * 60 * 60 * 1000;
+    const baseMs = Math.max(now.getTime(), currentExpiry.getTime());
+    const extended = new Date(baseMs + validityMs);
+    const subCap = subscription.expiryDate
+      ? new Date(subscription.expiryDate)
+      : null;
+    const endAt =
+      subCap && !Number.isNaN(subCap.getTime())
+        ? new Date(Math.min(extended.getTime(), subCap.getTime()))
+        : extended;
+
+    await this.subscriptionAddonService.setSubscriptionAddonExpiryByPurchaseId(
+      purchase._id.toString(),
+      endAt,
+    );
+
+    const { itemAmount, taxAmount, totalAmount } =
+      this.subscriptionService.generatePriceForAddon(addon.addOnPrice);
+
+    try {
+      await this.billingHistoryService.addOneBillingHistory(
+        purchase.admin.toString(),
+        purchase.addon.toString(),
+        itemAmount,
+        taxAmount,
+        totalAmount,
+        this.subscriptionService.GST_VALUE || 0,
+        purchase._id.toString(),
+        { startDate: new Date(), expiryDate: endAt },
+        {
+          razorpayPaymentId: payId,
+          billingType: BillingType.RENEWAL,
+        },
+      );
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (!msg.includes('E11000')) throw e;
+    }
+
+    await this.subscriptionService.updateSingleSubscriptionAddon(
+      purchase.subscription.toString(),
+    );
+
+    return {
+      ok: true,
+      purchaseId: purchase._id.toString(),
+      status: purchase.status,
+      renewed: true,
+    };
+  }
+
   async finalizeRazorpayAddonPurchase(params: {
-    providerOrderId: string;
+    providerOrderId?: string;
+    providerRazorpaySubscriptionId?: string;
     providerPaymentId: string;
     purchaseId?: string;
   }) {
-    const { providerOrderId, providerPaymentId, purchaseId } = params;
+    const { providerOrderId, providerRazorpaySubscriptionId, providerPaymentId, purchaseId } =
+      params;
+
+    if (!providerOrderId && !providerRazorpaySubscriptionId) {
+      throw new BadRequestException(
+        'Missing provider order id or Razorpay subscription id',
+      );
+    }
+
+    const filter: Record<string, unknown> = {
+      provider: PaymentProvider.RAZORPAY,
+    };
+    if (purchaseId) {
+      filter._id = new Types.ObjectId(purchaseId);
+    }
+    if (providerOrderId && providerRazorpaySubscriptionId) {
+      filter.$or = [
+        { providerOrderId },
+        { providerRazorpaySubscriptionId },
+      ];
+    } else if (providerOrderId) {
+      filter.providerOrderId = providerOrderId;
+    } else {
+      filter.providerRazorpaySubscriptionId = providerRazorpaySubscriptionId;
+    }
+
+    const purchase = await this.addonPurchaseModel.findOne(filter);
+    if (!purchase) {
+      throw new NotFoundException('Purchase not found for payment provider id');
+    }
+
+    const payId =
+      typeof providerPaymentId === 'string' ? providerPaymentId.trim() : '';
+    const rzpSubParam =
+      typeof providerRazorpaySubscriptionId === 'string'
+        ? providerRazorpaySubscriptionId.trim()
+        : '';
+    const storedSub =
+      typeof purchase.providerRazorpaySubscriptionId === 'string'
+        ? purchase.providerRazorpaySubscriptionId.trim()
+        : '';
+
+    if (payId) {
+      const existingBill =
+        await this.billingHistoryService.findByRazorpayPaymentId(payId);
+      if (
+        existingBill?.addonPurchase &&
+        existingBill.addonPurchase.toString() === purchase._id.toString()
+      ) {
+        if (purchase.status !== AddonPurchaseStatus.APPLIED) {
+          await this.addonPurchaseModel.updateOne(
+            { _id: purchase._id },
+            { $set: { status: AddonPurchaseStatus.APPLIED } },
+          );
+          await this.subscriptionService.updateSingleSubscriptionAddon(
+            purchase.subscription.toString(),
+          );
+        }
+        return {
+          ok: true,
+          purchaseId: purchase._id.toString(),
+          status: AddonPurchaseStatus.APPLIED,
+          idempotent: true as const,
+        };
+      }
+    }
+
+    if (purchase.status === AddonPurchaseStatus.APPLIED) {
+      if (rzpSubParam && payId && storedSub === rzpSubParam) {
+        return this.applyAddonRenewalFromSubscriptionCharge(purchase, payId);
+      }
+      return {
+        ok: true,
+        purchaseId: purchase._id.toString(),
+        status: purchase.status,
+      };
+    }
 
     const session = await this.connection.startSession();
     session.startTransaction();
     try {
-      const purchase = await this.addonPurchaseModel
+      const doc = await this.addonPurchaseModel
         .findOne({
-          provider: PaymentProvider.RAZORPAY,
-          providerOrderId,
-          ...(purchaseId ? { _id: new Types.ObjectId(purchaseId) } : {}),
+          _id: purchase._id,
+          status: { $ne: AddonPurchaseStatus.APPLIED },
         })
         .session(session);
 
-      if (!purchase) {
-        throw new NotFoundException('Purchase not found for order');
-      }
-
-      // Idempotency: if already applied, nothing to do.
-      if (purchase.status === AddonPurchaseStatus.APPLIED) {
+      if (!doc) {
         await session.commitTransaction();
         session.endSession();
+        const again = await this.addonPurchaseModel.findById(purchase._id);
+        if (
+          again?.status === AddonPurchaseStatus.APPLIED &&
+          rzpSubParam &&
+          payId &&
+          storedSub === rzpSubParam
+        ) {
+          return this.applyAddonRenewalFromSubscriptionCharge(again, payId);
+        }
         return {
           ok: true,
           purchaseId: purchase._id.toString(),
-          status: purchase.status,
+          status: again?.status || purchase.status,
         };
       }
 
-      // Record payment id (idempotent set)
-      if (!purchase.providerPaymentId) {
-        purchase.providerPaymentId = providerPaymentId;
+      if (!doc.providerPaymentId) {
+        doc.providerPaymentId = providerPaymentId;
       }
-      if (purchase.status === AddonPurchaseStatus.PENDING_PAYMENT) {
-        purchase.status = AddonPurchaseStatus.PAID;
+      if (doc.status === AddonPurchaseStatus.PENDING_PAYMENT) {
+        doc.status = AddonPurchaseStatus.PAID;
       }
 
-      // Clamp addon validity to subscription expiry.
       const subscription = await this.subscriptionService.getSubscription(
-        purchase.admin.toString(),
+        doc.admin.toString(),
       );
-      const addon = await this.addonService.getAddOnById(
-        purchase.addon.toString(),
-      );
+      const addon = await this.addonService.getAddOnById(doc.addon.toString());
       const now = new Date();
       const fromValidity = new Date(
         now.getTime() + addon.validityInDays * 24 * 60 * 60 * 1000,
@@ -226,13 +569,12 @@ export class AddonPurchaseService {
         validityInDays: addon.validityInDays,
       };
 
-      // Create user-addon record (unique on purchase).
       try {
         await this.subscriptionAddonService.createSubscriptionAddon(
-          purchase.subscription.toString(),
+          doc.subscription.toString(),
           endAt,
-          purchase.addon.toString(),
-          purchase._id.toString(),
+          doc.addon.toString(),
+          doc._id.toString(),
           addon.employeeLimit,
           addon.contactLimit,
           addon.webinarLimit || 0,
@@ -242,56 +584,49 @@ export class AddonPurchaseService {
           session,
         );
       } catch (e: any) {
-        // If webhook retries or redirect path raced, unique index on purchase may throw.
-        // Treat that as already-created and continue to mark purchase as applied.
         const msg = String(e?.message || e);
         if (!msg.includes('E11000')) throw e;
       }
 
-      // Mark PAID in the txn; APPLIED after billing is ensured.
-      purchase.status = AddonPurchaseStatus.PAID;
-      await purchase.save({ session });
+      doc.status = AddonPurchaseStatus.PAID;
+      await doc.save({ session });
 
       await session.commitTransaction();
       session.endSession();
 
-      // Create billing history exactly once per purchase (idempotent via unique sparse index).
       const { itemAmount, taxAmount, totalAmount } =
         this.subscriptionService.generatePriceForAddon(addon.addOnPrice);
 
       try {
         await this.billingHistoryService.addOneBillingHistory(
-          purchase.admin.toString(),
-          purchase.addon.toString(),
+          doc.admin.toString(),
+          doc.addon.toString(),
           itemAmount,
           taxAmount,
           totalAmount,
           this.subscriptionService.GST_VALUE || 0,
-          purchase._id.toString(),
+          doc._id.toString(),
           { startDate: new Date(), expiryDate: endAt },
+          payId ? { razorpayPaymentId: payId } : undefined,
         );
       } catch (e: any) {
         const msg = String(e?.message || e);
         if (!msg.includes('E11000')) throw e;
-        // Duplicate billing for the same purchase → treat as already created.
       }
 
-      // Recompute totals and mark purchase as APPLIED after billing exists.
       await this.subscriptionService.updateSingleSubscriptionAddon(
-        purchase.subscription.toString(),
+        doc.subscription.toString(),
       );
 
       await this.addonPurchaseModel.updateOne(
-        { _id: purchase._id, status: { $ne: AddonPurchaseStatus.APPLIED } },
+        { _id: doc._id, status: { $ne: AddonPurchaseStatus.APPLIED } },
         { $set: { status: AddonPurchaseStatus.APPLIED } },
       );
 
-      // Keep response consistent with persisted state.
-      purchase.status = AddonPurchaseStatus.APPLIED;
       return {
         ok: true,
-        purchaseId: purchase._id.toString(),
-        status: purchase.status,
+        purchaseId: doc._id.toString(),
+        status: AddonPurchaseStatus.APPLIED,
       };
     } catch (err) {
       await session.abortTransaction();
@@ -315,12 +650,22 @@ export class AddonPurchaseService {
 
     for (const p of stuck) {
       try {
-        if (!p.providerOrderId || !p.providerPaymentId) continue;
-        await this.finalizeRazorpayAddonPurchase({
-          providerOrderId: p.providerOrderId,
-          providerPaymentId: p.providerPaymentId,
-          purchaseId: p._id.toString(),
-        });
+        if (!p.providerPaymentId) continue;
+        if (p.providerRazorpaySubscriptionId) {
+          await this.finalizeRazorpayAddonPurchase({
+            providerRazorpaySubscriptionId: p.providerRazorpaySubscriptionId,
+            providerPaymentId: p.providerPaymentId,
+            purchaseId: p._id.toString(),
+          });
+        } else if (p.providerOrderId) {
+          await this.finalizeRazorpayAddonPurchase({
+            providerOrderId: p.providerOrderId,
+            providerPaymentId: p.providerPaymentId,
+            purchaseId: p._id.toString(),
+          });
+        } else {
+          continue;
+        }
       } catch (_) {
         await this.addonPurchaseModel.updateOne(
           { _id: p._id },
@@ -333,7 +678,7 @@ export class AddonPurchaseService {
 
   /**
    * Backfill billing histories for already finalized purchases (older flow).
-   * Safe under retries due to unique (addonPurchase) index.
+   * Safe under retries; idempotency uses razorpayPaymentId when present.
    */
   async reconcileMissingAddonBilling(limit: number = 100) {
     const purchases = await this.addonPurchaseModel

@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { User } from './User.schema';
+import { User } from '../schemas/User.schema';
 
 @Schema({ timestamps: true })
 export class Subscription extends Document {
@@ -114,6 +114,27 @@ export class Subscription extends Document {
     default: 0,
   })
   contactCount: number;
+
+  @Prop({ type: String, required: false })
+  razorpaySubscriptionId?: string;
+
+  @Prop({ type: String, required: false })
+  razorpaySubscriptionStatus?: string;
+
+  @Prop({ type: String, required: false })
+  razorpaySubscriptionShortUrl?: string;
+
+  @Prop({ type: Date, required: false })
+  razorpayGraceUntil?: Date;
+
+  @Prop({ type: Date, required: false })
+  razorpayLastPaymentFailureAt?: Date;
+
+  @Prop({ type: Number, default: 0, required: false })
+  razorpayPaymentFailureCount?: number;
+
+  @Prop({ type: Date, required: false })
+  razorpayLastWebhookEventAt?: Date;
 }
 
 const SubscriptionSchema = SchemaFactory.createForClass(Subscription);

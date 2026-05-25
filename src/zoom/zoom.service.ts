@@ -3531,6 +3531,7 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
     }
 
     const tokenEndpoint = 'https://zoom.us/oauth/token';
+    console.log('payload', payload);
     const authHeader = Buffer.from(
       `${payload.clientId}:${payload.clientSecret}`,
     ).toString('base64');
@@ -3541,6 +3542,8 @@ export class ZoomService extends BaseLoggerService implements OnModuleInit {
 
     let tokenData: any;
     try {
+      console.log('authHeader', authHeader);
+      console.log('params', params.toString());
       const response = await firstValueFrom(
         this.http.post(tokenEndpoint, params.toString(), {
           headers: {

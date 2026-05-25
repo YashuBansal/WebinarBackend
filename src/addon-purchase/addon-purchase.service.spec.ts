@@ -32,22 +32,28 @@ describe('AddonPurchaseService', () => {
       contactLimit: 0,
       webinarLimit: 0,
       addonName: 'Test',
+      isActive: true,
+      razorpayPlanId: 'plan_test123',
     }),
   };
 
   const razorpayService = {
-    createAddonOrder: jest
-      .fn()
-      .mockResolvedValue({ result: { id: 'order_1' } }),
+    createAddonSubscription: jest.fn().mockResolvedValue({
+      result: { id: 'sub_1' },
+      addonData: { addonName: 'Test' },
+    }),
   };
 
   const subscriptionAddonService = {
     createSubscriptionAddon: jest.fn(),
+    getUserAddonByPurchaseId: jest.fn(),
+    setSubscriptionAddonExpiryByPurchaseId: jest.fn(),
   };
 
   const billingHistoryService = {
     addOneBillingHistory: jest.fn(),
     getByAddonPurchaseId: jest.fn(),
+    findByRazorpayPaymentId: jest.fn(),
   };
 
   const usersService = {
@@ -90,7 +96,7 @@ describe('AddonPurchaseService', () => {
   it('is idempotent by (admin,idempotencyKey)', async () => {
     addonPurchaseModel.findOne.mockResolvedValue({
       _id: 'p1',
-      providerOrderId: 'order_1',
+      providerRazorpaySubscriptionId: 'sub_1',
       amount: 118,
       currency: 'INR',
     });
@@ -122,12 +128,20 @@ describe('AddonPurchaseService', () => {
       provider: 'razorpay',
       providerOrderId: 'order_1',
       status: 'PENDING_PAYMENT',
-      save: jest.fn(),
+      save: jest.fn().mockResolvedValue(undefined),
     };
 
-    addonPurchaseModel.findOne.mockReturnValue({
-      session: () => purchaseDoc,
+    billingHistoryService.findByRazorpayPaymentId.mockResolvedValue(null);
+    addonPurchaseModel.findOne.mockImplementation((f: any) => {
+      if (f?.status?.$ne) {
+        return {
+          session: () => Promise.resolve(purchaseDoc),
+        };
+      }
+      return Promise.resolve(purchaseDoc);
     });
+
+    subscriptionAddonService.createSubscriptionAddon.mockResolvedValue({});
 
     billingHistoryService.addOneBillingHistory.mockRejectedValue(
       new Error('E11000 duplicate key error collection'),
@@ -138,6 +152,82 @@ describe('AddonPurchaseService', () => {
         providerOrderId: 'order_1',
         providerPaymentId: 'pay_1',
       }),
-    ).resolves.toBeTruthy();
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it('finalize returns idempotent when billing already exists for payment', async () => {
+    billingHistoryService.findByRazorpayPaymentId.mockResolvedValue({
+      addonPurchase: '507f1f77bcf86cd799439099',
+    } as any);
+    addonPurchaseModel.findOne.mockResolvedValue({
+      _id: '507f1f77bcf86cd799439099',
+      admin: '507f1f77bcf86cd799439011',
+      subscription: '507f1f77bcf86cd799439055',
+      addon: '507f1f77bcf86cd799439012',
+      provider: 'razorpay',
+      providerRazorpaySubscriptionId: 'sub_addon',
+      status: 'APPLIED',
+    });
+    addonPurchaseModel.updateOne.mockResolvedValue({});
+
+    const res = await service.finalizeRazorpayAddonPurchase({
+      providerRazorpaySubscriptionId: 'sub_addon',
+      providerPaymentId: 'pay_first',
+    });
+
+    expect(res).toMatchObject({ ok: true, idempotent: true });
+    expect(subscriptionAddonService.createSubscriptionAddon).not.toHaveBeenCalled();
+  });
+
+  it('applyAddonRenewal extends expiry and records billing for new payment id', async () => {
+    billingHistoryService.findByRazorpayPaymentId.mockResolvedValue(null);
+    subscriptionAddonService.getUserAddonByPurchaseId.mockResolvedValue({
+      expiryDate: new Date('2030-01-01'),
+    });
+    billingHistoryService.addOneBillingHistory.mockResolvedValue({});
+
+    const purchase: any = {
+      _id: '507f1f77bcf86cd799439099',
+      admin: '507f1f77bcf86cd799439011',
+      subscription: '507f1f77bcf86cd799439055',
+      addon: '507f1f77bcf86cd799439012',
+      status: 'APPLIED',
+      providerRazorpaySubscriptionId: 'sub_addon',
+    };
+
+    const res = await service.applyAddonRenewalFromSubscriptionCharge(
+      purchase,
+      'pay_renew_1',
+    );
+
+    expect(res).toMatchObject({ ok: true, renewed: true });
+    expect(
+      subscriptionAddonService.setSubscriptionAddonExpiryByPurchaseId,
+    ).toHaveBeenCalled();
+    expect(billingHistoryService.addOneBillingHistory).toHaveBeenCalled();
+    expect(subscriptionService.updateSingleSubscriptionAddon).toHaveBeenCalled();
+  });
+
+  it('applyAddonRenewal is idempotent for duplicate pay id', async () => {
+    billingHistoryService.findByRazorpayPaymentId.mockResolvedValue({
+      _id: 'bill1',
+    } as any);
+    const purchase: any = {
+      _id: '507f1f77bcf86cd799439099',
+      admin: '507f1f77bcf86cd799439011',
+      subscription: '507f1f77bcf86cd799439055',
+      addon: '507f1f77bcf86cd799439012',
+      status: 'APPLIED',
+    };
+
+    const res = await service.applyAddonRenewalFromSubscriptionCharge(
+      purchase,
+      'pay_dup',
+    );
+
+    expect(res).toMatchObject({ ok: true, renewed: false });
+    expect(
+      subscriptionAddonService.setSubscriptionAddonExpiryByPurchaseId,
+    ).not.toHaveBeenCalled();
   });
 });

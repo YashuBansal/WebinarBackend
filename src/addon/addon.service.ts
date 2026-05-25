@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AddOn } from '../schemas/addon.schema';
 import { CreateAddOnDto, UpdateAddOnDto } from './dto/addon.dto';
+import { sanitizeRazorpayPlanId } from 'src/razorpay/razorpay-plan-id.util';
 import { SubscriptionAddonService } from 'src/subscription-addon/subscription-addon.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 
@@ -60,6 +61,11 @@ export class AddOnService {
     id: string,
     updateAddOnDto: UpdateAddOnDto,
   ): Promise<AddOn> {
+    if (typeof (updateAddOnDto as any)?.razorpayPlanId === 'string') {
+      (updateAddOnDto as any).razorpayPlanId = sanitizeRazorpayPlanId(
+        (updateAddOnDto as any).razorpayPlanId,
+      );
+    }
     if (typeof (updateAddOnDto as any)?.addonName === 'string') {
       const addonName = String((updateAddOnDto as any).addonName).trim();
       const existing = await this.addOnModel

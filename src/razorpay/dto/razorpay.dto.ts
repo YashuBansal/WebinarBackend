@@ -1,4 +1,11 @@
-import { IsEnum, IsMongoId, IsNotEmpty, IsString } from 'class-validator';
+import {
+  IsEnum,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  ValidateIf,
+} from 'class-validator';
 import { DurationType } from 'src/schemas/BillingHistory.schema';
 
 export class RazorPayUpdatePlanDTO {
@@ -24,12 +31,32 @@ export class RazorPayCheckoutPlanDTO {
   durationType: DurationType;
 }
 
+export class RazorPayPaymentSuccessBodyDTO {
+  @ValidateIf((o) => !o.razorpay_order_id)
+  @IsString()
+  @IsNotEmpty()
+  razorpay_subscription_id?: string;
+
+  @ValidateIf((o) => !o.razorpay_subscription_id)
+  @IsString()
+  @IsNotEmpty()
+  razorpay_order_id?: string;
+
+  @IsNotEmpty()
+  @IsString()
+  razorpay_payment_id: string;
+
+  @IsNotEmpty()
+  @IsString()
+  razorpay_signature: string;
+}
+
 export class RazorPayAddOnDTO {
   @IsMongoId()
-  addonId: string;
+  adminId: string;
 
   @IsMongoId()
-  adminId: string;
+  purchaseId: string;
 }
 
 export class RazorPayConfirmAddonDTO {
@@ -37,9 +64,15 @@ export class RazorPayConfirmAddonDTO {
   @IsMongoId()
   purchaseId: string;
 
-  @IsNotEmpty()
+  @ValidateIf((o) => !o.razorpay_subscription_id)
   @IsString()
-  razorpay_order_id: string;
+  @IsNotEmpty()
+  razorpay_order_id?: string;
+
+  @ValidateIf((o) => !o.razorpay_order_id)
+  @IsString()
+  @IsNotEmpty()
+  razorpay_subscription_id?: string;
 
   @IsNotEmpty()
   @IsString()

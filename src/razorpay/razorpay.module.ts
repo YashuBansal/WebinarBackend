@@ -6,21 +6,28 @@ import {
 } from '@nestjs/common';
 import { RazorpayService } from './razorpay.service';
 import { RazorpayController } from './razorpay.controller';
-import { PlansModule } from 'src/plans/plans.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 import { AddonModule } from 'src/addon/addon.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
-import { AttendeesModule } from 'src/attendees/attendees.module';
-import { UsersModule } from 'src/users/users.module';
 import { AddonPurchaseModule } from 'src/addon-purchase/addon-purchase.module';
+import { MongooseModule } from '@nestjs/mongoose';
+import {
+  PlanCheckoutContext,
+  PlanCheckoutContextSchema,
+} from 'src/schemas/PlanCheckoutContext.schema';
+import {
+  RazorpayWebhookEvent,
+  RazorpayWebhookEventSchema,
+} from 'src/schemas/RazorpayWebhookEvent.schema';
 
 @Module({
   imports: [
-    forwardRef(() => PlansModule),
+    MongooseModule.forFeature([
+      { name: PlanCheckoutContext.name, schema: PlanCheckoutContextSchema },
+      { name: RazorpayWebhookEvent.name, schema: RazorpayWebhookEventSchema },
+    ]),
     forwardRef(() => AddonModule),
     forwardRef(() => SubscriptionModule),
-    AttendeesModule,
-    UsersModule,
     forwardRef(() => AddonPurchaseModule),
   ],
   providers: [RazorpayService],

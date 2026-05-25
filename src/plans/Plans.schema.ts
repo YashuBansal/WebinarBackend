@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose, { Document, Types, Schema as MongooseSchema } from 'mongoose';
-import { User } from './User.schema';
+import { User } from '../schemas/User.schema';
 
 export enum PlanDuration {
   ONE_MONTH = 30,
@@ -20,6 +20,7 @@ export type PlanDurationConfig = {
   discountValue: number;
   price: number;
   isEnabled: boolean;
+  razorpayPlanId?: string;
 };
 
 @Schema({ timestamps: true })
@@ -159,6 +160,7 @@ export class Plans extends Document {
       },
       price: { type: Number, required: true, min: 0 },
       isEnabled: { type: Boolean, default: false },
+      razorpayPlanId: { type: String, required: false },
     }),
     required: true,
   })
@@ -216,6 +218,20 @@ export class Plans extends Document {
         throw new Error(
           `The discount type for "${key}" must be either "flat" or "percent".`,
         );
+      }
+
+      if (durationConfig.isEnabled) {
+        const rzp = String(durationConfig.razorpayPlanId || '').trim();
+        if (!rzp) {
+          throw new Error(
+            `The "${key}" duration is enabled: set razorpayPlanId (Razorpay Subscriptions plan id, e.g. plan_xxx) for subscription checkout.`,
+          );
+        }
+        if (!/^plan_[A-Za-z0-9]+$/i.test(rzp)) {
+          throw new Error(
+            `The "${key}" razorpayPlanId must look like plan_... (Razorpay Subscriptions plan id).`,
+          );
+        }
       }
     }
   }

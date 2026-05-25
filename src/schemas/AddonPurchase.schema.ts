@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { User } from './User.schema';
-import { Subscription } from './Subscription.schema';
+import { Subscription } from '../subscription/Subscription.schema';
 import { AddOn } from './addon.schema';
 
 export enum AddonPurchaseStatus {
@@ -41,6 +41,18 @@ export class AddonPurchase extends Document {
   // Provider identifiers (idempotency for webhooks/finalization)
   @Prop({ type: String })
   providerOrderId?: string;
+
+  /** Razorpay subscription id (sub_…) for subscription checkout add-on purchases. */
+  @Prop({ type: String })
+  providerRazorpaySubscriptionId?: string;
+
+  /** Razorpay subscription.status (e.g. active, halted, cancelled, completed). */
+  @Prop({ type: String })
+  providerRazorpaySubscriptionStatus?: string;
+
+  /** Hosted checkout / customer-facing URL returned by Razorpay for this subscription. */
+  @Prop({ type: String })
+  providerRazorpaySubscriptionShortUrl?: string;
 
   @Prop({ type: String })
   providerPaymentId?: string;
@@ -84,6 +96,15 @@ AddonPurchaseSchema.index(
 // Never persist nulls for optional provider IDs (null breaks unique indexes)
 AddonPurchaseSchema.pre('save', function (next) {
   if (this.providerOrderId === null) this.providerOrderId = undefined;
+  if (this.providerRazorpaySubscriptionId === null) {
+    this.providerRazorpaySubscriptionId = undefined;
+  }
+  if (this.providerRazorpaySubscriptionStatus === null) {
+    this.providerRazorpaySubscriptionStatus = undefined;
+  }
+  if (this.providerRazorpaySubscriptionShortUrl === null) {
+    this.providerRazorpaySubscriptionShortUrl = undefined;
+  }
   if (this.providerPaymentId === null) this.providerPaymentId = undefined;
   next();
 });

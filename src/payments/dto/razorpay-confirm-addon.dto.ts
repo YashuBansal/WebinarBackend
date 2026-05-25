@@ -1,13 +1,24 @@
-import { IsMongoId, IsNotEmpty, IsString } from 'class-validator';
+import {
+  IsMongoId,
+  IsNotEmpty,
+  IsString,
+  ValidateIf,
+} from 'class-validator';
 
 export class RazorpayConfirmAddonDto {
   @IsNotEmpty()
   @IsMongoId()
   purchaseId: string;
 
-  @IsNotEmpty()
+  @ValidateIf((o) => !o.razorpay_subscription_id)
   @IsString()
-  razorpay_order_id: string;
+  @IsNotEmpty()
+  razorpay_order_id?: string;
+
+  @ValidateIf((o) => !o.razorpay_order_id)
+  @IsString()
+  @IsNotEmpty()
+  razorpay_subscription_id?: string;
 
   @IsNotEmpty()
   @IsString()

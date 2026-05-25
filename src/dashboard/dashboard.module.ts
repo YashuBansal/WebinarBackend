@@ -8,7 +8,7 @@ import { UsersModule } from 'src/users/users.module';
 import {
   Subscription,
   SubscriptionSchema,
-} from 'src/schemas/Subscription.schema';
+} from 'src/subscription/Subscription.schema';
 import {
   BillingHistory,
   BillingHistorySchema,
