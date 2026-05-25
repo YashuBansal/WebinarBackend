@@ -8,6 +8,9 @@ import { WebinarService } from './webinar.service';
 import { WebinarController } from './webinar.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Webinar, WebinarSchema } from 'src/schemas/Webinar.schema';
+import { Attendee, AttendeeSchema } from 'src/schemas/Attendee.schema';
+import { WebinarStatsService } from './webinar-stats.service';
+import { WebinarListCacheService } from './webinar-list-cache.service';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
 import { AttendeesModule } from 'src/attendees/attendees.module';
 import { GetAdminIdMiddleware } from 'src/middlewares/get-admin-id.middleware';
@@ -28,6 +31,10 @@ import { MeetingEventConfigModule } from 'src/meeting-event-config/meeting-event
         name: Webinar.name,
         schema: WebinarSchema,
       },
+      {
+        name: Attendee.name,
+        schema: AttendeeSchema,
+      },
     ]),
     forwardRef(() => AttendeesModule),
     forwardRef(() => AlarmModule),
@@ -38,9 +45,9 @@ import { MeetingEventConfigModule } from 'src/meeting-event-config/meeting-event
     EnrollmentsModule,
     MeetingEventConfigModule,
   ],
-  providers: [WebinarService],
+  providers: [WebinarService, WebinarStatsService, WebinarListCacheService],
   controllers: [WebinarController],
-  exports: [WebinarService],
+  exports: [WebinarService, WebinarStatsService, WebinarListCacheService],
 })
 export class WebinarModule {
   configure(consumer: MiddlewareConsumer) {

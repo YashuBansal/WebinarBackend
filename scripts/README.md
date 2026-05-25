@@ -296,3 +296,46 @@ The schema now includes a setter that automatically filters out "undefined" stri
 - **Report Location**: Report files are stored in the `scripts/` directory
 - **Schema Protection**: The schema setter now prevents "undefined" from being added in the future
 
+## Webinar Stats Backfill
+
+Denormalized webinar counters (`totalRegistrations`, `totalParticipants`, `totalAttendees`, `totalUnAttended`) are recomputed from the `attendees` collection and written to each webinar document.
+
+### Run
+
+```bash
+npm run migrate:webinar-stats
+```
+
+Optional flags:
+
+```bash
+npm run migrate:webinar-stats -- --dry-run
+npm run migrate:webinar-stats -- --adminId=<mongoAdminId>
+```
+
+### Report
+
+After the run completes, a JSON report is written to the `scripts/` directory:
+
+- Filename: `webinar-stats-backfill-report-YYYY-MM-DDTHH-MM-SS-sssZ.json`
+- **metadata**: totals (processed, succeeded, failed, mismatches, updated, unchanged, dry-run flag)
+- **results**: per-webinar `before` (stored), `computed` (from attendees), `after` (stored after write; `null` in dry-run), `hadMismatchBeforeBackfill`, `wasUpdated`
+- **errors**: failed webinars with message and stack
+
+Progress is logged every 50 webinars. If any webinar fails, the script exits with code `1` after writing the report.
+
+### Webinar list Redis cache (runtime)
+
+`POST /webinar/data` (paginated list) can be cached in Redis via `WebinarListCacheService` and shared `CacheService`.
+
+See **[`src/cache/CACHE.md`](../src/cache/CACHE.md)** for the full caching playbook (key naming, invalidation, env vars).
+
+Quick env vars:
+
+- `CACHE_ENABLED` — global default `true`
+- `WEBINAR_LIST_CACHE_ENABLED` — default `true`; set `false` to disable list cache only
+- `WEBINAR_LIST_CACHE_TTL_SECONDS` — default `120`
+- `REDIS_URL` — shared with BullMQ / user cache (see `src/redis/redis.module.ts`)
+
+Cache is invalidated (version bump) on webinar CRUD and attendee stat mutations.
+

@@ -59,6 +59,18 @@ export class Webinar extends Document {
     required: false,
   })
   productIds: Types.ObjectId[];
+
+  @Prop({ type: Number, default: 0, min: 0 })
+  totalRegistrations: number;
+
+  @Prop({ type: Number, default: 0, min: 0 })
+  totalParticipants: number;
+
+  @Prop({ type: Number, default: 0, min: 0 })
+  totalAttendees: number;
+
+  @Prop({ type: Number, default: 0, min: 0 })
+  totalUnAttended: number;
 }
 
 export const WebinarSchema = SchemaFactory.createForClass(Webinar);
@@ -89,3 +101,7 @@ WebinarSchema.pre('save', function (next) {
 });
 
 WebinarSchema.index({ adminId: 1 });
+WebinarSchema.index({ adminId: 1, totalRegistrations: 1 });
+WebinarSchema.index({ adminId: 1, totalParticipants: 1 });
+WebinarSchema.index({ adminId: 1, totalAttendees: 1 });
+WebinarSchema.index({ adminId: 1, totalUnAttended: 1 });

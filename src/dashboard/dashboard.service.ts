@@ -4,7 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
 import { AssignmentService } from 'src/assignment/assignment.service';
 import { NotesService } from 'src/notes/notes.service';
-import { Attendee } from 'src/schemas/Attendee.schema';
+import { AttendeesService } from 'src/attendees/attendees.service';
 import { BillingHistory } from 'src/schemas/BillingHistory.schema';
 import { Subscription } from 'src/subscription/Subscription.schema';
 import { User } from 'src/schemas/User.schema';
@@ -17,8 +17,7 @@ export class DashboardService {
     private subscriptionsModel: Model<Subscription>,
     @InjectModel(BillingHistory.name)
     private billingHistoryModel: Model<BillingHistory>,
-    @InjectModel(Attendee.name)
-    private attendeeModel: Model<Attendee>,
+    private readonly attendeesService: AttendeesService,
     private readonly configService: ConfigService,
     private readonly assingmentService: AssignmentService,
     private readonly notesService: NotesService,
@@ -332,12 +331,11 @@ export class DashboardService {
 
     //total upload count:
 
-    const totalContactsUsed = await this.attendeeModel.countDocuments({
-      createdAt: {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
-      },
-    });
+    const totalContactsUsed =
+      await this.attendeesService.countAttendeesCreatedInRange(
+        new Date(startDate),
+        new Date(endDate),
+      );
 
     const adminCount = result.find((e) => e.userType === 'admin');
     const employeeCount = result.find((e) => e.userType === 'employee');

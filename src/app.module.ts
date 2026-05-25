@@ -34,7 +34,6 @@ import { MailerModule } from '@nestjs-modules/mailer';
 import { NotesModule } from './notes/notes.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
-import { DeleteDataModule } from './delete-data/delete-data.module';
 import { CustomLeadTypeModule } from './custom-lead-type/custom-lead-type.module';
 import { AttendeeAssociationModule } from './attendee-association/attendee-association.module';
 import { CalendarService } from './calendar/calendar.service';
@@ -81,6 +80,7 @@ import { OtelWinstonTransport } from './logger/otel-winston-transport';
 import { PabblyTokenBlacklistModule } from './auth/pabbly-token-blacklist.module';
 import { WhatsappOptoutModule } from './whatsapp-optout/whatsapp-optout.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
+import { CacheModule } from './cache/cache.module';
 
 @Module({
   imports: [
@@ -88,6 +88,7 @@ import { QuickRepliesModule } from './quick-replies/quick-replies.module';
       load: [configurations],
       isGlobal: true,
     }),
+    CacheModule,
     PabblyTokenBlacklistModule,
     WhatsappOptoutModule,
     WinstonModule.forRoot({
@@ -188,7 +189,6 @@ import { QuickRepliesModule } from './quick-replies/quick-replies.module';
     NotesModule,
     CloudinaryModule,
     EnrollmentsModule,
-    DeleteDataModule,
     CustomLeadTypeModule,
     AddonModule,
     SubscriptionAddonModule,

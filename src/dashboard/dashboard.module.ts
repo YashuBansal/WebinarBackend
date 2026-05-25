@@ -13,7 +13,7 @@ import {
   BillingHistory,
   BillingHistorySchema,
 } from 'src/schemas/BillingHistory.schema';
-import { Attendee, AttendeeSchema } from 'src/schemas/Attendee.schema';
+import { AttendeesModule } from 'src/attendees/attendees.module';
 import { AssignmentModule } from 'src/assignment/assignment.module';
 import { NotesModule } from 'src/notes/notes.module';
 import { AuthAdminTokenMiddleware } from 'src/middlewares/authAdmin.Middleware';
@@ -22,6 +22,7 @@ import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
 @Module({
   imports: [
     UsersModule,
+    AttendeesModule,
     AssignmentModule,
     NotesModule,
     MongooseModule.forFeature([
@@ -36,10 +37,6 @@ import { AuthTokenMiddleware } from 'src/middlewares/authToken.Middleware';
       {
         name: BillingHistory.name,
         schema: BillingHistorySchema,
-      },
-      {
-        name: Attendee.name,
-        schema: AttendeeSchema,
       },
     ]),
   ],

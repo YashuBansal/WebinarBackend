@@ -1,0 +1,330 @@
+{
+  "metadata": {
+    "timestamp": "2026-05-25T15:35:31.224Z",
+    "scriptVersion": "1.0.0",
+    "dryRun": false,
+    "adminIdFilter": null,
+    "totalWebinars": 12,
+    "totalProcessed": 12,
+    "totalSucceeded": 12,
+    "totalFailed": 0,
+    "totalWithMismatchBeforeBackfill": 0,
+    "totalUpdated": 0,
+    "totalUnchanged": 12
+  },
+  "results": [
+    {
+      "webinarId": "69668cf5709e99f0b2f67df3",
+      "webinarName": "webinar 2",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 3,
+        "totalParticipants": 32,
+        "totalAttendees": 0,
+        "totalUnAttended": 32
+      },
+      "computed": {
+        "totalRegistrations": 3,
+        "totalParticipants": 32,
+        "totalAttendees": 0,
+        "totalUnAttended": 32
+      },
+      "after": {
+        "totalRegistrations": 3,
+        "totalParticipants": 32,
+        "totalAttendees": 0,
+        "totalUnAttended": 32
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69adc1f9716d0b7f259bb848",
+      "webinarName": "Old Data",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 100,
+        "totalParticipants": 100,
+        "totalAttendees": 0,
+        "totalUnAttended": 100
+      },
+      "computed": {
+        "totalRegistrations": 100,
+        "totalParticipants": 100,
+        "totalAttendees": 0,
+        "totalUnAttended": 100
+      },
+      "after": {
+        "totalRegistrations": 100,
+        "totalParticipants": 100,
+        "totalAttendees": 0,
+        "totalUnAttended": 100
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69adced6d885ecbb33bcf07c",
+      "webinarName": "cgsdf",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 1,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "computed": {
+        "totalRegistrations": 1,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "after": {
+        "totalRegistrations": 1,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69ae6ad03fcc94db4bc75cd4",
+      "webinarName": "First Webinar",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 101,
+        "totalParticipants": 101,
+        "totalAttendees": 0,
+        "totalUnAttended": 101
+      },
+      "computed": {
+        "totalRegistrations": 101,
+        "totalParticipants": 101,
+        "totalAttendees": 0,
+        "totalUnAttended": 101
+      },
+      "after": {
+        "totalRegistrations": 101,
+        "totalParticipants": 101,
+        "totalAttendees": 0,
+        "totalUnAttended": 101
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69b3bc588e2cd08e7d5f93ab",
+      "webinarName": "wer",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "computed": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "after": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69b3bc608e2cd08e7d5f93bc",
+      "webinarName": "werrew",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "computed": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "after": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69b3c5c921f9c4697d72e0bf",
+      "webinarName": "fgd",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "computed": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "after": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69b3e0593ffcf2ef7422d2ef",
+      "webinarName": "sdf",
+      "adminId": "69b3be9c8e2cd08e7d5f940f",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 100,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "computed": {
+        "totalRegistrations": 100,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "after": {
+        "totalRegistrations": 100,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69c105998b6894f59cc90d7f",
+      "webinarName": "page",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "computed": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "after": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69c105a58b6894f59cc90d90",
+      "webinarName": "First Webinarsdf",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "computed": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "after": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69c105ae8b6894f59cc90d9b",
+      "webinarName": "sdd",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "computed": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "after": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    },
+    {
+      "webinarId": "69c263af793745022b7b1f64",
+      "webinarName": "First Webinaras",
+      "adminId": "696606895b77b4af59182fd3",
+      "status": "success",
+      "before": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "computed": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "after": {
+        "totalRegistrations": 0,
+        "totalParticipants": 0,
+        "totalAttendees": 0,
+        "totalUnAttended": 0
+      },
+      "hadMismatchBeforeBackfill": false,
+      "wasUpdated": false
+    }
+  ],
+  "errors": []
+}
