@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, RequestMethod } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AffiliateController } from './affiliate.controller';
+import { SuperAdminAffiliateController } from './superadmin-affiliate.controller';
 import { AffiliateService } from './affiliate.service';
 import { Affiliate, AffiliateSchema } from './schemas/affiliate.schema';
 import { Referral, ReferralSchema } from './schemas/referral.schema';
@@ -19,7 +20,7 @@ import { JwtModule } from '@nestjs/jwt';
     ]),
     JwtModule.register({}),
   ],
-  controllers: [AffiliateController],
+  controllers: [AffiliateController, SuperAdminAffiliateController],
   providers: [AffiliateService],
 })
 export class AffiliateModule {

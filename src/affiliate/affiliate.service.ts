@@ -74,8 +74,8 @@ export class AffiliateService {
     return {
       referralCode: affiliate.referralCode,
       // referralLink: `https://webinar-frontend-tau.vercel.app/signup?ref=${affiliate.referralCode}`,
-      referralLink: `https://dashboard.ajaybansal.com/signup?ref=${affiliate.referralCode}`,
-      // referralLink: `http://localhost:5174/signup?ref=${affiliate.referralCode}`,
+      // referralLink: `https://dashboard.ajaybansal.com/signup?ref=${affiliate.referralCode}`,
+      referralLink: `http://localhost:5174/signup?ref=${affiliate.referralCode}`,
       tier1CommissionRate: affiliate.tier1Rate,
       tier2CommissionRate: affiliate.tier2Rate,
       totalReferralIncome: affiliate.totalEarned,
@@ -219,4 +219,162 @@ export class AffiliateService {
       message: 'Payout bank account details updated securely.',
     };
   }
+
+  /**
+   * Super Admin Methods
+   */
+
+  async getAllAffiliates() {
+    const affiliates = await this.affiliateModel
+      .find()
+      .populate('userId', 'userName email phone')
+      .sort({ createdAt: -1 });
+
+    const result = [];
+    for (const aff of affiliates) {
+      const user = aff.userId as any;
+      const referralsCount = await this.referralModel.countDocuments({ referrerId: aff.userId });
+      const payoutsCount = await this.payoutModel.countDocuments({ userId: aff.userId });
+
+      result.push({
+        id: aff._id.toString(),
+        userId: aff.userId ? aff.userId._id.toString() : null,
+        name: user ? user.userName : 'N/A',
+        email: user ? user.email : 'N/A',
+        phone: user ? (user.phone || 'N/A') : 'N/A',
+        referralCode: aff.referralCode,
+        tier1Rate: aff.tier1Rate,
+        tier2Rate: aff.tier2Rate,
+        totalEarned: aff.totalEarned,
+        requestablePayout: aff.requestablePayout,
+        bankDetails: aff.bankDetails,
+        referralsCount,
+        payoutsCount,
+      });
+    }
+    return result;
+  }
+
+  async getAllReferrals() {
+    const referrals = await this.referralModel
+      .find()
+      .populate('referrerId', 'userName email')
+      .populate('referredId', 'userName email phone')
+      .sort({ createdAt: -1 });
+
+    // Fetch all affiliates to map userId -> referralCode
+    const affiliates = await this.affiliateModel.find({}, 'userId referralCode');
+    const affiliateMap = new Map<string, string>();
+    for (const aff of affiliates) {
+      if (aff.userId) {
+        affiliateMap.set(aff.userId.toString(), aff.referralCode);
+      }
+    }
+
+    return referrals.map((r) => {
+      const referrer = r.referrerId as any;
+      const referred = r.referredId as any;
+      const referrerCode = referrer ? affiliateMap.get(referrer._id.toString()) || 'N/A' : 'N/A';
+      return {
+        id: r._id.toString(),
+        referrerName: referrer ? referrer.userName : 'N/A',
+        referrerEmail: referrer ? referrer.email : 'N/A',
+        referrerCode,
+        referredName: referred ? referred.userName : 'N/A',
+        referredEmail: referred ? referred.email : 'N/A',
+        referredPhone: referred ? (referred.phone || 'N/A') : 'N/A',
+        tier: r.tier,
+        status: r.status,
+        commission: r.commission,
+        invoiceId: r.invoiceId,
+        planPurchased: r.planPurchased,
+        purchaseDate: r.purchaseDate ? r.purchaseDate.toISOString().split('T')[0] : null,
+        createdAt: r.createdAt.toISOString(),
+      };
+    });
+  }
+
+  async getAllPayouts() {
+    const payouts = await this.payoutModel
+      .find()
+      .populate('userId', 'userName email phone')
+      .sort({ createdAt: -1 });
+
+    const result = [];
+    for (const p of payouts) {
+      const user = p.userId as any;
+      let bankDetails = null;
+      if (user) {
+        const aff = await this.affiliateModel.findOne({ userId: user._id });
+        if (aff) {
+          bankDetails = aff.bankDetails;
+        }
+      }
+
+      result.push({
+        id: p._id.toString(),
+        userId: user ? user._id.toString() : null,
+        name: user ? user.userName : 'N/A',
+        email: user ? user.email : 'N/A',
+        phone: user ? (user.phone || 'N/A') : 'N/A',
+        amount: p.amount,
+        status: p.status,
+        invoiceRef: p.invoiceRef,
+        date: p.createdAt.toISOString().split('T')[0],
+        bankDetails,
+      });
+    }
+    return result;
+  }
+
+  async updatePayoutStatus(payoutId: string, status: string) {
+    const payout = await this.payoutModel.findById(payoutId);
+    if (!payout) {
+      throw new NotFoundException('Payout request not found');
+    }
+
+    const oldStatus = payout.status;
+    payout.status = status;
+    await payout.save();
+
+    if (status === 'Rejected' && oldStatus !== 'Rejected') {
+      const affiliate = await this.affiliateModel.findOne({ userId: payout.userId });
+      if (affiliate) {
+        affiliate.requestablePayout += payout.amount;
+        await affiliate.save();
+      }
+    }
+
+    if (oldStatus === 'Rejected' && status !== 'Rejected') {
+      const affiliate = await this.affiliateModel.findOne({ userId: payout.userId });
+      if (affiliate) {
+        affiliate.requestablePayout = Math.max(0, affiliate.requestablePayout - payout.amount);
+        await affiliate.save();
+      }
+    }
+
+    return {
+      success: true,
+      message: `Payout status updated to ${status} successfully.`,
+      payout,
+    };
+  }
+
+  async updateAffiliateRates(affiliateId: string, tier1Rate: number, tier2Rate: number) {
+    const affiliate = await this.affiliateModel.findById(affiliateId);
+    if (!affiliate) {
+      throw new NotFoundException('Affiliate profile not found');
+    }
+
+    affiliate.tier1Rate = tier1Rate;
+    affiliate.tier2Rate = tier2Rate;
+    await affiliate.save();
+
+    return {
+      success: true,
+      message: 'Affiliate commission rates updated successfully.',
+      affiliate,
+    };
+  }
 }
+
