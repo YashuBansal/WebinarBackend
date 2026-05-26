@@ -73,6 +73,7 @@ import { WebinarWebhookModule } from './webinar-webhook/webinar-webhook.module';
 import { ProgramModule } from './whatsapp-program/program.module';
 import { InterestPoolSettingsModule } from './interest-pool-settings/interest-pool-settings.module';
 import { PaymentsModule } from './payments/payments.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
 import { HealthModule } from './health/health.module';
@@ -231,6 +232,7 @@ import { CacheModule } from './cache/cache.module';
     ProgramModule,
     InterestPoolSettingsModule,
     PaymentsModule,
+    IntegrationsModule,
     QuickRepliesModule,
   ],
   controllers: [AppController],

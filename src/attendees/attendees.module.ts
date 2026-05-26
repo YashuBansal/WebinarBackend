@@ -28,6 +28,7 @@ import { WebsocketModule } from 'src/websocket/websocket.module';
 import { WebinarParticipantModule } from 'src/webinar-participant/webinar-participant.module';
 import { TagsModule } from 'src/tags/tags.module';
 import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middleware';
+import { IntegrationsModule } from 'src/integrations/integrations.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { AuthSuperAdminMiddleware } from 'src/middlewares/authSuperAdmin.Middlew
     WebsocketModule,
     WebinarParticipantModule,
     TagsModule,
+    forwardRef(() => IntegrationsModule),
   ],
   controllers: [AttendeesController],
   providers: [AttendeesService],

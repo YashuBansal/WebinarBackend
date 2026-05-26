@@ -49,6 +49,7 @@ import { CustomLeadTypeService } from 'src/custom-lead-type/custom-lead-type.ser
 import { WebinarParticipantDto } from 'src/webinar-participant/dto/webinar-participant.dto';
 import { WebinarParticipantService } from 'src/webinar-participant/webinar-participant.service';
 import { TagsService } from 'src/tags/tags.service';
+import { IntegrationsService } from 'src/integrations/integrations.service';
 import {
   AdvanceFilterDTO,
   AdvanceFilterUnitDTO,
@@ -87,6 +88,8 @@ export class AttendeesService {
     private readonly customLeadTypeService: CustomLeadTypeService,
     private readonly webinarParticipantService: WebinarParticipantService,
     private readonly tagService: TagsService,
+    @Inject(forwardRef(() => IntegrationsService))
+    private readonly integrationsService: IntegrationsService,
   ) {}
 
   async getAttendeesCount(
@@ -599,6 +602,43 @@ export class AttendeesService {
         );
         updateProgress(90);
       });
+
+      // Asynchronously trigger ConvertKit synchronization in the background
+      if (tempAttendees && tempAttendees.length > 0) {
+        tempAttendees.forEach((attendee) => {
+          // If pre-webinar import, eventType is 'registered'
+          // If post-webinar import, then if attendee.isAttended is true, it is 'attended', else 'no_show'
+          const eventType = !isAttended
+            ? 'registered'
+            : (attendee.isAttended ? 'attended' : 'no_show');
+
+          this.integrationsService.syncAttendeeToConvertKit(
+            adminId,
+            attendee.email,
+            attendee.firstName,
+            attendee.lastName,
+            webinarName,
+            eventType,
+            attendee.timeInSession,
+          ).catch((err) => {
+            this.logger.error(`Background ConvertKit sync error for ${attendee.email}: ${err.message}`);
+          });
+
+          // Trigger high_intent tag sync if attendee watched >45 minutes (high intent threshold)
+          if (isAttended && attendee.isAttended && attendee.timeInSession && attendee.timeInSession >= 45) {
+            this.integrationsService.syncAttendeeToConvertKit(
+              adminId,
+              attendee.email,
+              attendee.firstName,
+              attendee.lastName,
+              webinarName,
+              'high_intent',
+              attendee.timeInSession,
+            ).catch(() => {});
+          }
+        });
+      }
+
       await this.subscriptionService.revalidateUsedContactCountsOfAdmin(
         new Types.ObjectId(`${adminId}`),
       );
