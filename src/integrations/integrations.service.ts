@@ -251,6 +251,135 @@ export class IntegrationsService {
       const attendees = Array.from(attendeesMap.values());
 
       let successCount = 0;
+      let lastErrorMessage = '';
+
+      let pabblyListId: string | null = null;
+      let pabblyVersion: 'v1' | 'v2' | null = null;
+
+      let aweberAccountId: string | null = null;
+      let aweberListId: string | null = null;
+
+      let acTagId: string | null = null;
+      let activeCampaignUrl = (apiSecret || '').trim();
+      const activeCampaignToken = (apiKey || '').trim();
+
+      const credential = (apiKey || apiSecret || '').trim();
+      if (integrationKey === 'pabblyEmail' && !credential.startsWith('http')) {
+        // 1. Try V2 lists endpoint first
+        try {
+          const listsRes = await axios.get('https://emails.pabbly.com/api/v2/lists', {
+            headers: { Authorization: `Bearer ${credential}` }
+          });
+          if (listsRes.data?.success || listsRes.data?.status === 'success') {
+            const lists = listsRes.data?.data?.subscriberLists || [];
+            if (lists.length > 0) {
+              pabblyListId = lists[0].id || lists[0].list_id;
+              pabblyVersion = 'v2';
+              console.log(`Discovered Pabbly V2 List ID: ${pabblyListId}`);
+            } else {
+              throw new Error('No subscriber lists found in your Pabbly Emails account. Please create at least one list.');
+            }
+          } else if (listsRes.data?.status === 'error') {
+            throw new Error(listsRes.data.message || 'Invalid API Key');
+          } else {
+            throw new Error(listsRes.data?.message || 'Invalid response structure');
+          }
+        } catch (v2Err: any) {
+          // If V2 returned a bad status or was rejected, fall back to V1
+          console.log("Pabbly V2 lists fetch failed or fallback triggered, trying V1...", v2Err.message);
+          try {
+            const listsRes = await axios.get('https://emails.pabbly.com/api/subscribers-list', {
+              headers: { Authorization: `Bearer ${credential}` }
+            });
+            if (listsRes.data?.status === 'error') {
+              throw new Error(listsRes.data.message || 'Invalid API Key');
+            }
+            const listsData = listsRes.data?.data || listsRes.data;
+            const lists = Array.isArray(listsData) ? listsData : [];
+            if (lists.length > 0) {
+              pabblyListId = lists[0].list_id || lists[0].id;
+              pabblyVersion = 'v1';
+              console.log(`Discovered Pabbly V1 List ID: ${pabblyListId}`);
+            } else {
+              throw new Error('No subscriber lists found in your Pabbly Emails account. Please create at least one list.');
+            }
+          } catch (v1Err: any) {
+            throw new BadRequestException(
+              `Failed to authenticate with Pabbly Emails. Error: ${v1Err.message}`
+            );
+          }
+        }
+      } else if (integrationKey === 'aweber' && !credential.startsWith('http')) {
+        try {
+          const accountsRes = await axios.get('https://api.aweber.com/1.0/accounts', {
+            headers: { Authorization: `Bearer ${credential}` }
+          });
+          const accounts = accountsRes.data?.entries || [];
+          if (accounts.length === 0) {
+            throw new Error('No AWeber accounts found.');
+          }
+          aweberAccountId = accounts[0].id;
+
+          const listsRes = await axios.get(`https://api.aweber.com/1.0/accounts/${aweberAccountId}/lists`, {
+            headers: { Authorization: `Bearer ${credential}` }
+          });
+          const lists = listsRes.data?.entries || [];
+          if (lists.length === 0) {
+            throw new Error('No mailing lists found in your AWeber account. Please create at least one list.');
+          }
+          aweberListId = lists[0].id;
+          console.log(`Discovered AWeber Account ID: ${aweberAccountId}, List ID: ${aweberListId}`);
+        } catch (err: any) {
+          throw new BadRequestException(
+            `Failed to authenticate with AWeber. Error: ${err.response?.data?.message || err.message}`
+          );
+        }
+      } else if (integrationKey === 'activecampaign' && activeCampaignUrl && activeCampaignToken) {
+        if (!activeCampaignUrl.startsWith('http')) {
+          if (activeCampaignUrl.includes('.')) {
+            activeCampaignUrl = `https://${activeCampaignUrl}`;
+          } else {
+            activeCampaignUrl = `https://${activeCampaignUrl}.api-us1.com`;
+          }
+        }
+        activeCampaignUrl = activeCampaignUrl.replace(/\/$/, ''); // Remove trailing slash
+
+        // Discover or create Tag ID once outside the loop
+        if (tag && tag.trim()) {
+          const tagName = tag.trim();
+          try {
+            // 1. Search for existing tag
+            const searchRes = await axios.get(`${activeCampaignUrl}/api/3/tags?search=${encodeURIComponent(tagName)}`, {
+              headers: { 'Api-Token': activeCampaignToken }
+            });
+            const foundTag = (searchRes.data?.tags || []).find(
+              (t: any) => t.tag.toLowerCase() === tagName.toLowerCase()
+            );
+
+            acTagId = foundTag?.id;
+
+            // 2. Create tag if it doesn't exist
+            if (!acTagId) {
+              const createTagRes = await axios.post(`${activeCampaignUrl}/api/3/tags`, {
+                tag: {
+                  tag: tagName,
+                  tagType: 'contact',
+                  description: 'Created by Webinar CRM integration'
+                }
+              }, {
+                headers: {
+                  'Api-Token': activeCampaignToken,
+                  'Content-Type': 'application/json',
+                }
+              });
+              acTagId = createTagRes.data?.tag?.id;
+            }
+            console.log(`Discovered or created ActiveCampaign Tag ID: ${acTagId}`);
+          } catch (err: any) {
+            console.error(`ActiveCampaign Tag Pre-flight Discovery failed:`, err.message);
+          }
+        }
+      }
 
       for (const attendee of attendees) {
         const webinarName = (attendee.webinar as any)?.webinarName || 'Webinar';
@@ -357,7 +486,7 @@ export class IntegrationsService {
 
                 if (forms.length > 0) {
                   const formId = forms[0].id;
-                  
+
                   let v3TagId: number | null = null;
                   if (tag && tag.trim()) {
                     const tagName = tag.trim();
@@ -429,7 +558,6 @@ export class IntegrationsService {
           }
         } else if (integrationKey === 'aweber') {
           try {
-            const credential = (apiKey || apiSecret || '').trim();
             if (credential.startsWith('http')) {
               // Direct Webhook/Custom Endpoint mapping
               await axios.post(credential, {
@@ -442,33 +570,23 @@ export class IntegrationsService {
                 tag: tag || '',
               });
             } else {
+              if (!aweberAccountId || !aweberListId) {
+                throw new Error('AWeber Account ID or List ID not discovered.');
+              }
+
               // AWeber API using OAuth2 Bearer Token in credentials
-              // 1. Fetch Accounts
-              const accountsRes = await axios.get('https://api.aweber.com/1.0/accounts', {
-                headers: { Authorization: `Bearer ${credential}` }
-              });
-              const accounts = accountsRes.data?.entries || [];
-              if (accounts.length === 0) {
-                throw new Error('No AWeber accounts found.');
-              }
-              const accountId = accounts[0].id;
+              const tagList = tag && tag.trim() ? tag.split(',').map(t => t.trim()).filter(Boolean) : [];
 
-              // 2. Fetch Lists for that account
-              const listsRes = await axios.get(`https://api.aweber.com/1.0/accounts/${accountId}/lists`, {
-                headers: { Authorization: `Bearer ${credential}` }
-              });
-              const lists = listsRes.data?.entries || [];
-              if (lists.length === 0) {
-                throw new Error('No mailing lists found in your AWeber account. Please create at least one list.');
-              }
-              const listId = lists[0].id;
-
-              // 3. Subscribe contact with tags
               try {
-                await axios.post(`https://api.aweber.com/1.0/accounts/${accountId}/lists/${listId}/subscribers`, {
+                await axios.post(`https://api.aweber.com/1.0/accounts/${aweberAccountId}/lists/${aweberListId}/subscribers`, {
                   email: attendee.email,
                   name: fullName || attendee.email,
-                  tags: tag && tag.trim() ? [tag.trim()] : undefined,
+                  tags: tagList.length > 0 ? tagList : undefined,
+                  custom_fields: {
+                    'Webinar Name': webinarName,
+                    'Attendance Status': attendee.isAttended ? 'attended' : 'registered',
+                    'Time In Session': attendee.timeInSession ? String(attendee.timeInSession) : '0',
+                  }
                 }, {
                   headers: {
                     Authorization: `Bearer ${credential}`,
@@ -476,9 +594,10 @@ export class IntegrationsService {
                   },
                 });
               } catch (subErr: any) {
-                // If it fails with tags or full details, retry with only email
-                await axios.post(`https://api.aweber.com/1.0/accounts/${accountId}/lists/${listId}/subscribers`, {
+                // If it fails with tags or custom fields, retry with only email and name
+                await axios.post(`https://api.aweber.com/1.0/accounts/${aweberAccountId}/lists/${aweberListId}/subscribers`, {
                   email: attendee.email,
+                  name: fullName || attendee.email,
                 }, {
                   headers: {
                     Authorization: `Bearer ${credential}`,
@@ -489,26 +608,16 @@ export class IntegrationsService {
             }
             successCount++;
           } catch (err: any) {
-            console.error(`AWeber Sync Error for ${attendee.email}:`, err.response?.data || err.message);
+            const errMsg = err.response?.data?.message || err.response?.data || err.message;
+            console.error(`AWeber Sync Error for ${attendee.email}:`, errMsg);
+            lastErrorMessage = typeof errMsg === 'object' ? JSON.stringify(errMsg) : String(errMsg);
           }
         } else if (integrationKey === 'activecampaign') {
           try {
-            let apiUrl = (apiSecret || '').trim();
-            const token = (apiKey || '').trim();
-
-            if (apiUrl && token) {
-              if (!apiUrl.startsWith('http')) {
-                if (apiUrl.includes('.')) {
-                  apiUrl = `https://${apiUrl}`;
-                } else {
-                  apiUrl = `https://${apiUrl}.api-us1.com`;
-                }
-              }
-              apiUrl = apiUrl.replace(/\/$/, ''); // Remove trailing slash
-
+            if (activeCampaignUrl && activeCampaignToken) {
               let contactRes: any;
               try {
-                contactRes = await axios.post(`${apiUrl}/api/3/contacts`, {
+                contactRes = await axios.post(`${activeCampaignUrl}/api/3/contacts`, {
                   contact: {
                     email: attendee.email,
                     firstName: attendee.firstName || '',
@@ -517,20 +626,20 @@ export class IntegrationsService {
                   }
                 }, {
                   headers: {
-                    'Api-Token': token,
+                    'Api-Token': activeCampaignToken,
                     'Content-Type': 'application/json',
                   }
                 });
               } catch (contactErr: any) {
                 // Retry with only email and first name in case of validation failures on phone/last_name
-                contactRes = await axios.post(`${apiUrl}/api/3/contacts`, {
+                contactRes = await axios.post(`${activeCampaignUrl}/api/3/contacts`, {
                   contact: {
                     email: attendee.email,
                     firstName: attendee.firstName || '',
                   }
                 }, {
                   headers: {
-                    'Api-Token': token,
+                    'Api-Token': activeCampaignToken,
                     'Content-Type': 'application/json',
                   }
                 });
@@ -538,65 +647,36 @@ export class IntegrationsService {
 
               const contactId = contactRes.data?.contact?.id;
 
-              if (contactId && tag && tag.trim()) {
-                const tagName = tag.trim();
+              // Associate pre-discovered tag with contact
+              if (contactId && acTagId) {
                 try {
-                  // 1. Search for existing tag
-                  const searchRes = await axios.get(`${apiUrl}/api/3/tags?search=${encodeURIComponent(tagName)}`, {
-                    headers: { 'Api-Token': token }
+                  await axios.post(`${activeCampaignUrl}/api/3/contactTags`, {
+                    contactTag: {
+                      contact: contactId,
+                      tag: acTagId
+                    }
+                  }, {
+                    headers: {
+                      'Api-Token': activeCampaignToken,
+                      'Content-Type': 'application/json',
+                    }
                   });
-                  const foundTag = (searchRes.data?.tags || []).find(
-                    (t: any) => t.tag.toLowerCase() === tagName.toLowerCase()
-                  );
-
-                  let tagId = foundTag?.id;
-
-                  // 2. Create tag if it doesn't exist
-                  if (!tagId) {
-                    const createTagRes = await axios.post(`${apiUrl}/api/3/tags`, {
-                      tag: {
-                        tag: tagName,
-                        tagType: 'contact',
-                        description: 'Created by Webinar CRM integration'
-                      }
-                    }, {
-                      headers: {
-                        'Api-Token': token,
-                        'Content-Type': 'application/json',
-                      }
-                    });
-                    tagId = createTagRes.data?.tag?.id;
-                  }
-
-                  // 3. Associate tag with contact
-                  if (tagId) {
-                    await axios.post(`${apiUrl}/api/3/contactTags`, {
-                      contactTag: {
-                        contact: contactId,
-                        tag: tagId
-                      }
-                    }, {
-                      headers: {
-                        'Api-Token': token,
-                        'Content-Type': 'application/json',
-                      }
-                    });
-                  }
                 } catch (tagErr: any) {
-                  console.error(`ActiveCampaign Tagging Error for ${attendee.email}:`, tagErr.response?.data || tagErr.message);
+                  console.error(`ActiveCampaign Tagging Association Error for ${attendee.email}:`, tagErr.response?.data || tagErr.message);
                 }
               }
             }
             successCount++;
           } catch (err: any) {
-            console.error(`ActiveCampaign Sync Error for ${attendee.email}:`, err.response?.data || err.message);
+            const errMsg = err.response?.data?.message || err.response?.data || err.message;
+            console.error(`ActiveCampaign Sync Error for ${attendee.email}:`, errMsg);
+            lastErrorMessage = typeof errMsg === 'object' ? JSON.stringify(errMsg) : String(errMsg);
           }
         } else if (integrationKey === 'pabblyEmail') {
           try {
-            const credential = (apiKey || apiSecret || '').trim();
             if (credential.startsWith('http')) {
               // Direct Webhook URL (Pabbly Connect, Zapier, Make, etc.)
-              await axios.post(credential, {
+              const response = await axios.post(credential, {
                 email: attendee.email,
                 firstName: attendee.firstName,
                 lastName: attendee.lastName,
@@ -606,49 +686,97 @@ export class IntegrationsService {
                 duration: attendee.timeInSession ? String(attendee.timeInSession) : '0',
                 tag: tag || '',
               });
+              if (response.status >= 400) {
+                throw new Error(`Webhook returned status code ${response.status}`);
+              }
             } else {
               // Pabbly Developer API Bearer Token
-              // 1. Fetch Subscriber Lists
-              const listsRes = await axios.get('https://emails.pabbly.com/api/subscribers-list', {
-                headers: {
-                  Authorization: `Bearer ${credential}`,
-                }
-              });
-              const lists = listsRes.data?.data || listsRes.data || [];
-              if (lists.length === 0) {
-                throw new Error('No subscriber lists found in your Pabbly account.');
+              if (!pabblyListId) {
+                throw new Error('No subscriber list ID resolved.');
               }
-              const listId = lists[0].list_id || lists[0].id;
 
-              // 2. Import Single Subscriber
-              try {
-                await axios.post('https://emails.pabbly.com/api/import-subscriber', {
-                  list_id: listId,
-                  email: attendee.email,
-                  first_name: attendee.firstName || '',
-                  last_name: attendee.lastName || '',
-                }, {
-                  headers: {
-                    Authorization: `Bearer ${credential}`,
-                    'Content-Type': 'application/json',
-                  },
-                });
-              } catch (subErr: any) {
-                // Retry with only email if custom details failed
-                await axios.post('https://emails.pabbly.com/api/import-subscriber', {
-                  list_id: listId,
-                  email: attendee.email,
-                }, {
-                  headers: {
-                    Authorization: `Bearer ${credential}`,
-                    'Content-Type': 'application/json',
-                  },
-                });
+              let importRes: any;
+              if (pabblyVersion === 'v2') {
+                // Pabbly Emails V2 Import API
+                const tagList = tag && tag.trim() ? tag.split(',').map(t => t.trim()).filter(Boolean) : [];
+                try {
+                  importRes = await axios.post('https://emails.pabbly.com/api/v2/subscribers', {
+                    list_id: pabblyListId,
+                    email: attendee.email,
+                    firstName: attendee.firstName || '',
+                    lastName: attendee.lastName || '',
+                    first_name: attendee.firstName || '',
+                    last_name: attendee.lastName || '',
+                    mobile: attendee.phone || '',
+                    phone: attendee.phone || '',
+                    tags: tagList,
+                    customFields: {
+                      webinarName: webinarName,
+                      attendanceStatus: attendee.isAttended ? 'attended' : 'registered',
+                      tag: tag || ''
+                    },
+                    webinarName: webinarName,
+                    attendanceStatus: attendee.isAttended ? 'attended' : 'registered',
+                    tag: tag || ''
+                  }, {
+                    headers: {
+                      Authorization: `Bearer ${credential}`,
+                      'Content-Type': 'application/json',
+                    },
+                  });
+                } catch (subErr: any) {
+                  // Retry with simpler body if detailed fields failed
+                  importRes = await axios.post('https://emails.pabbly.com/api/v2/subscribers', {
+                    list_id: pabblyListId,
+                    email: attendee.email,
+                    firstName: attendee.firstName || '',
+                    lastName: attendee.lastName || '',
+                    tags: tagList,
+                  }, {
+                    headers: {
+                      Authorization: `Bearer ${credential}`,
+                      'Content-Type': 'application/json',
+                    },
+                  });
+                }
+              } else {
+                // Pabbly Emails V1 Import API
+                try {
+                  importRes = await axios.post('https://emails.pabbly.com/api/import-subscriber', {
+                    list_id: pabblyListId,
+                    email: attendee.email,
+                    name: fullName || attendee.email,
+                    first_name: attendee.firstName || '',
+                    last_name: attendee.lastName || '',
+                  }, {
+                    headers: {
+                      Authorization: `Bearer ${credential}`,
+                      'Content-Type': 'application/json',
+                    },
+                  });
+                } catch (subErr: any) {
+                  // Retry with only email if custom details failed
+                  importRes = await axios.post('https://emails.pabbly.com/api/import-subscriber', {
+                    list_id: pabblyListId,
+                    email: attendee.email,
+                  }, {
+                    headers: {
+                      Authorization: `Bearer ${credential}`,
+                      'Content-Type': 'application/json',
+                    },
+                  });
+                }
+              }
+
+              if (importRes?.data?.status === 'error') {
+                throw new Error(importRes.data.message || 'Failed to import subscriber');
               }
             }
             successCount++;
           } catch (err: any) {
-            console.error(`Pabbly Sync Error for ${attendee.email}:`, err.response?.data || err.message);
+            const errMsg = err.response?.data?.message || err.response?.data || err.message;
+            console.error(`Pabbly Sync Error for ${attendee.email}:`, errMsg);
+            lastErrorMessage = typeof errMsg === 'object' ? JSON.stringify(errMsg) : String(errMsg);
           }
         }
       }
@@ -659,6 +787,12 @@ export class IntegrationsService {
         activecampaign: 'ActiveCampaign',
         pabblyEmail: 'Pabbly Emails',
       };
+
+      if (successCount === 0 && rawAttendees.length > 0) {
+        throw new BadRequestException(
+          `Failed to sync with ${labelMap[integrationKey] || integrationKey}. Error: ${lastErrorMessage || 'Unknown error'}`
+        );
+      }
 
       return {
         success: true,

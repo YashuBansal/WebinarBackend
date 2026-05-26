@@ -128,7 +128,6 @@ export class BillingHistory extends Document {
   @Prop({
     type: String,
     required: false,
-    default: null,
   })
   razorpayPaymentId?: string | null;
 }
