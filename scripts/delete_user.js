@@ -11,7 +11,7 @@ if (!targetEmail) {
 
 // Automatically load database URI and variables from backend .env
 require('dotenv').config({ path: 'd:/WebinarWLH/backend/.env' });
-const uri = process.env.MONGO_URI || "mongodb+srv://copopoco71:algore269@mymovies.gbncia4.mongodb.net/SAAS_CRM";
+const uri = process.env.MONGO_URI;
 
 async function run() {
   try {
@@ -20,7 +20,7 @@ async function run() {
     console.log("Connected successfully!");
 
     const db = mongoose.connection.db;
-    
+
     // 1. Search for user record dynamically using target email
     console.log(`Searching for user record with email: ${targetEmail}...`);
     const usersCollection = db.collection('users');
@@ -51,31 +51,31 @@ async function run() {
 
       const cursor = coll.find({});
       let documentsDeletedCount = 0;
-      
+
       while (await cursor.hasNext()) {
         const doc = await cursor.next();
-        
+
         const inspectValue = (val) => {
           if (val === null || val === undefined) return false;
-          
+
           if (typeof val === 'string') {
             if (val.toLowerCase() === targetEmail.toLowerCase()) return true;
             if (val === userIdStr) return true;
           }
-          
+
           if (val instanceof mongoose.Types.ObjectId) {
             if (val.equals(userId)) return true;
           }
-          
+
           if (Array.isArray(val)) {
             for (const item of val) {
               if (inspectValue(item)) return true;
             }
           }
-          
+
           if (typeof val === 'object') {
             if (val.constructor && val.constructor.name === 'ObjectID') {
-               return val.toString() === userIdStr;
+              return val.toString() === userIdStr;
             }
             try {
               for (const key of Object.keys(val)) {
@@ -85,7 +85,7 @@ async function run() {
               // Ignore un-iterable items
             }
           }
-          
+
           return false;
         };
 
