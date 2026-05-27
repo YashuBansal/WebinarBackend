@@ -126,6 +126,10 @@ export class CreatePlansDto {
   @IsBoolean()
   assignmentMetrics: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  isDefaultSignupPlan: boolean;
+
   @IsObject()
   @IsNotEmpty()
   planDurationConfig: Map<string, PlanDurationConfigDto>;

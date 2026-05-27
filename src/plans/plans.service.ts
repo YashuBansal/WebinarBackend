@@ -90,6 +90,10 @@ export class PlansService {
       );
     }
 
+    if (createPlanDto.isDefaultSignupPlan === true) {
+      await this.plansModel.updateMany({}, { $set: { isDefaultSignupPlan: false } });
+    }
+
     // Create the new plan
     const plan = new this.plansModel(createPlanDto);
     try {
@@ -100,8 +104,15 @@ export class PlansService {
   }
 
   async updatePlan(id: string, updatePlanDto: UpdatePlansDto): Promise<any> {
-    // Create the new plan
-    const plan = this.plansModel.findByIdAndUpdate(id, updatePlanDto, {
+    if (updatePlanDto.isDefaultSignupPlan === true) {
+      await this.plansModel.updateMany(
+        { _id: { $ne: new Types.ObjectId(id) } },
+        { $set: { isDefaultSignupPlan: false } },
+      );
+    }
+
+    // Update the plan
+    const plan = await this.plansModel.findByIdAndUpdate(id, updatePlanDto, {
       new: true,
     });
     if (!plan) {

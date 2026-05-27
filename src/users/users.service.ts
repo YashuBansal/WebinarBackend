@@ -1688,8 +1688,11 @@ export class UsersService {
     const roleId = this.configService.get('appRoles').ADMIN;
     const hashPassword = await bcrypt.hash(password, 10);
 
-    // Find the first active plan in the system as a default plan for new signups
-    let plan = await this.userModel.db.model('Plans').findOne({ isActive: true });
+    // Find the default signup plan selected by super admin
+    const plan = await this.userModel.db.model('Plans').findOne({ isDefaultSignupPlan: true, isActive: true });
+    if (!plan) {
+      throw new BadRequestException('New registrations are temporarily unavailable. Please try again later or contact support.');
+    }
     
     // Fallback default duration values
     let durationType = 'MONTHLY';

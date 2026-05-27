@@ -138,6 +138,9 @@ export class Plans extends Document {
   @Prop({ type: Boolean, default: false })
   assignmentMetrics: boolean;
 
+  @Prop({ type: Boolean, default: false })
+  isDefaultSignupPlan: boolean;
+
   @Prop({ type: String, default: '' })
   customRibbon: string;
 
