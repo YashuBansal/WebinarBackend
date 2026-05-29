@@ -26,6 +26,8 @@ import { ChatbotTriggerController } from 'src/chatbot-trigger/chatbot-trigger.co
 import { WhatsappOptoutModule } from 'src/whatsapp-optout/whatsapp-optout.module';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
 
+import { QuickReply, QuickReplySchema } from 'src/quick-replies/schemas/quick-reply.schema';
+
 @Module({
   imports: [
     HttpModule,
@@ -37,6 +39,7 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
     WebsocketModule,
     MongooseModule.forFeature([
       { name: MediaAsset.name, schema: MediaAssetSchema },
+      { name: QuickReply.name, schema: QuickReplySchema },
     ]),
     WhatsappQueueModule,
     forwardRef(() => WabaTemplateModule),

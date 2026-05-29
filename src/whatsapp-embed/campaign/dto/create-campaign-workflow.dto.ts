@@ -106,14 +106,24 @@ export class CreateCampaignWorkflowDto {
   selectedContacts: ContactSelectionDto[];
 
   @IsString()
-  @IsNotEmpty()
-  templateName: string;
+  @IsOptional()
+  templateName?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => VariableMappingDto)
   @IsOptional()
   variableMappings?: VariableMappingDto[];
+
+  @IsString()
+  @IsOptional()
+  sessionTemplateName?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VariableMappingDto)
+  @IsOptional()
+  sessionVariableMappings?: VariableMappingDto[];
 
   @IsEnum(['now', 'scheduled'])
   @IsNotEmpty()

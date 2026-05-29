@@ -152,4 +152,7 @@ export interface ISendSingleTemplateMessagePayload {
   programId?: string;
   programAssignmentId?: string;
   programSlotId?: string;
+  isQuickReply?: boolean;
+  quickReplyContent?: string;
+  quickReplyComponents?: any[];
 }

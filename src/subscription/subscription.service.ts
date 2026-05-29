@@ -702,6 +702,100 @@ export class SubscriptionService {
       await this.userService.updateClient(adminId, { isActive: true });
 
     await subscription.save();
+
+    // Process affiliate/referral commission
+    try {
+      const referralModel = this.SubscriptionModel.db.model('Referral');
+      const affiliateModel = this.SubscriptionModel.db.model('Affiliate');
+
+      // 1. Try to find any 'signup' referrals (First Purchase)
+      let referrals = await referralModel.find({
+        referredId: new Types.ObjectId(adminId),
+        status: 'signup',
+      });
+
+      let isRepurchase = false;
+
+      if (referrals.length === 0) {
+        // 2. It's a re-purchase / renewal! Find the original customer referrals to get the referrer details
+        const originalReferrals = await referralModel.find({
+          referredId: new Types.ObjectId(adminId),
+          status: 'customer',
+        });
+
+        // Deduplicate relationships by referrerId and tier to get the original mappings
+        const uniqueRelationsMap = new Map();
+        for (const r of originalReferrals) {
+          const key = `${r.referrerId.toString()}_${r.tier}`;
+          if (!uniqueRelationsMap.has(key)) {
+            uniqueRelationsMap.set(key, r);
+          }
+        }
+
+        referrals = Array.from(uniqueRelationsMap.values());
+        isRepurchase = referrals.length > 0;
+      }
+
+      for (const referral of referrals) {
+        // Find the referrer affiliate details to get their exact rates
+        const affiliate = await affiliateModel.findOne({
+          userId: referral.referrerId,
+        });
+
+        if (affiliate) {
+          const rate = referral.tier === 1 ? affiliate.tier1Rate : affiliate.tier2Rate;
+          // Calculate commission amount
+          const commissionAmount = Math.round((totalWithGST * (rate / 100)) * 100) / 100;
+
+          if (isRepurchase) {
+            // Create a new referral document for the re-purchase event
+            await referralModel.create({
+              referrerId: referral.referrerId,
+              referredId: referral.referredId,
+              tier: referral.tier,
+              status: 'customer',
+              commission: commissionAmount,
+              planPurchased: plan.name,
+              purchaseDate: new Date(),
+              invoiceId: billing?._id?.toString() || '',
+            });
+          } else {
+            // First purchase flow: update the existing 'signup' document
+            referral.status = 'customer';
+            referral.commission = commissionAmount;
+            referral.planPurchased = plan.name;
+            referral.purchaseDate = new Date();
+            referral.invoiceId = billing?._id?.toString() || '';
+            await referral.save();
+          }
+
+          // Credit the affiliate profile
+          affiliate.totalEarned = Math.round((affiliate.totalEarned + commissionAmount) * 100) / 100;
+          affiliate.requestablePayout = Math.round((affiliate.requestablePayout + commissionAmount) * 100) / 100;
+          await affiliate.save();
+
+          this.logger.log(
+            JSON.stringify({
+              scope: 'SubscriptionService',
+              phase: 'affiliate_commission_awarded',
+              referrerId: referral.referrerId.toString(),
+              referredId: adminId,
+              tier: referral.tier,
+              commission: commissionAmount,
+              rate,
+              amountPaid: totalWithGST,
+              isRepurchase,
+            }),
+          );
+        }
+      }
+    } catch (affiliateError) {
+      this.logger.error(
+        'Failed to process affiliate commission during plan update',
+        affiliateError.stack,
+      );
+    }
+
     this.logger.log(
       JSON.stringify({
         scope: 'SubscriptionService',

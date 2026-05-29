@@ -54,6 +54,8 @@ import { BaseLoggerService } from 'src/logger/base-logger.service';
 import { WhatsappOptoutService } from 'src/whatsapp-optout/whatsapp-optout.service';
 import { SubscriptionService } from 'src/subscription/subscription.service';
 
+import { QuickReply } from 'src/quick-replies/schemas/quick-reply.schema';
+
 @Injectable()
 export class WhatsappService extends BaseLoggerService {
   private static readonly WABA_SUBSCRIPTION_EXPIRED_MESSAGE =
@@ -82,6 +84,8 @@ export class WhatsappService extends BaseLoggerService {
     private readonly projectService: ProjectsService,
     @InjectModel(MediaAsset.name)
     private readonly mediaAssetModel: Model<MediaAssetDocument>,
+    @InjectModel(QuickReply.name)
+    private readonly quickReplyModel: Model<QuickReply>,
     private readonly contactsService: ContactsService,
     private readonly wabaMessageService: WabaMessageService,
     private readonly fileStorageService: FileStorageService,
@@ -2896,15 +2900,34 @@ export class WhatsappService extends BaseLoggerService {
   }): Promise<{
     template: WabaTemplateDocument;
   }> {
-    const template = await this.wabaTemplateService.getByTemplateName(
+    let template = await this.wabaTemplateService.getByTemplateName(
       new Types.ObjectId(adminId),
       new Types.ObjectId(projectId),
       templateName,
       language,
     );
 
+    let isQuickReply = false;
+    let quickReply: any = null;
+
     if (!template) {
-      throw new NotFoundException('Template not found');
+      quickReply = await this.quickReplyModel.findOne({
+        projectId: new Types.ObjectId(projectId),
+        name: templateName,
+      });
+
+      if (!quickReply) {
+        throw new NotFoundException('Template not found');
+      }
+
+      isQuickReply = true;
+      template = {
+        name: quickReply.name,
+        language: quickReply.language || 'en_US',
+        components: quickReply.components && quickReply.components.length > 0
+          ? quickReply.components
+          : [{ type: 'BODY', text: quickReply.content }],
+      } as any;
     }
 
     // we need to check if the given variable length is equal to the template variable length
@@ -2917,10 +2940,18 @@ export class WhatsappService extends BaseLoggerService {
 
     let variableLength = 0;
 
-    const exampleBodyText = bodyComponent?.example?.body_text?.[0];
-
-    if (Array.isArray(exampleBodyText)) {
-      variableLength = exampleBodyText.length;
+    if (isQuickReply) {
+      const bodyText = (bodyComponent as any).text || '';
+      const matches = bodyText.match(/\{\{(\d+)\}\}/g);
+      if (matches) {
+        const uniqueVars = new Set(matches.map((m) => m.replace(/[{}]/g, '')));
+        variableLength = uniqueVars.size;
+      }
+    } else {
+      const exampleBodyText = bodyComponent?.example?.body_text?.[0];
+      if (Array.isArray(exampleBodyText)) {
+        variableLength = exampleBodyText.length;
+      }
     }
 
     if (variableLength !== givenVariableLength) {
@@ -4191,6 +4222,61 @@ export class WhatsappService extends BaseLoggerService {
       return buildErrorResponse('SUBSCRIPTION_EXPIRED', blockMessage);
     }
 
+    if ((payload as any).isQuickReply) {
+      const content = (payload as any).quickReplyContent || '';
+      const bodyVariables = (payload as any).bodyVariables || [];
+      const components = (payload as any).quickReplyComponents || [];
+
+      const interpolateComponents = (
+        componentsList: any[],
+        vars?: string[],
+      ): any[] => {
+        if (!componentsList || componentsList.length === 0) return [];
+        const cloned = JSON.parse(JSON.stringify(componentsList));
+        const body = cloned.find((c: any) => c.type === 'BODY');
+        if (body && body.text && vars && vars.length > 0) {
+          vars.forEach((val, index) => {
+            body.text = body.text.replace(new RegExp(`\\{\\{${index + 1}\\}\\}`, 'g'), val);
+          });
+        }
+        return cloned;
+      };
+
+      const finalComponents = interpolateComponents(components, bodyVariables);
+      let interpolatedText = content;
+      if (bodyVariables && bodyVariables.length > 0) {
+        bodyVariables.forEach((val: string, index: number) => {
+          interpolatedText = interpolatedText.replace(new RegExp(`\\{\\{${index + 1}\\}\\}`, 'g'), val);
+        });
+      }
+
+      this.logger.log('Sending Quick Reply Campaign Message', {
+        recipient: formattedPhoneData.phoneNumber,
+        interpolatedText,
+      });
+
+      try {
+        const result = await this.sendTextMessage(
+          new Types.ObjectId(adminId),
+          new Types.ObjectId(projectId),
+          formattedPhoneData.phoneNumber,
+          interpolatedText,
+          payload.contactId ? new Types.ObjectId(payload.contactId) : undefined,
+          {
+            components: finalComponents,
+            skipOptOutCheck: true,
+          }
+        );
+
+        return {
+          success: true,
+          messageId: result.id,
+        };
+      } catch (err) {
+        return buildErrorResponse('SEND_QUICK_REPLY_ERROR', err.message || 'Error sending quick reply');
+      }
+    }
+
     // Validate template structure consistency
     if (!templateStructure.name) {
       return buildErrorResponse(
@@ -4597,14 +4683,35 @@ export class WhatsappService extends BaseLoggerService {
     const permanentAccessToken = account.permanentAccessToken;
 
     // Fetch template once to determine header requirements
-    const template = await this.wabaTemplateService.getByTemplateName(
+    let template = await this.wabaTemplateService.getByTemplateName(
       new Types.ObjectId(adminId),
       new Types.ObjectId(projectId),
       templateName,
     );
+
+    let isQuickReply = false;
+    let quickReply: any = null;
+
     if (!template) {
-      throw new NotFoundException(`Template '${templateName}' not found`);
+      quickReply = await this.quickReplyModel.findOne({
+        projectId: new Types.ObjectId(projectId),
+        name: templateName,
+      });
+
+      if (!quickReply) {
+        throw new NotFoundException(`Template '${templateName}' not found`);
+      }
+
+      isQuickReply = true;
+      template = {
+        name: quickReply.name,
+        language: quickReply.language || 'en_US',
+        components: quickReply.components && quickReply.components.length > 0
+          ? quickReply.components
+          : [{ type: 'BODY', text: quickReply.content }],
+      } as any;
     }
+
     const headerComponent = template.components?.find(
       (c) => c.type === 'HEADER',
     );
@@ -4870,7 +4977,11 @@ export class WhatsappService extends BaseLoggerService {
               programId,
               programAssignmentId,
               programSlotId,
-            });
+              isQuickReply,
+              quickReplyContent: isQuickReply ? quickReply.content : undefined,
+              quickReplyComponents: isQuickReply ? (quickReply.components || []) : undefined,
+              bodyVariables: bodyVariables || [],
+            } as any);
             results.enqueued++;
           } catch (error) {
             results.failed++;

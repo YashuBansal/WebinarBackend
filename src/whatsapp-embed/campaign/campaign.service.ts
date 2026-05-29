@@ -87,6 +87,8 @@ export class CampaignService {
       selectedContacts,
       templateName,
       variableMappings,
+      sessionTemplateName,
+      sessionVariableMappings,
       sendType,
       scheduledAt,
       headerMediaAssetId,
@@ -94,13 +96,29 @@ export class CampaignService {
       contactType,
     } = createCampaignWorkflowDto;
 
-    const { template } = await this.whatsappService.checkVariableMappingLength({
-      adminId,
-      projectId,
-      templateName,
-      givenVariableLength: variableMappings.length,
-      headerMediaAssetId: headerMediaAssetId,
-    });
+    let templateLanguage = 'en_US';
+
+    if (templateName) {
+      const { template } = await this.whatsappService.checkVariableMappingLength({
+        adminId,
+        projectId,
+        templateName,
+        givenVariableLength: (variableMappings || []).length,
+        headerMediaAssetId: headerMediaAssetId,
+      });
+      if (template?.language) {
+        templateLanguage = template.language;
+      }
+    }
+
+    if (sessionTemplateName) {
+      await this.whatsappService.checkVariableMappingLength({
+        adminId,
+        projectId,
+        templateName: sessionTemplateName,
+        givenVariableLength: (sessionVariableMappings || []).length,
+      });
+    }
 
     // Ensure project exists and is not soft-deleted before creating/scheduling a campaign
     const project = await this.projectService.findOne(
@@ -119,10 +137,14 @@ export class CampaignService {
       name,
       adminId: new Types.ObjectId(adminId),
       project: new Types.ObjectId(projectId),
-      messageTemplate: {
+      messageTemplate: templateName ? {
         templateName,
         body: 'BODY',
-      },
+      } : undefined,
+      sessionTemplate: sessionTemplateName ? {
+        templateName: sessionTemplateName,
+        body: 'BODY',
+      } : undefined,
       status: CampaignStatus.DRAFT,
       scheduledAt:
         sendType === 'scheduled' && scheduledAt
@@ -135,8 +157,9 @@ export class CampaignService {
       headerMediaAssetId: headerMediaAssetId || undefined,
       storedCampaignData: {
         contacts: selectedContacts,
-        language: template.language,
+        language: templateLanguage,
         variableMappings: variableMappings || [],
+        sessionVariableMappings: sessionVariableMappings || [],
         headerMediaAssetId: headerMediaAssetId || undefined,
       },
 
@@ -365,7 +388,7 @@ export class CampaignService {
     }
 
     const { wlhAttendeeFilters, contactType } = campaign;
-    const { headerMediaAssetId, variableMappings, contacts } =
+    const { headerMediaAssetId, variableMappings, sessionVariableMappings, contacts } =
       campaign.storedCampaignData;
 
     if (campaign.status !== CampaignStatus.DRAFT) {
@@ -417,73 +440,125 @@ export class CampaignService {
       total: 0,
     };
     this.logger.log('contactType', contactType);
+
+    const processVariables = (contact: any, mappings: any[]) => {
+      return (mappings || []).map((mapping) => {
+        const isDynamic = mapping.isDynamic;
+        const fallbackValue = mapping.fallbackValue;
+
+        if (isDynamic) {
+          const fieldName = mapping.contactField
+            ? mapping.contactField.replace('$', '')
+            : '';
+          const contactValue = fieldName ? contact[fieldName] : undefined;
+
+          if (
+            contactValue &&
+            ((typeof contactValue === 'string' &&
+              contactValue.trim() !== '') ||
+              typeof contactValue === 'number')
+          ) {
+            return contactValue.toString();
+          }
+
+          return fallbackValue || mapping.variable;
+        }
+
+        return mapping.staticValue || mapping.variable;
+      });
+    };
+
     // Send messages to each contact using the unified WhatsApp service method
     if (contactType === CampaignContactType.WHATSAPP) {
       const fetchedContacts = await this.contactsService.getContactsByIds(
         new Types.ObjectId(`${adminId}`),
         contacts.map((contact) => new Types.ObjectId(contact.contactId)),
       );
-      // Build recipients array for batched enqueue via sendTemplateMessagev2
-      const recipients =
-        fetchedContacts.map((contact) => {
-          const processedBodyVariables =
-            variableMappings.map((mapping) => {
-              const isDynamic = mapping.isDynamic;
-              const fallbackValue = mapping.fallbackValue;
 
-              if (isDynamic) {
-                const fieldName = mapping.contactField
-                  ? mapping.contactField.replace('$', '')
-                  : '';
-                const contactValue = fieldName ? contact[fieldName] : undefined;
+      const standardRecipients: any[] = [];
+      const sessionRecipients: any[] = [];
 
-                if (
-                  contactValue &&
-                  ((typeof contactValue === 'string' &&
-                    contactValue.trim() !== '') ||
-                    typeof contactValue === 'number')
-                ) {
-                  return contactValue.toString();
-                }
+      for (const contact of fetchedContacts) {
+        let isSessionActive = false;
+        if (campaign.sessionTemplate?.templateName) {
+          try {
+            const check = await this.whatsappService.canSendDirectMessage(
+              new Types.ObjectId(adminId),
+              campaign.project,
+              contact.phone,
+            );
+            isSessionActive = check.canSend;
+          } catch (e) {
+            isSessionActive = false;
+          }
+        }
 
-                return fallbackValue || mapping.variable;
-              }
-
-              return mapping.staticValue || mapping.variable;
-            }) || [];
-
-          return {
+        if (isSessionActive && campaign.sessionTemplate?.templateName) {
+          sessionRecipients.push({
             recipientPhoneNumber: contact.phone,
             contactId: contact._id.toString(),
-            bodyVariables: processedBodyVariables,
-          };
-        }) || [];
+            bodyVariables: processVariables(contact, sessionVariableMappings),
+          });
+        } else if (campaign.messageTemplate?.templateName) {
+          standardRecipients.push({
+            recipientPhoneNumber: contact.phone,
+            contactId: contact._id.toString(),
+            bodyVariables: processVariables(contact, variableMappings),
+          });
+        } else {
+          results.failed++;
+          results.errors.push({
+            error: `Could not send to ${contact.phone}: session is inactive and no standard template fallback configured.`,
+          });
+        }
+      }
 
-      const v2Result = await this.whatsappService.sendTemplateMessagev2({
-        adminId,
-        messageType: WabaMessageType.CAMPAIGN,
-        campaignId: campaignId,
-        sendTemplateDto: {
-          projectId: project._id.toString(),
-          recipients,
-          templateName: campaign.messageTemplate.templateName,
-          headerMediaAssetId,
-          language: templateLanguage,
-        },
-      });
+      if (standardRecipients.length > 0) {
+        const v2Result = await this.whatsappService.sendTemplateMessagev2({
+          adminId,
+          messageType: WabaMessageType.CAMPAIGN,
+          campaignId: campaignId,
+          sendTemplateDto: {
+            projectId: project._id.toString(),
+            recipients: standardRecipients,
+            templateName: campaign.messageTemplate.templateName,
+            headerMediaAssetId,
+            language: templateLanguage,
+          },
+        });
+        const stats = v2Result?.stats || {};
+        results.sent += stats.enqueued || 0;
+        results.failed += stats.failed || 0;
+        results.duplicates += stats.duplicates || 0;
+        results.invalid += stats.invalid || 0;
+        results.total += stats.total || standardRecipients.length;
+        if (Array.isArray(stats.errors)) {
+          results.errors.push(...stats.errors.map((err: string) => ({ error: err })));
+        }
+      }
 
-      const stats = v2Result?.stats || {};
-      results.sent = stats.enqueued || 0;
-      results.failed = stats.failed || 0;
-      results.duplicates = stats.duplicates || 0;
-      results.invalid = stats.invalid || 0;
-      results.total = stats.total || recipients.length;
-      if (Array.isArray(stats.errors)) {
-        results.errors.push(
-          ...stats.errors.map((err: string) => ({
-            error: err,
-          })),
-        );
+      if (sessionRecipients.length > 0) {
+        const sessionResult = await this.whatsappService.sendTemplateMessagev2({
+          adminId,
+          messageType: WabaMessageType.CAMPAIGN,
+          campaignId: campaignId,
+          sendTemplateDto: {
+            projectId: project._id.toString(),
+            recipients: sessionRecipients,
+            templateName: campaign.sessionTemplate.templateName,
+            headerMediaAssetId: undefined,
+            language: 'en_US',
+          },
+        });
+        const stats = sessionResult?.stats || {};
+        results.sent += stats.enqueued || 0;
+        results.failed += stats.failed || 0;
+        results.duplicates += stats.duplicates || 0;
+        results.invalid += stats.invalid || 0;
+        results.total += stats.total || sessionRecipients.length;
+        if (Array.isArray(stats.errors)) {
+          results.errors.push(...stats.errors.map((err: string) => ({ error: err })));
+        }
       }
     } else {
       const webinarIds = wlhAttendeeFilters.filters.webinarIds;
@@ -494,8 +569,6 @@ export class CampaignService {
         `webinarIds: ${webinarIds}, conditions: ${JSON.stringify(conditions, null, 2)}`,
       );
 
-      // Fetch attendees using advance filters
-      // Supports multiple webinars per campaign with a single global attendance segment
       const advanceResult =
         await this.attendeesService.fetchAttendeesByAdvanceFilters(
           {
@@ -513,67 +586,88 @@ export class CampaignService {
         `Total unique attendees from ${webinarIds.length} webinars: ${attendeeResults.length}`,
       );
 
-      const recipients =
-        attendeeResults.map((contact) => {
-          const processedBodyVariables =
-            variableMappings.map((mapping) => {
-              const isDynamic = mapping.isDynamic;
-              const fallbackValue = mapping.fallbackValue;
+      const standardRecipients: any[] = [];
+      const sessionRecipients: any[] = [];
 
-              if (isDynamic) {
-                const fieldName = mapping.contactField
-                  ? mapping.contactField.replace('$', '')
-                  : '';
-                const contactValue = fieldName ? contact[fieldName] : undefined;
+      for (const contact of attendeeResults) {
+        let isSessionActive = false;
+        if (campaign.sessionTemplate?.templateName) {
+          try {
+            const check = await this.whatsappService.canSendDirectMessage(
+              new Types.ObjectId(adminId),
+              campaign.project,
+              contact.phone,
+            );
+            isSessionActive = check.canSend;
+          } catch (e) {
+            isSessionActive = false;
+          }
+        }
 
-                if (
-                  contactValue &&
-                  ((typeof contactValue === 'string' &&
-                    contactValue.trim() !== '') ||
-                    typeof contactValue === 'number')
-                ) {
-                  return contactValue.toString();
-                }
-
-                return fallbackValue || mapping.variable;
-              }
-
-              return mapping.staticValue || mapping.variable;
-            }) || [];
-
-          return {
+        if (isSessionActive && campaign.sessionTemplate?.templateName) {
+          sessionRecipients.push({
             recipientPhoneNumber: contact.phone,
-            // attendeeId is not supported on sendTemplateMessagev2; only phone
-            // and body variables are used for enqueueing.
-            bodyVariables: processedBodyVariables,
-          };
-        }) || [];
+            bodyVariables: processVariables(contact, sessionVariableMappings),
+          });
+        } else if (campaign.messageTemplate?.templateName) {
+          standardRecipients.push({
+            recipientPhoneNumber: contact.phone,
+            bodyVariables: processVariables(contact, variableMappings),
+          });
+        } else {
+          results.failed++;
+          results.errors.push({
+            error: `Could not send to ${contact.phone}: session is inactive and no standard template fallback configured.`,
+          });
+        }
+      }
 
-      const v2Result = await this.whatsappService.sendTemplateMessagev2({
-        adminId,
-        messageType: WabaMessageType.CAMPAIGN,
-        sendTemplateDto: {
-          projectId: project._id.toString(),
-          recipients,
-          templateName: campaign.messageTemplate.templateName,
-          headerMediaAssetId,
-          language: templateLanguage,
-        },
-        campaignId,
-      });
+      if (standardRecipients.length > 0) {
+        const v2Result = await this.whatsappService.sendTemplateMessagev2({
+          adminId,
+          messageType: WabaMessageType.CAMPAIGN,
+          campaignId: campaignId,
+          sendTemplateDto: {
+            projectId: project._id.toString(),
+            recipients: standardRecipients,
+            templateName: campaign.messageTemplate.templateName,
+            headerMediaAssetId,
+            language: templateLanguage,
+          },
+        });
+        const stats = v2Result?.stats || {};
+        results.sent += stats.enqueued || 0;
+        results.failed += stats.failed || 0;
+        results.duplicates += stats.duplicates || 0;
+        results.invalid += stats.invalid || 0;
+        results.total += stats.total || standardRecipients.length;
+        if (Array.isArray(stats.errors)) {
+          results.errors.push(...stats.errors.map((err: string) => ({ error: err })));
+        }
+      }
 
-      const stats = v2Result?.stats || {};
-      results.sent = stats.enqueued || 0;
-      results.failed = stats.failed || 0;
-      results.duplicates = stats.duplicates || 0;
-      results.invalid = stats.invalid || 0;
-      results.total = stats.total || recipients.length;
-      if (Array.isArray(stats.errors)) {
-        results.errors.push(
-          ...stats.errors.map((err: string) => ({
-            error: err,
-          })),
-        );
+      if (sessionRecipients.length > 0) {
+        const sessionResult = await this.whatsappService.sendTemplateMessagev2({
+          adminId,
+          messageType: WabaMessageType.CAMPAIGN,
+          sendTemplateDto: {
+            projectId: project._id.toString(),
+            recipients: sessionRecipients,
+            templateName: campaign.sessionTemplate.templateName,
+            headerMediaAssetId: undefined,
+            language: 'en_US',
+          },
+          campaignId,
+        });
+        const stats = sessionResult?.stats || {};
+        results.sent += stats.enqueued || 0;
+        results.failed += stats.failed || 0;
+        results.duplicates += stats.duplicates || 0;
+        results.invalid += stats.invalid || 0;
+        results.total += stats.total || sessionRecipients.length;
+        if (Array.isArray(stats.errors)) {
+          results.errors.push(...stats.errors.map((err: string) => ({ error: err })));
+        }
       }
     }
 

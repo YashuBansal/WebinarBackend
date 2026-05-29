@@ -106,6 +106,12 @@ export class StoredCampaignData {
   variableMappings: VariableMapping[];
 
   @Prop({
+    type: [VariableMapping],
+    default: [],
+  })
+  sessionVariableMappings: VariableMapping[];
+
+  @Prop({
     type: String,
     required: false,
   })
@@ -151,9 +157,15 @@ export class Campaign extends Document {
 
   @Prop({
     type: MessageTemplate,
-    required: [true, 'Message template is required'],
+    required: false,
   })
   messageTemplate: MessageTemplate;
+
+  @Prop({
+    type: MessageTemplate,
+    required: false,
+  })
+  sessionTemplate: MessageTemplate;
 
   @Prop({
     type: String,
