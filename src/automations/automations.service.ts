@@ -33,17 +33,22 @@ export class AutomationsService {
       projectId: new Types.ObjectId(projectId),
       name: dto.name,
       status: dto.status ?? 'inactive',
+      flowType: dto.flowType ?? 'crm',
       webinarId: dto.webinarId ? new Types.ObjectId(dto.webinarId) : undefined,
       graph: dto.graph,
     });
   }
 
-  async getFlows(adminId: string, projectId: string) {
+  async getFlows(adminId: string, projectId: string, flowType?: string) {
+    const query: any = {
+      adminId: new Types.ObjectId(adminId),
+      projectId: new Types.ObjectId(projectId),
+    };
+    if (flowType) {
+      query.flowType = flowType;
+    }
     return this.flowModel
-      .find({
-        adminId: new Types.ObjectId(adminId),
-        projectId: new Types.ObjectId(projectId),
-      })
+      .find(query)
       .sort({ createdAt: -1 })
       .lean();
   }
@@ -94,6 +99,23 @@ export class AutomationsService {
     });
     if (!res) throw new NotFoundException('Automation flow not found');
     return { success: true };
+  }
+
+  async findByName(
+    adminId: string,
+    projectId: string,
+    name: string,
+    excludeFlowId?: string,
+  ) {
+    const query: any = {
+      adminId: new Types.ObjectId(adminId),
+      projectId: new Types.ObjectId(projectId),
+      name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
+    };
+    if (excludeFlowId) {
+      query._id = { $ne: new Types.ObjectId(excludeFlowId) };
+    }
+    return this.flowModel.findOne(query).lean();
   }
 
   async createExecution(

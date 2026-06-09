@@ -16,6 +16,14 @@ export class AutomationFlow {
 
   @Prop({
     type: String,
+    enum: ['crm', 'whatsapp'],
+    default: 'crm',
+    required: true,
+  })
+  flowType: 'crm' | 'whatsapp';
+
+  @Prop({
+    type: String,
     enum: ['active', 'inactive'],
     default: 'inactive',
     index: true,
@@ -31,3 +39,5 @@ export class AutomationFlow {
 
 export const AutomationFlowSchema =
   SchemaFactory.createForClass(AutomationFlow);
+
+AutomationFlowSchema.index({ projectId: 1, flowType: 1 });

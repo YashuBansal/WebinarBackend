@@ -43,7 +43,13 @@ export class Contact extends Document {
     type: [String],
     default: [],
   })
-  tags: string[];
+  crmTags: string[];
+
+  @Prop({
+    type: [String],
+    default: [],
+  })
+  wabaTags: string[];
 
   @Prop({
     type: Types.ObjectId,
@@ -89,6 +95,8 @@ ContactSchema.pre('save', function (next) {
 ContactSchema.index({ adminId: 1, projectId: 1 });
 ContactSchema.index({ email: 1, adminId: 1 });
 ContactSchema.index({ phone: 1, adminId: 1 });
+ContactSchema.index({ phone: 1, adminId: 1, isDeleted: 1 });
+ContactSchema.index({ phone: 1, projectId: 1, isDeleted: 1 });
 ContactSchema.index({ createdAt: -1 });
 
 export { ContactSchema };

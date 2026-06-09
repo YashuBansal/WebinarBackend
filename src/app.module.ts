@@ -63,6 +63,9 @@ import { ZoomModule } from './zoom/zoom.module';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { AutomationsModule } from './automations/automations.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { WebhookModule } from './webhook/webhook.module';
+import { WhatsappApiModule } from './whatsapp-api/whatsapp-api.module';
+import { FlowExecutionModule } from './flow-execution/flow-execution.module';
 import { WebinarAutoMessageModule } from './webinar-auto-message/webinar-auto-message.module';
 import { AlarmWhatsappConfigModule } from './alarm-whatsapp-config/alarm-whatsapp-config.module';
 import { ZoomEventModule } from './zoom/zoom-event/zoom-event.module';
@@ -82,6 +85,8 @@ import { PabblyTokenBlacklistModule } from './auth/pabbly-token-blacklist.module
 import { WhatsappOptoutModule } from './whatsapp-optout/whatsapp-optout.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 import { CacheModule } from './cache/cache.module';
+import { BullModule } from '@nestjs/bull';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Module({
   imports: [
@@ -89,6 +94,10 @@ import { CacheModule } from './cache/cache.module';
       load: [configurations],
       isGlobal: true,
     }),
+    BullModule.forRoot({
+      url: process.env.REDIS_URL || 'redis://localhost:6379',
+    }),
+    EventEmitterModule.forRoot(),
     CacheModule,
     PabblyTokenBlacklistModule,
     WhatsappOptoutModule,
@@ -223,6 +232,9 @@ import { CacheModule } from './cache/cache.module';
     AffiliateModule,
     AutomationsModule,
     WebhooksModule,
+    WebhookModule,
+    WhatsappApiModule,
+    FlowExecutionModule,
     WebinarAutoMessageModule,
     AlarmWhatsappConfigModule,
     ZoomEventModule,

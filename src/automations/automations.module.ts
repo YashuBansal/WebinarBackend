@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AutomationsService } from './automations.service';
 import { AutomationsController } from './automations.controller';
@@ -12,6 +12,8 @@ import {
 } from './schemas/automation-execution.schema';
 import { AutomationsProcessor } from './automations.processor';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
+import { AuthAdminTokenMiddleware } from '../middlewares/authAdmin.Middleware';
+import { GetAdminIdMiddleware } from '../middlewares/get-admin-id.middleware';
 
 @Module({
   imports: [
@@ -25,4 +27,10 @@ import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
   providers: [AutomationsService, AutomationsProcessor],
   exports: [AutomationsService],
 })
-export class AutomationsModule {}
+export class AutomationsModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(AuthAdminTokenMiddleware, GetAdminIdMiddleware)
+      .forRoutes(AutomationsController);
+  }
+}

@@ -8,6 +8,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Queue } from 'bullmq';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Contact, ContactDocument } from './Contact.schema';
 import {
   CreateContactDto,
@@ -38,6 +39,7 @@ export class ContactsService {
     @Inject(CONTACTS_IMPORT_QUEUE)
     private readonly contactsImportQueue: Queue,
     private readonly wabaTagsService: WabaTagsService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async create(
@@ -60,7 +62,7 @@ export class ContactsService {
 
     const newContact = await this.contactModel.create({
       ...createContactDto,
-      tags: normalizedTags,
+      crmTags: normalizedTags,
       projectId: new Types.ObjectId(projectId),
       adminId,
     });
@@ -70,6 +72,17 @@ export class ContactsService {
       adminId,
       normalizedTags,
     );
+
+    // Emit internal event for CRM automation builder
+    try {
+      this.eventEmitter.emit('automation.trigger', {
+        eventType: 'lead_created',
+        projectId: String(projectId),
+        data: newContact,
+      });
+    } catch (err) {
+      this.logger.error('Failed to emit lead_created event:', err);
+    }
 
     return newContact;
   }
@@ -215,7 +228,7 @@ export class ContactsService {
         const prepared = {
           ...row,
           phone: normalizedPhone,
-          tags: this.normalizeTags(row.tags),
+          crmTags: this.normalizeTags(row.tags),
         };
         chunkPrepared.push({ rowNumber, data: prepared });
         chunkPhones.push(normalizedPhone);
@@ -231,7 +244,7 @@ export class ContactsService {
         .exec();
       const existingMap = new Map(existingContacts.map((c) => [c.phone, c]));
 
-      const importTags = chunkPrepared.flatMap((item) => item.data.tags || []);
+      const importTags = chunkPrepared.flatMap((item) => item.data.crmTags || []);
       await this.wabaTagsService.ensureTagsExist(projectId, adminId, importTags);
 
       const operations = chunkPrepared.map(({ data }) => {
@@ -264,12 +277,12 @@ export class ContactsService {
         if (data.firstName) updateData.firstName = data.firstName;
         if (data.lastName) updateData.lastName = data.lastName;
         if (data.email) updateData.email = data.email;
-        if (data.tags && data.tags.length > 0) {
+        if (data.crmTags && data.crmTags.length > 0) {
           if (payload.replaceTags) {
-            updateData.tags = data.tags;
+            updateData.crmTags = data.crmTags;
           } else {
-            const existingTags = this.normalizeTags(existing.tags || []);
-            updateData.tags = [...new Set([...existingTags, ...data.tags])];
+            const existingTags = this.normalizeTags(existing.crmTags || []);
+            updateData.crmTags = [...new Set([...existingTags, ...data.crmTags])];
           }
         }
         if (Object.keys(updateData).length === 0) {
@@ -727,9 +740,9 @@ export class ContactsService {
 
       if (filters.tags && filters.tags.length > 0) {
         if (filters.tagFilterMode === 'not_has_any') {
-          filter.tags = { $nin: filters.tags };
+          filter.crmTags = { $nin: filters.tags };
         } else {
-          filter.tags = { $in: filters.tags };
+          filter.crmTags = { $in: filters.tags };
         }
       }
 
@@ -920,8 +933,8 @@ export class ContactsService {
 
     const update =
       bulkUpdateContactTagsDto.operation === 'add'
-        ? { $addToSet: { tags: { $each: normalizedTags } } }
-        : { $pull: { tags: { $in: normalizedTags } } };
+        ? { $addToSet: { crmTags: { $each: normalizedTags } } }
+        : { $pull: { crmTags: { $in: normalizedTags } } };
 
     const result = await this.contactModel.updateMany(query, update);
 
